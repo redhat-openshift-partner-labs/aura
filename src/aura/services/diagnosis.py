@@ -30,7 +30,7 @@ class FallbackDiagnosisModel:
     model_name = "deterministic-fallback"
 
     def diagnose(self, snapshot: CWASnapshot) -> DiagnosisResponse:
-        evidence_items = self._evidence_items(snapshot)
+        evidence_items = cwa_evidence_items(snapshot)
         facts = [
             DiagnosisFact(
                 evidence_id=item.item_id,
@@ -50,17 +50,6 @@ class FallbackDiagnosisModel:
             confidence=0.0,
             evidence_ids=[item.item_id for item in evidence_items],
         )
-
-    @staticmethod
-    def _evidence_items(snapshot: CWASnapshot) -> list[EvidenceItem]:
-        evidence_slot = next(
-            slot
-            for slot in snapshot.slots
-            if slot.name is CWASlotName.EVIDENCE_TOOL_RESULTS
-        )
-        values = evidence_slot.content.get("items", [])
-        return [EvidenceItem.model_validate(value) for value in values]
-
 
 @final
 class DiagnosisService:
@@ -96,8 +85,21 @@ class DiagnosisService:
 
 
 __all__ = [
+    "cwa_evidence_items",
     "DiagnosisModel",
     "DiagnosisResult",
     "DiagnosisService",
     "FallbackDiagnosisModel",
 ]
+
+
+def cwa_evidence_items(snapshot: CWASnapshot) -> list[EvidenceItem]:
+    """Return validated evidence items from a CWA snapshot."""
+
+    evidence_slot = next(
+        slot
+        for slot in snapshot.slots
+        if slot.name is CWASlotName.EVIDENCE_TOOL_RESULTS
+    )
+    values = evidence_slot.content.get("items", [])
+    return [EvidenceItem.model_validate(value) for value in values]

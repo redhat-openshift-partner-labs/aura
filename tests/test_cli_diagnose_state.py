@@ -1,0 +1,94 @@
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import final
+from uuid import UUID
+
+from aura.cli import main
+from aura.collectors.cluster_state import ClusterStateCollector
+from aura.contracts import EvidenceItem, EvidenceSnapshot
+from test_cluster_state_collector import (
+    FakeGitCollector,
+    FakeOpenShiftCollector,
+    FakeTektonCollector,
+)
+
+
+@final
+class FakeClusterStateCollector:
+    def collect(
+        self,
+        *,
+        command_id: UUID,
+        snapshot_id: UUID | None = None,
+        collected_at: datetime | None = None,
+        source_version: str | None = None,
+    ) -> EvidenceSnapshot:
+        collector = ClusterStateCollector(
+            git_collector=FakeGitCollector(),
+            openshift_collector=FakeOpenShiftCollector(),
+            tekton_collector=FakeTektonCollector(),
+            cluster_name="example",
+        )
+        return collector.collect(
+            command_id=command_id,
+            snapshot_id=snapshot_id or UUID(int=40),
+            collected_at=collected_at or datetime(2026, 1, 1, tzinfo=UTC),
+            source_version=source_version,
+        )
+
+
+def test_cli_diagnose_state_returns_cluster_diagnosis(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    snapshot_dir = tmp_path / "snapshots"
+    audit_dir = tmp_path / "audit"
+    cwa_dir = tmp_path / "cwa"
+    diagnosis_dir = tmp_path / "diagnoses"
+
+    exit_code = main(
+        [
+            "diagnose",
+            "state",
+            "--cluster",
+            "example",
+            "--fleet-clusters",
+            str(tmp_path),
+            "--openshift-kubeconfig",
+            str(tmp_path / "kubeconfig"),
+            "--operator",
+            "operator@example.com",
+            "--idempotency-key",
+            "test-key",
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--audit-dir",
+            str(audit_dir),
+            "--cwa-dir",
+            str(cwa_dir),
+            "--diagnosis-dir",
+            str(diagnosis_dir),
+        ],
+        collector=FakeClusterStateCollector(),
+        command_id_factory=lambda: UUID(int=1),
+        clock=lambda: datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    response = json.loads(captured.out)
+    assert response["summary"] == (
+        "Cluster example is defined and deployed, but its latest workflow failed."
+    )
+    assert response["recommended_inspection"]["description"] == (
+        "Inspect the failed TaskRun provision-task-abc."
+    )
+
+    assert len(list(snapshot_dir.glob("*.json"))) == 1
+    assert len(list(audit_dir.glob("*.json"))) == 3
+    assert len(list((cwa_dir / "snapshots").glob("*.json"))) == 1
+    assert len(list((cwa_dir / "traces").glob("*.json"))) == 1
+    assert len(list(diagnosis_dir.glob("*.json"))) == 1

@@ -12,6 +12,7 @@ from aura.audit_store import (
     JsonAuditEventStore,
 )
 from aura.authorization import OperatorRole
+from aura.collectors.cluster_state import ClusterStateCollector
 from aura.collectors.git_inventory import GitInventoryCollector
 from aura.collectors.openshift_cli_client import OpenShiftCLIInventoryClient
 from aura.collectors.openshift_cli_tekton_client import (
@@ -34,7 +35,7 @@ from aura.contracts import (
     EvidenceSnapshot,
 )
 from aura.cwa import CWASnapshot
-from aura.diagnosis import DiagnosisRecord
+from aura.diagnosis import DiagnosisModel, DiagnosisRecord
 from aura.diagnosis_store import (
     DiagnosisAlreadyStored,
     JsonDiagnosisStore,
@@ -51,6 +52,13 @@ from aura.services.cwa import (
     InvalidCWAAssembly,
 )
 from aura.services.diagnosis import DiagnosisService
+from aura.services.evidence import EvidenceCommandResult
+from aura.services.cluster_state import (
+    ClusterStateDiagnosisModel,
+    ClusterStateService,
+    InvalidClusterStateCommand,
+    UnauthorizedClusterStateCommand,
+)
 from aura.services.inventory import (
     EvidenceCollector,
     InventoryService,
@@ -161,6 +169,47 @@ def _add_workflow_inspect_arguments(
     _add_operator_arguments(parser)
 
 
+def _add_diagnose_state_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    parser.add_argument(
+        "--cluster",
+        required=True,
+        help="Cluster name to diagnose",
+    )
+    parser.add_argument(
+        "--fleet-clusters",
+        type=Path,
+        required=True,
+        help="Path to the fleet-clusters Git checkout",
+    )
+    parser.add_argument(
+        "--openshift-kubeconfig",
+        type=Path,
+        required=True,
+        help="Path to a read-only OpenShift kubeconfig",
+    )
+    _add_evidence_output_arguments(parser)
+    parser.add_argument(
+        "--cwa-dir",
+        type=Path,
+        required=False,
+        help="Directory in which to store CWA snapshots and traces",
+    )
+    parser.add_argument(
+        "--diagnosis-dir",
+        type=Path,
+        required=False,
+        help="Directory in which to store diagnosis responses",
+    )
+    parser.add_argument(
+        "--query",
+        default="diagnose cluster state",
+        help="Operator query used for CWA assembly",
+    )
+    _add_operator_arguments(parser)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="aura")
     command_parser = parser.add_subparsers(dest="command", required=True)
@@ -179,6 +228,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inspect_parser = workflow_command_parser.add_parser("inspect")
     _add_workflow_inspect_arguments(inspect_parser)
+
+    diagnose_parser = command_parser.add_parser("diagnose")
+    diagnose_command_parser = diagnose_parser.add_subparsers(
+        dest="diagnose_command",
+        required=True,
+    )
+    state_parser = diagnose_command_parser.add_parser("state")
+    _add_diagnose_state_arguments(state_parser)
     return parser
 
 
@@ -200,11 +257,23 @@ def _workflow_argument_error(args: argparse.Namespace) -> str | None:
     return None
 
 
+def _diagnose_state_argument_error(args: argparse.Namespace) -> str | None:
+    if args.cwa_dir is None:
+        return "--cwa-dir is required for diagnose state"
+    if args.cwa_dir is not None and args.audit_dir is None:
+        return "--audit-dir is required with --cwa-dir"
+    if args.diagnosis_dir is not None and args.cwa_dir is None:
+        return "--cwa-dir is required with --diagnosis-dir"
+    return None
+
+
 def _argument_error(args: argparse.Namespace) -> str | None:
     if args.command == "inventory":
         return _inventory_argument_error(args)
     if args.command == "workflow":
         return _workflow_argument_error(args)
+    if args.command == "diagnose":
+        return _diagnose_state_argument_error(args)
     return None
 
 
@@ -237,12 +306,35 @@ def _selected_workflow_collector(
     )
 
 
+def _selected_cluster_state_collector(
+    args: argparse.Namespace,
+    collector: EvidenceCollector | None,
+) -> EvidenceCollector:
+    if collector is not None:
+        return collector
+    return ClusterStateCollector(
+        git_collector=GitInventoryCollector(args.fleet_clusters),
+        openshift_collector=OpenShiftInventoryCollector(
+            client=OpenShiftCLIInventoryClient(
+                kubeconfig_path=args.openshift_kubeconfig,
+            )
+        ),
+        tekton_collector=TektonInventoryCollector(
+            client=OpenShiftCLITektonClient(
+                kubeconfig_path=args.openshift_kubeconfig,
+            )
+        ),
+        cluster_name=args.cluster,
+    )
+
+
 def _diagnosis_record(
     command_id: UUID,
     snapshot: CWASnapshot,
     diagnosed_at: datetime,
+    model: DiagnosisModel | None = None,
 ) -> DiagnosisRecord:
-    result = DiagnosisService().diagnose(snapshot)
+    result = DiagnosisService(model=model).diagnose(snapshot)
     return DiagnosisRecord(
         diagnosis_id=uuid5(
             command_id,
@@ -264,6 +356,7 @@ def _model_audit_event(
     diagnosis_record: DiagnosisRecord,
     trace_id: UUID,
     previous_event_id: UUID,
+    persisted: bool,
 ) -> AuditEvent:
     return AuditEvent(
         event_id=uuid5(
@@ -285,7 +378,7 @@ def _model_audit_event(
             "provider_name": diagnosis_record.provider_name,
             "model_name": diagnosis_record.model_name,
             "used_fallback": diagnosis_record.used_fallback,
-            "persisted": True,
+            "persisted": persisted,
         },
         previous_event_id=previous_event_id,
     )
@@ -350,6 +443,128 @@ def _context_audit_event(
     )
 
 
+def _persist_evidence(
+    args: argparse.Namespace,
+    command: CommandEnvelope,
+    result: EvidenceCommandResult,
+) -> tuple[AuditEvent | None, str | None]:
+    if args.snapshot_dir is not None:
+        try:
+            JsonEvidenceSnapshotStore(args.snapshot_dir).save(
+                result.snapshot
+            )
+        except EvidenceSnapshotAlreadyStored as error:
+            return None, str(error)
+
+    evidence_audit_event: AuditEvent | None = None
+    if args.audit_dir is not None:
+        evidence_audit_event = _evidence_audit_event(
+            command,
+            result.snapshot,
+            args.snapshot_dir is not None,
+        )
+        try:
+            JsonAuditEventStore(args.audit_dir).save(
+                evidence_audit_event
+            )
+        except AuditEventAlreadyStored as error:
+            return None, str(error)
+
+    return evidence_audit_event, None
+
+
+def _assemble_and_diagnose(
+    args: argparse.Namespace,
+    command: CommandEnvelope,
+    result: EvidenceCommandResult,
+    roles: set[OperatorRole],
+    *,
+    output_schema: str,
+    diagnosis_model: DiagnosisModel | None,
+    always_diagnose: bool,
+    clock: Callable[[], datetime],
+) -> tuple[DiagnosisRecord | None, str | None]:
+    evidence_audit_event = _evidence_audit_event(
+        command,
+        result.snapshot,
+        args.snapshot_dir is not None,
+    )
+    assembly_request = CWAAssemblyRequest(
+        command=result.command,
+        evidence_snapshot=result.snapshot,
+        audit_event=evidence_audit_event,
+        operator_roles=roles,
+        policy=CWAAssemblyPolicy(
+            instructions={"policy": "read-only"},
+            capabilities={"adapters": []},
+            output_contract={"schema": output_schema},
+            knowledge={"documents": []},
+        ),
+        assembled_at=clock(),
+    )
+
+    try:
+        assembly = CWAAssembler().assemble(assembly_request)
+        JsonCWASnapshotStore(args.cwa_dir / "snapshots").save(
+            assembly.snapshot
+        )
+        diagnosis_record: DiagnosisRecord | None = None
+        if args.diagnosis_dir is not None or always_diagnose:
+            diagnosis_record = _diagnosis_record(
+                command.command_id,
+                assembly.snapshot,
+                clock(),
+                model=diagnosis_model,
+            )
+            trace = assembly.trace.model_copy(
+                update={
+                    "model_provider": diagnosis_record.provider_name,
+                    "model_name": diagnosis_record.model_name,
+                    "response_digest": diagnosis_record.response_digest,
+                }
+            )
+            if args.diagnosis_dir is not None:
+                JsonDiagnosisStore(args.diagnosis_dir).save(
+                    diagnosis_record
+                )
+        else:
+            trace = assembly.trace
+        JsonCWATraceStore(args.cwa_dir / "traces").save(trace)
+    except (
+        InvalidCWAAssembly,
+        CWASnapshotAlreadyStored,
+        CWATraceAlreadyStored,
+        DiagnosisAlreadyStored,
+    ) as error:
+        return None, str(error)
+
+    context_event = _context_audit_event(
+        command,
+        assembly,
+        result.snapshot,
+        evidence_audit_event.event_id,
+    )
+    try:
+        JsonAuditEventStore(args.audit_dir).save(context_event)
+    except AuditEventAlreadyStored as error:
+        return None, str(error)
+
+    if diagnosis_record is not None:
+        model_event = _model_audit_event(
+            command,
+            diagnosis_record,
+            assembly.trace.trace_id,
+            context_event.event_id,
+            args.diagnosis_dir is not None,
+        )
+        try:
+            JsonAuditEventStore(args.audit_dir).save(model_event)
+        except AuditEventAlreadyStored as error:
+            return None, str(error)
+
+    return diagnosis_record, None
+
+
 def _run_workflow_inspect(
     args: argparse.Namespace,
     *,
@@ -385,30 +600,79 @@ def _run_workflow_inspect(
         print(f"aura: {error}", file=stderr)
         return 2
 
-    if args.snapshot_dir is not None:
-        try:
-            JsonEvidenceSnapshotStore(args.snapshot_dir).save(
-                result.snapshot
-            )
-        except EvidenceSnapshotAlreadyStored as error:
-            print(f"aura: {error}", file=stderr)
-            return 2
-
-    if args.audit_dir is not None:
-        evidence_audit_event = _evidence_audit_event(
-            command,
-            result.snapshot,
-            args.snapshot_dir is not None,
-        )
-        try:
-            JsonAuditEventStore(args.audit_dir).save(
-                evidence_audit_event
-            )
-        except AuditEventAlreadyStored as error:
-            print(f"aura: {error}", file=stderr)
-            return 2
+    _, persistence_error = _persist_evidence(args, command, result)
+    if persistence_error is not None:
+        print(f"aura: {persistence_error}", file=stderr)
+        return 2
 
     print(result.snapshot.model_dump_json(indent=2))
+    return 0
+
+
+def _run_diagnose_state(
+    args: argparse.Namespace,
+    *,
+    collector: EvidenceCollector | None,
+    command_id_factory: Callable[[], UUID],
+    clock: Callable[[], datetime],
+) -> int:
+    stderr = sys.stderr
+    command = CommandEnvelope(
+        command_id=command_id_factory(),
+        command_type=CommandType.DIAGNOSE_STATE,
+        operator_id=args.operator,
+        created_at=clock(),
+        input={
+            "query": args.query,
+            "cluster_name": args.cluster,
+            "history": [],
+        },
+        idempotency_key=args.idempotency_key,
+        status=CommandState.RECEIVED,
+    )
+    selected_collector = _selected_cluster_state_collector(args, collector)
+    service = ClusterStateService(collector=selected_collector)
+    roles = {OperatorRole(role) for role in args.role}
+
+    try:
+        result = service.diagnose_state(command, roles)
+    except (
+        UnauthorizedClusterStateCommand,
+        InvalidClusterStateCommand,
+        InvalidCommandTransition,
+    ) as error:
+        print(f"aura: {error}", file=stderr)
+        return 2
+
+    diagnosis_record: DiagnosisRecord | None = None
+    _, persistence_error = _persist_evidence(args, command, result)
+    if persistence_error is not None:
+        print(f"aura: {persistence_error}", file=stderr)
+        return 2
+
+    if args.cwa_dir is not None:
+        diagnosis_record, assembly_error = _assemble_and_diagnose(
+            args,
+            command,
+            result,
+            roles,
+            output_schema="diagnosis_state",
+            diagnosis_model=ClusterStateDiagnosisModel(),
+            always_diagnose=True,
+            clock=clock,
+        )
+        if assembly_error is not None:
+            print(f"aura: {assembly_error}", file=stderr)
+            return 2
+
+    if diagnosis_record is None:
+        print(
+            "aura: --cwa-dir is required for diagnose state",
+            file=stderr,
+        )
+        return 2
+
+    print(diagnosis_record.response.model_dump_json(indent=2))
     return 0
 
 
@@ -431,6 +695,14 @@ def main(
 
     if args.command == "workflow":
         return _run_workflow_inspect(
+            args,
+            collector=collector,
+            command_id_factory=command_id_factory,
+            clock=clock,
+        )
+
+    if args.command == "diagnose":
+        return _run_diagnose_state(
             args,
             collector=collector,
             command_id_factory=command_id_factory,
@@ -462,104 +734,25 @@ def main(
         print(f"aura: {error}", file=stderr)
         return 2
 
-    if args.snapshot_dir is not None:
-        try:
-            JsonEvidenceSnapshotStore(args.snapshot_dir).save(
-                result.snapshot
-            )
-        except EvidenceSnapshotAlreadyStored as error:
-            print(f"aura: {error}", file=stderr)
-            return 2
-
-    evidence_audit_event: AuditEvent | None = None
-    if args.audit_dir is not None:
-        evidence_audit_event = _evidence_audit_event(
-            command,
-            result.snapshot,
-            args.snapshot_dir is not None,
-        )
-        try:
-            JsonAuditEventStore(args.audit_dir).save(
-                evidence_audit_event
-            )
-        except AuditEventAlreadyStored as error:
-            print(f"aura: {error}", file=stderr)
-            return 2
+    _, persistence_error = _persist_evidence(args, command, result)
+    if persistence_error is not None:
+        print(f"aura: {persistence_error}", file=stderr)
+        return 2
 
     if args.cwa_dir is not None:
-        assert evidence_audit_event is not None
-        diagnosis_record: DiagnosisRecord | None = None
-        assembly_request = CWAAssemblyRequest(
-            command=result.command,
-            evidence_snapshot=result.snapshot,
-            audit_event=evidence_audit_event,
-            operator_roles=roles,
-            policy=CWAAssemblyPolicy(
-                instructions={"policy": "read-only"},
-                capabilities={"adapters": []},
-                output_contract={"schema": "inventory_list"},
-                knowledge={"documents": []},
-            ),
-            assembled_at=clock(),
-        )
-        try:
-            assembly = CWAAssembler().assemble(assembly_request)
-            JsonCWASnapshotStore(args.cwa_dir / "snapshots").save(
-                assembly.snapshot
-            )
-            trace = assembly.trace
-            if args.diagnosis_dir is not None:
-                diagnosis_record = _diagnosis_record(
-                    command.command_id,
-                    assembly.snapshot,
-                    clock(),
-                )
-                trace = trace.model_copy(
-                    update={
-                        "model_provider": diagnosis_record.provider_name,
-                        "model_name": diagnosis_record.model_name,
-                        "response_digest": (
-                            diagnosis_record.response_digest
-                        ),
-                    }
-                )
-                JsonDiagnosisStore(args.diagnosis_dir).save(
-                    diagnosis_record
-                )
-            JsonCWATraceStore(args.cwa_dir / "traces").save(trace)
-        except (
-            InvalidCWAAssembly,
-            CWASnapshotAlreadyStored,
-            CWATraceAlreadyStored,
-            DiagnosisAlreadyStored,
-        ) as error:
-            print(f"aura: {error}", file=stderr)
-            return 2
-
-        context_event = _context_audit_event(
+        _, assembly_error = _assemble_and_diagnose(
+            args,
             command,
-            assembly,
-            result.snapshot,
-            evidence_audit_event.event_id,
+            result,
+            roles,
+            output_schema="inventory_list",
+            diagnosis_model=None,
+            always_diagnose=False,
+            clock=clock,
         )
-        try:
-            JsonAuditEventStore(args.audit_dir).save(context_event)
-        except AuditEventAlreadyStored as error:
-            print(f"aura: {error}", file=stderr)
+        if assembly_error is not None:
+            print(f"aura: {assembly_error}", file=stderr)
             return 2
-
-        if diagnosis_record is not None:
-            model_event = _model_audit_event(
-                command,
-                diagnosis_record,
-                assembly.trace.trace_id,
-                context_event.event_id,
-            )
-            try:
-                JsonAuditEventStore(args.audit_dir).save(model_event)
-            except AuditEventAlreadyStored as error:
-                print(f"aura: {error}", file=stderr)
-                return 2
 
     print(result.snapshot.model_dump_json(indent=2))
     return 0

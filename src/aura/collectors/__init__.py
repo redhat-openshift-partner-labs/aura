@@ -1,6 +1,7 @@
 """Deterministic evidence collectors."""
 
 __all__ = [
+    "cluster_state",
     "git_inventory",
     "oc_cli",
     "openshift_cli_client",

@@ -1,4 +1,11 @@
 """Aura application services."""
 
-__all__ = ["cwa", "diagnosis", "evidence", "inventory", "workflow"]
+__all__ = [
+    "cluster_state",
+    "cwa",
+    "diagnosis",
+    "evidence",
+    "inventory",
+    "workflow",
+]
 
