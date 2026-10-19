@@ -15,6 +15,12 @@ from aura.authorization import OperatorRole
 from aura.collectors.git_inventory import GitInventoryCollector
 from aura.collectors.openshift_cli_client import OpenShiftCLIInventoryClient
 from aura.collectors.openshift_inventory import OpenShiftInventoryCollector
+from aura.cwa_store import (
+    CWASnapshotAlreadyStored,
+    CWATraceAlreadyStored,
+    JsonCWASnapshotStore,
+    JsonCWATraceStore,
+)
 from aura.contracts import (
     AuditEvent,
     AuditEventType,
@@ -25,6 +31,12 @@ from aura.contracts import (
 from aura.evidence_store import (
     EvidenceSnapshotAlreadyStored,
     JsonEvidenceSnapshotStore,
+)
+from aura.services.cwa import (
+    CWAAssemblyPolicy,
+    CWAAssemblyRequest,
+    CWAAssembler,
+    InvalidCWAAssembly,
 )
 from aura.services.inventory import (
     EvidenceCollector,
@@ -74,6 +86,17 @@ def build_parser() -> argparse.ArgumentParser:
         required=False,
         help="Directory in which to store audit events",
     )
+    list_parser.add_argument(
+        "--cwa-dir",
+        type=Path,
+        required=False,
+        help="Directory in which to store CWA snapshots and traces",
+    )
+    list_parser.add_argument(
+        "--query",
+        default="list inventory",
+        help="Operator query used for CWA assembly",
+    )
     list_parser.add_argument("--operator", required=True)
     list_parser.add_argument("--idempotency-key", required=True)
     list_parser.add_argument(
@@ -103,6 +126,12 @@ def main(
             file=stderr,
         )
         return 2
+    if args.cwa_dir is not None and args.audit_dir is None:
+        print(
+            "aura: --audit-dir is required with --cwa-dir",
+            file=stderr,
+        )
+        return 2
 
     command_id = command_id_factory()
     command = CommandEnvelope(
@@ -110,7 +139,7 @@ def main(
         command_type=CommandType.INVENTORY_LIST,
         operator_id=args.operator,
         created_at=clock(),
-        input={},
+        input={"query": args.query, "history": []},
         idempotency_key=args.idempotency_key,
         status=CommandState.RECEIVED,
     )
@@ -147,8 +176,9 @@ def main(
             print(f"aura: {error}", file=stderr)
             return 2
 
+    evidence_audit_event: AuditEvent | None = None
     if args.audit_dir is not None:
-        event = AuditEvent(
+        evidence_audit_event = AuditEvent(
             event_id=uuid5(
                 command.command_id,
                 f"evidence_collected:{result.snapshot.snapshot_id}",
@@ -167,7 +197,72 @@ def main(
             },
         )
         try:
-            JsonAuditEventStore(args.audit_dir).save(event)
+            JsonAuditEventStore(args.audit_dir).save(
+                evidence_audit_event
+            )
+        except AuditEventAlreadyStored as error:
+            print(f"aura: {error}", file=stderr)
+            return 2
+
+    if args.cwa_dir is not None:
+        assert evidence_audit_event is not None
+        assembly_request = CWAAssemblyRequest(
+            command=result.command,
+            evidence_snapshot=result.snapshot,
+            audit_event=evidence_audit_event,
+            operator_roles=roles,
+            policy=CWAAssemblyPolicy(
+                instructions={"policy": "read-only"},
+                capabilities={"adapters": []},
+                output_contract={"schema": "inventory_list"},
+                knowledge={"documents": []},
+            ),
+            assembled_at=clock(),
+        )
+        try:
+            assembly = CWAAssembler().assemble(assembly_request)
+            JsonCWASnapshotStore(args.cwa_dir / "snapshots").save(
+                assembly.snapshot
+            )
+            JsonCWATraceStore(args.cwa_dir / "traces").save(
+                assembly.trace
+            )
+        except (
+            InvalidCWAAssembly,
+            CWASnapshotAlreadyStored,
+            CWATraceAlreadyStored,
+        ) as error:
+            print(f"aura: {error}", file=stderr)
+            return 2
+
+        context_event = AuditEvent(
+            event_id=uuid5(
+                command.command_id,
+                f"context_assembled:{assembly.snapshot.snapshot_id}",
+            ),
+            command_id=command.command_id,
+            event_type=AuditEventType.CONTEXT_ASSEMBLED,
+            occurred_at=assembly.snapshot.assembled_at,
+            actor=command.operator_id,
+            data={
+                "cwa_snapshot_id": str(assembly.snapshot.snapshot_id),
+                "cwa_snapshot_digest": (
+                    assembly.snapshot.snapshot_digest
+                ),
+                "trace_id": str(assembly.trace.trace_id),
+                "evidence_snapshot_id": str(
+                    result.snapshot.snapshot_id
+                ),
+                "evidence_snapshot_digest": (
+                    result.snapshot.snapshot_digest
+                ),
+                "assembler_version": assembly.trace.assembler_version,
+                "persisted": True,
+            },
+            previous_event_id=evidence_audit_event.event_id,
+        )
+        try:
+            JsonAuditEventStore(args.audit_dir).save(context_event)
         except AuditEventAlreadyStored as error:
             print(f"aura: {error}", file=stderr)
             return 2

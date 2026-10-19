@@ -155,6 +155,102 @@ def test_cli_inventory_list_records_audit_event(
     assert event["previous_event_id"] is None
 
 
+def test_cli_inventory_list_assembles_and_persists_cwa(
+    tmp_path,
+    capsys,
+) -> None:
+    snapshot_dir = tmp_path / "snapshots"
+    audit_dir = tmp_path / "audit"
+    cwa_dir = tmp_path / "cwa"
+
+    exit_code = main(
+        [
+            "inventory",
+            "list",
+            "--fleet-clusters",
+            str(tmp_path),
+            "--operator",
+            "operator@example.com",
+            "--idempotency-key",
+            "test-key",
+            "--query",
+            "list clusters",
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--audit-dir",
+            str(audit_dir),
+            "--cwa-dir",
+            str(cwa_dir),
+        ],
+        collector=FakeCollector(),
+        command_id_factory=lambda: UUID(int=1),
+        clock=lambda: datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    evidence_snapshot = json.loads(captured.out)
+
+    cwa_snapshot_files = list(
+        (cwa_dir / "snapshots").glob("*.json")
+    )
+    cwa_trace_files = list((cwa_dir / "traces").glob("*.json"))
+    assert len(cwa_snapshot_files) == 1
+    assert len(cwa_trace_files) == 1
+
+    cwa_snapshot = json.loads(
+        cwa_snapshot_files[0].read_text(encoding="utf-8")
+    )
+    cwa_trace = json.loads(
+        cwa_trace_files[0].read_text(encoding="utf-8")
+    )
+    assert cwa_snapshot["command_id"] == str(UUID(int=1))
+    assert cwa_snapshot["evidence_snapshot_id"] == (
+        evidence_snapshot["snapshot_id"]
+    )
+    assert cwa_snapshot["evidence_snapshot_digest"] == (
+        evidence_snapshot["snapshot_digest"]
+    )
+    assert cwa_trace["cwa_snapshot_id"] == cwa_snapshot["snapshot_id"]
+    assert cwa_trace["cwa_snapshot_digest"] == (
+        cwa_snapshot["snapshot_digest"]
+    )
+    assert cwa_trace["evidence_snapshot_id"] == (
+        evidence_snapshot["snapshot_id"]
+    )
+
+    event_files = list(audit_dir.glob("*.json"))
+    assert len(event_files) == 2
+    events = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in event_files
+    ]
+    evidence_event = next(
+        event
+        for event in events
+        if event["event_type"] == "evidence_collected"
+    )
+    context_event = next(
+        event
+        for event in events
+        if event["event_type"] == "context_assembled"
+    )
+    assert context_event["previous_event_id"] == (
+        evidence_event["event_id"]
+    )
+    assert context_event["data"] == {
+        "cwa_snapshot_id": cwa_snapshot["snapshot_id"],
+        "cwa_snapshot_digest": cwa_snapshot["snapshot_digest"],
+        "trace_id": cwa_trace["trace_id"],
+        "evidence_snapshot_id": evidence_snapshot["snapshot_id"],
+        "evidence_snapshot_digest": (
+            evidence_snapshot["snapshot_digest"]
+        ),
+        "assembler_version": "0.1.0",
+        "persisted": True,
+    }
+
+
 def test_cli_inventory_list_matches_scoped_aws_fixture(
     tmp_path,
     capsys,
