@@ -108,6 +108,21 @@ class DiagnosisModelUnavailable(Exception):
     """Raised when a diagnosis model cannot return a response."""
 
 
+class DiagnosisEvidenceUnavailable(Exception):
+    """Raised when required evidence is unavailable for a diagnosis."""
+
+    def __init__(self, missing_evidence: list[str]) -> None:
+        if not missing_evidence:
+            raise ValueError("missing evidence must not be empty")
+        if any(not entry.strip() for entry in missing_evidence):
+            raise ValueError("missing evidence entries must not be blank")
+        self.missing_evidence = missing_evidence
+        super().__init__(
+            "missing required evidence: "
+            + ", ".join(missing_evidence)
+        )
+
+
 class DiagnosisRecord(BaseModel):
     """Immutable diagnosis response linked to its CWA input."""
 
@@ -170,6 +185,7 @@ class DiagnosisModel(Protocol):
 
 __all__ = [
     "DiagnosisFact",
+    "DiagnosisEvidenceUnavailable",
     "DiagnosisInference",
     "DiagnosisModel",
     "DiagnosisModelUnavailable",

@@ -8,8 +8,9 @@ from uuid import UUID
 
 from aura.cli import main
 from aura.collectors.cluster_state import ClusterStateCollector
-from aura.contracts import EvidenceItem, EvidenceSnapshot
+from aura.contracts import EvidenceSnapshot
 from test_cluster_state_collector import (
+    EmptyCollector,
     FakeGitCollector,
     FakeOpenShiftCollector,
     FakeTektonCollector,
@@ -18,6 +19,23 @@ from test_cluster_state_collector import (
 
 @final
 class FakeClusterStateCollector:
+    def __init__(self, *, complete: bool = True) -> None:
+        if complete:
+            git_collector = FakeGitCollector()
+            openshift_collector = FakeOpenShiftCollector()
+            tekton_collector = FakeTektonCollector()
+        else:
+            git_collector = EmptyCollector()
+            openshift_collector = EmptyCollector()
+            tekton_collector = EmptyCollector()
+        self._collector = ClusterStateCollector(
+            git_collector=git_collector,
+            openshift_collector=openshift_collector,
+            tekton_collector=tekton_collector,
+            cluster_name="example",
+        )
+
+
     def collect(
         self,
         *,
@@ -26,13 +44,7 @@ class FakeClusterStateCollector:
         collected_at: datetime | None = None,
         source_version: str | None = None,
     ) -> EvidenceSnapshot:
-        collector = ClusterStateCollector(
-            git_collector=FakeGitCollector(),
-            openshift_collector=FakeOpenShiftCollector(),
-            tekton_collector=FakeTektonCollector(),
-            cluster_name="example",
-        )
-        return collector.collect(
+        return self._collector.collect(
             command_id=command_id,
             snapshot_id=snapshot_id or UUID(int=40),
             collected_at=collected_at or datetime(2026, 1, 1, tzinfo=UTC),
@@ -40,15 +52,14 @@ class FakeClusterStateCollector:
         )
 
 
-def test_cli_diagnose_state_returns_cluster_diagnosis(
+def run_diagnose_state(
     tmp_path: Path,
-    capsys,
-) -> None:
+    collector: FakeClusterStateCollector,
+) -> tuple[int, Path, Path, Path, Path]:
     snapshot_dir = tmp_path / "snapshots"
     audit_dir = tmp_path / "audit"
     cwa_dir = tmp_path / "cwa"
     diagnosis_dir = tmp_path / "diagnoses"
-
     exit_code = main(
         [
             "diagnose",
@@ -72,9 +83,19 @@ def test_cli_diagnose_state_returns_cluster_diagnosis(
             "--diagnosis-dir",
             str(diagnosis_dir),
         ],
-        collector=FakeClusterStateCollector(),
+        collector=collector,
         command_id_factory=lambda: UUID(int=1),
         clock=lambda: datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    return exit_code, snapshot_dir, audit_dir, cwa_dir, diagnosis_dir
+
+
+def test_cli_diagnose_state_returns_cluster_diagnosis(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    exit_code, snapshot_dir, audit_dir, cwa_dir, diagnosis_dir = (
+        run_diagnose_state(tmp_path, FakeClusterStateCollector())
     )
 
     assert exit_code == 0
@@ -92,3 +113,26 @@ def test_cli_diagnose_state_returns_cluster_diagnosis(
     assert len(list((cwa_dir / "snapshots").glob("*.json"))) == 1
     assert len(list((cwa_dir / "traces").glob("*.json"))) == 1
     assert len(list(diagnosis_dir.glob("*.json"))) == 1
+
+
+def test_cli_diagnose_state_refuses_missing_evidence(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    exit_code, snapshot_dir, audit_dir, cwa_dir, diagnosis_dir = (
+        run_diagnose_state(
+            tmp_path,
+            FakeClusterStateCollector(complete=False),
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "diagnosis refused" in captured.err
+    assert "Git cluster definition" in captured.err
+    assert captured.out == ""
+    assert len(list(snapshot_dir.glob("*.json"))) == 1
+    assert len(list(audit_dir.glob("*.json"))) == 2
+    assert len(list((cwa_dir / "snapshots").glob("*.json"))) == 1
+    assert len(list((cwa_dir / "traces").glob("*.json"))) == 1
+    assert list(diagnosis_dir.glob("*.json")) == []

@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from aura.cwa import CWASlot, CWASlotName, CWASnapshot
 from aura.diagnosis import (
+    DiagnosisEvidenceUnavailable,
     DiagnosisFact,
     DiagnosisInference,
     DiagnosisModelUnavailable,
@@ -169,17 +170,25 @@ def test_diagnosis_service_uses_fallback_when_model_is_unavailable() -> None:
     )
 
 
-def test_diagnosis_service_propagates_unexpected_model_errors() -> None:
-    snapshot = make_cwa_snapshot()
+def test_diagnosis_service_does_not_fallback_on_missing_evidence() -> None:
+    assert_model_error_propagates(
+        DiagnosisEvidenceUnavailable(["cluster definition"])
+    )
 
-    class BrokenModel:
+
+def test_diagnosis_service_propagates_unexpected_model_errors() -> None:
+    assert_model_error_propagates(RuntimeError("unexpected model failure"))
+
+
+
+def assert_model_error_propagates(error: Exception) -> None:
+    class RaisingModel:
         provider_name = "test-provider"
         model_name = "test-model"
 
         def diagnose(self, snapshot: CWASnapshot) -> DiagnosisResponse:
-            raise RuntimeError("unexpected model failure")
+            raise error
 
-    service = DiagnosisService(model=BrokenModel())
-
-    with pytest.raises(RuntimeError):
-        service.diagnose(snapshot)
+    service = DiagnosisService(model=RaisingModel())
+    with pytest.raises(type(error)):
+        service.diagnose(make_cwa_snapshot())

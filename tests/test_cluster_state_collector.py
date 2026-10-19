@@ -108,6 +108,29 @@ class FakeTektonCollector:
         )
 
 
+@final
+class EmptyCollector:
+    def collect(
+        self,
+        *,
+        command_id: UUID,
+        snapshot_id: UUID | None = None,
+        collected_at: datetime | None = None,
+        source_version: str | None = None,
+    ) -> EvidenceSnapshot:
+        return EvidenceSnapshot(
+            snapshot_id=snapshot_id or UUID(int=60),
+            command_id=command_id,
+            collector="empty",
+            collector_version="test",
+            collected_at=collected_at or datetime(2026, 1, 1, tzinfo=UTC),
+            source="empty",
+            source_version=source_version or "empty",
+            items=[],
+            redactions=[],
+        )
+
+
 def test_cluster_state_collector_correlates_evidence() -> None:
     collector = ClusterStateCollector(
         git_collector=FakeGitCollector(),
@@ -142,28 +165,6 @@ def test_cluster_state_collector_correlates_evidence() -> None:
 
 
 def test_cluster_state_collector_reports_missing_sources() -> None:
-    @final
-    class EmptyCollector:
-        def collect(
-            self,
-            *,
-            command_id: UUID,
-            snapshot_id: UUID | None = None,
-            collected_at: datetime | None = None,
-            source_version: str | None = None,
-        ) -> EvidenceSnapshot:
-            return EvidenceSnapshot(
-                snapshot_id=snapshot_id or UUID(int=60),
-                command_id=command_id,
-                collector="empty",
-                collector_version="test",
-                collected_at=collected_at or datetime(2026, 1, 1, tzinfo=UTC),
-                source="empty",
-                source_version=source_version or "empty",
-                items=[],
-                redactions=[],
-            )
-
     collector = ClusterStateCollector(
         git_collector=EmptyCollector(),
         openshift_collector=EmptyCollector(),

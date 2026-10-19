@@ -34,8 +34,12 @@ from aura.contracts import (
     CommandType,
     EvidenceSnapshot,
 )
-from aura.cwa import CWASnapshot
-from aura.diagnosis import DiagnosisModel, DiagnosisRecord
+from aura.cwa import CWASnapshot, CWATrace
+from aura.diagnosis import (
+    DiagnosisEvidenceUnavailable,
+    DiagnosisModel,
+    DiagnosisRecord,
+)
 from aura.diagnosis_store import (
     DiagnosisAlreadyStored,
     JsonDiagnosisStore,
@@ -351,6 +355,23 @@ def _diagnosis_record(
     )
 
 
+def _diagnosis_or_refusal(
+    command_id: UUID,
+    snapshot: CWASnapshot,
+    diagnosed_at: datetime,
+    model: DiagnosisModel | None,
+) -> tuple[DiagnosisRecord | None, str | None]:
+    try:
+        return _diagnosis_record(
+            command_id,
+            snapshot,
+            diagnosed_at,
+            model=model,
+        ), None
+    except DiagnosisEvidenceUnavailable as error:
+        return None, f"diagnosis refused: {error}"
+
+
 def _model_audit_event(
     command: CommandEnvelope,
     diagnosis_record: DiagnosisRecord,
@@ -382,6 +403,44 @@ def _model_audit_event(
         },
         previous_event_id=previous_event_id,
     )
+
+
+def _diagnosis_trace(
+    assembly: CWAAssemblyResult,
+    diagnosis_record: DiagnosisRecord | None,
+) -> CWATrace:
+    if diagnosis_record is None:
+        return assembly.trace
+    return assembly.trace.model_copy(
+        update={
+            "model_provider": diagnosis_record.provider_name,
+            "model_name": diagnosis_record.model_name,
+            "response_digest": diagnosis_record.response_digest,
+        }
+    )
+
+
+def _diagnose_and_trace(
+    args: argparse.Namespace,
+    command_id: UUID,
+    assembly: CWAAssemblyResult,
+    diagnosis_model: DiagnosisModel | None,
+    always_diagnose: bool,
+    clock: Callable[[], datetime],
+) -> tuple[DiagnosisRecord | None, str | None, CWATrace]:
+    if not always_diagnose and args.diagnosis_dir is None:
+        return None, None, assembly.trace
+
+    diagnosis_record, refusal_error = _diagnosis_or_refusal(
+        command_id,
+        assembly.snapshot,
+        clock(),
+        diagnosis_model,
+    )
+    trace = _diagnosis_trace(assembly, diagnosis_record)
+    if args.diagnosis_dir is not None and diagnosis_record is not None:
+        JsonDiagnosisStore(args.diagnosis_dir).save(diagnosis_record)
+    return diagnosis_record, refusal_error, trace
 
 
 def _evidence_audit_event(
@@ -508,27 +567,14 @@ def _assemble_and_diagnose(
         JsonCWASnapshotStore(args.cwa_dir / "snapshots").save(
             assembly.snapshot
         )
-        diagnosis_record: DiagnosisRecord | None = None
-        if args.diagnosis_dir is not None or always_diagnose:
-            diagnosis_record = _diagnosis_record(
-                command.command_id,
-                assembly.snapshot,
-                clock(),
-                model=diagnosis_model,
-            )
-            trace = assembly.trace.model_copy(
-                update={
-                    "model_provider": diagnosis_record.provider_name,
-                    "model_name": diagnosis_record.model_name,
-                    "response_digest": diagnosis_record.response_digest,
-                }
-            )
-            if args.diagnosis_dir is not None:
-                JsonDiagnosisStore(args.diagnosis_dir).save(
-                    diagnosis_record
-                )
-        else:
-            trace = assembly.trace
+        diagnosis_record, refusal_error, trace = _diagnose_and_trace(
+            args,
+            command.command_id,
+            assembly,
+            diagnosis_model,
+            always_diagnose,
+            clock,
+        )
         JsonCWATraceStore(args.cwa_dir / "traces").save(trace)
     except (
         InvalidCWAAssembly,
@@ -562,7 +608,7 @@ def _assemble_and_diagnose(
         except AuditEventAlreadyStored as error:
             return None, str(error)
 
-    return diagnosis_record, None
+    return diagnosis_record, refusal_error
 
 
 def _run_workflow_inspect(

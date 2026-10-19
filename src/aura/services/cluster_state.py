@@ -7,9 +7,9 @@ from aura.authorization import OperatorRole
 from aura.contracts import CommandEnvelope, CommandType, EvidenceItem
 from aura.cwa import CWASnapshot
 from aura.diagnosis import (
+    DiagnosisEvidenceUnavailable,
     DiagnosisFact,
     DiagnosisInference,
-    DiagnosisModelUnavailable,
     DiagnosisResponse,
     RecommendedInspection,
 )
@@ -51,8 +51,8 @@ class ClusterStateDiagnosisModel:
             None,
         )
         if correlation is None:
-            raise DiagnosisModelUnavailable(
-                "cluster state correlation is missing"
+            raise DiagnosisEvidenceUnavailable(
+                ["Cluster state correlation"]
             )
 
         items_by_id = {item.item_id: item for item in snapshot_items}
@@ -77,6 +77,8 @@ class ClusterStateDiagnosisModel:
         missing_evidence = list(
             correlation.data.get("missing_evidence", []),
         )
+        if missing_evidence:
+            raise DiagnosisEvidenceUnavailable(missing_evidence)
 
         facts = self._facts(
             git_item=git_item,
@@ -95,18 +97,14 @@ class ClusterStateDiagnosisModel:
         inferences = self._inferences(failed_pipeline)
         recommended_inspection = self._recommended_inspection(
             cluster_name=str(correlation.data["cluster_name"]),
-            missing_evidence=missing_evidence,
             failed_pipeline=failed_pipeline,
         )
         summary = self._summary(
             cluster_name=str(correlation.data["cluster_name"]),
-            missing_evidence=missing_evidence,
             failed_pipeline=failed_pipeline,
         )
         confidence = (
-            0.4
-            if missing_evidence
-            else 0.8
+            0.8
             if failed_pipeline is not None
             else 0.9
         )
@@ -115,7 +113,7 @@ class ClusterStateDiagnosisModel:
             summary=summary,
             facts=facts,
             inferences=inferences,
-            missing_evidence=missing_evidence,
+            missing_evidence=[],
             recommended_inspection=recommended_inspection,
             confidence=confidence,
             evidence_ids=[fact.evidence_id for fact in facts],
@@ -201,34 +199,9 @@ class ClusterStateDiagnosisModel:
     def _recommended_inspection(
         *,
         cluster_name: str,
-        missing_evidence: list[str],
         failed_pipeline: EvidenceItem | None,
     ) -> RecommendedInspection:
-        if missing_evidence:
-            if set(missing_evidence) == {
-                "Git cluster definition",
-                "OpenShift actual state",
-                "Tekton PipelineRun status",
-            }:
-                description = (
-                    f"Inspect the Git, OpenShift, and Tekton evidence for "
-                    f"{cluster_name}."
-                )
-            elif "Git cluster definition" in missing_evidence:
-                description = (
-                    f"Inspect the fleet-clusters Git definition for "
-                    f"{cluster_name}."
-                )
-            elif "OpenShift actual state" in missing_evidence:
-                description = (
-                    f"Inspect the OpenShift ClusterDeployment and "
-                    f"ManagedCluster for {cluster_name}."
-                )
-            else:
-                description = (
-                    f"Inspect recent Tekton PipelineRuns for {cluster_name}."
-                )
-        elif failed_pipeline is not None:
+        if failed_pipeline is not None:
             failed_task = failed_pipeline.data.get("failed_task") or {}
             task_name = failed_task.get("name", "the failed task")
             description = f"Inspect the failed TaskRun {task_name}."
@@ -242,11 +215,8 @@ class ClusterStateDiagnosisModel:
     def _summary(
         *,
         cluster_name: str,
-        missing_evidence: list[str],
         failed_pipeline: EvidenceItem | None,
     ) -> str:
-        if missing_evidence:
-            return f"Cluster {cluster_name} has incomplete evidence."
         if failed_pipeline is not None:
             return (
                 f"Cluster {cluster_name} is defined and deployed, but its "

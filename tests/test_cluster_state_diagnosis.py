@@ -12,25 +12,38 @@ from aura.contracts import (
     CommandEnvelope,
     CommandState,
     CommandType,
+    EvidenceSnapshot,
 )
 from aura.services.cwa import (
     CWAAssemblyPolicy,
     CWAAssemblyRequest,
     CWAAssembler,
 )
+import pytest
+
+from aura.diagnosis import DiagnosisEvidenceUnavailable
 from aura.services.cluster_state import ClusterStateDiagnosisModel
 from test_cluster_state_collector import (
+    EmptyCollector,
     FakeGitCollector,
     FakeOpenShiftCollector,
     FakeTektonCollector,
 )
 
 
-def make_snapshot():
+def make_snapshot(*, complete: bool = True):
+    if complete:
+        git_collector = FakeGitCollector()
+        openshift_collector = FakeOpenShiftCollector()
+        tekton_collector = FakeTektonCollector()
+    else:
+        git_collector = EmptyCollector()
+        openshift_collector = EmptyCollector()
+        tekton_collector = EmptyCollector()
     collector = ClusterStateCollector(
-        git_collector=FakeGitCollector(),
-        openshift_collector=FakeOpenShiftCollector(),
-        tekton_collector=FakeTektonCollector(),
+        git_collector=git_collector,
+        openshift_collector=openshift_collector,
+        tekton_collector=tekton_collector,
         cluster_name="example",
     )
     return collector.collect(
@@ -116,53 +129,35 @@ def test_cluster_state_diagnosis_model_returns_failed_workflow_answer() -> None:
 
 
 def test_cluster_state_diagnosis_model_reports_missing_evidence() -> None:
-    @final
-    class EmptyCollector:
-        def collect(
-            self,
-            *,
-            command_id: UUID,
-            snapshot_id: UUID | None = None,
-            collected_at: datetime | None = None,
-            source_version: str | None = None,
-        ):
-            from aura.contracts import EvidenceSnapshot
-
-            return EvidenceSnapshot(
-                snapshot_id=snapshot_id or UUID(int=60),
-                command_id=command_id,
-                collector="empty",
-                collector_version="test",
-                collected_at=collected_at or datetime(2026, 1, 1, tzinfo=UTC),
-                source="empty",
-                source_version=source_version or "empty",
-                items=[],
-                redactions=[],
-            )
-
-    collector = ClusterStateCollector(
-        git_collector=EmptyCollector(),
-        openshift_collector=EmptyCollector(),
-        tekton_collector=EmptyCollector(),
-        cluster_name="example",
-    )
-    evidence_snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
+    evidence_snapshot = make_snapshot(complete=False)
     snapshot = make_cwa_snapshot(evidence_snapshot)
     model = ClusterStateDiagnosisModel()
 
-    response = model.diagnose(snapshot)
+    with pytest.raises(DiagnosisEvidenceUnavailable) as error:
+        model.diagnose(snapshot)
 
-    assert response.summary == "Cluster example has incomplete evidence."
-    assert response.missing_evidence == [
+    assert error.value.missing_evidence == [
         "Git cluster definition",
         "OpenShift actual state",
         "Tekton PipelineRun status",
     ]
-    assert response.recommended_inspection.description == (
-        "Inspect the Git, OpenShift, and Tekton evidence for example."
+
+
+def test_cluster_state_diagnosis_model_refuses_missing_correlation() -> None:
+    evidence_snapshot = EvidenceSnapshot(
+        snapshot_id=UUID(int=40),
+        command_id=UUID(int=1),
+        collector="empty",
+        collector_version="test",
+        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+        source="empty",
+        source_version="test",
+        items=[],
+        redactions=[],
     )
-    assert response.confidence == 0.4
+    snapshot = make_cwa_snapshot(evidence_snapshot)
+
+    with pytest.raises(DiagnosisEvidenceUnavailable) as error:
+        ClusterStateDiagnosisModel().diagnose(snapshot)
+
+    assert error.value.missing_evidence == ["Cluster state correlation"]
