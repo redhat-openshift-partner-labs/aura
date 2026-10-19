@@ -12,6 +12,10 @@ from aura.collectors.git_inventory import GitInventoryCollector
 from aura.collectors.openshift_cli_client import OpenShiftCLIInventoryClient
 from aura.collectors.openshift_inventory import OpenShiftInventoryCollector
 from aura.contracts import CommandEnvelope, CommandState, CommandType
+from aura.evidence_store import (
+    EvidenceSnapshotAlreadyStored,
+    JsonEvidenceSnapshotStore,
+)
 from aura.services.inventory import (
     EvidenceCollector,
     InventoryService,
@@ -47,6 +51,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         required=False,
         help="Path to a read-only OpenShift kubeconfig",
+    )
+    list_parser.add_argument(
+        "--snapshot-dir",
+        type=Path,
+        required=False,
+        help="Directory in which to store the evidence snapshot",
     )
     list_parser.add_argument("--operator", required=True)
     list_parser.add_argument("--idempotency-key", required=True)
@@ -111,6 +121,15 @@ def main(
     ) as error:
         print(f"aura: {error}", file=stderr)
         return 2
+
+    if args.snapshot_dir is not None:
+        try:
+            JsonEvidenceSnapshotStore(args.snapshot_dir).save(
+                result.snapshot
+            )
+        except EvidenceSnapshotAlreadyStored as error:
+            print(f"aura: {error}", file=stderr)
+            return 2
 
     print(result.snapshot.model_dump_json(indent=2))
     return 0

@@ -65,6 +65,43 @@ def test_cli_inventory_list_writes_snapshot_json(
     assert captured.err == ""
 
 
+def test_cli_inventory_list_persists_snapshot(
+    tmp_path,
+    capsys,
+) -> None:
+    snapshot_dir = tmp_path / "snapshots"
+
+    exit_code = main(
+        [
+            "inventory",
+            "list",
+            "--fleet-clusters",
+            str(tmp_path),
+            "--operator",
+            "operator@example.com",
+            "--idempotency-key",
+            "test-key",
+            "--snapshot-dir",
+            str(snapshot_dir),
+        ],
+        collector=FakeCollector(),
+        command_id_factory=lambda: UUID(int=1),
+    )
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    snapshot = json.loads(captured.out)
+    snapshot_path = (
+        snapshot_dir / f"{snapshot['snapshot_id']}.json"
+    )
+
+    assert snapshot_path.is_file()
+    stored_snapshot = json.loads(
+        snapshot_path.read_text(encoding="utf-8")
+    )
+    assert stored_snapshot == snapshot
+
+
 def test_cli_inventory_list_matches_scoped_aws_fixture(
     tmp_path,
     capsys,
