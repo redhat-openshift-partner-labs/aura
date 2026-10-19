@@ -60,9 +60,58 @@ class CommandEnvelope(BaseModel):
         return value
 
 
+class EvidenceItem(BaseModel):
+    """A single typed observation produced by an evidence collector."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: UUID
+    kind: str = Field(min_length=1)
+    data: dict[str, Any]
+
+    @field_validator("kind")
+    @classmethod
+    def reject_blank_kind(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be blank")
+        return value
+
+
+class EvidenceSnapshot(BaseModel):
+    """Frozen output from one deterministic evidence collector."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    snapshot_id: UUID
+    command_id: UUID
+    collector: str = Field(min_length=1)
+    collector_version: str = Field(min_length=1)
+    collected_at: AwareDatetime
+    source: str = Field(min_length=1)
+    source_version: str = Field(min_length=1)
+    items: list[EvidenceItem] = Field(default_factory=list)
+    redactions: list[str] = Field(default_factory=list)
+
+    @field_validator("collector", "collector_version", "source", "source_version")
+    @classmethod
+    def reject_blank_snapshot_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be blank")
+        return value
+
+    @field_validator("redactions")
+    @classmethod
+    def reject_blank_redactions(cls, value: list[str]) -> list[str]:
+        if any(not entry.strip() for entry in value):
+            raise ValueError("redaction entries must not be blank")
+        return value
+
+
 __all__ = [
     "CommandEnvelope",
     "CommandState",
     "CommandType",
+    "EvidenceItem",
+    "EvidenceSnapshot",
 ]
 
