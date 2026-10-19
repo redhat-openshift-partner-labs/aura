@@ -9,6 +9,8 @@ from uuid import UUID, uuid4
 
 from aura.authorization import OperatorRole
 from aura.collectors.git_inventory import GitInventoryCollector
+from aura.collectors.openshift_cli_client import OpenShiftCLIInventoryClient
+from aura.collectors.openshift_inventory import OpenShiftInventoryCollector
 from aura.contracts import CommandEnvelope, CommandState, CommandType
 from aura.services.inventory import (
     EvidenceCollector,
@@ -29,10 +31,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     list_parser = inventory_command_parser.add_parser("list")
     list_parser.add_argument(
+        "--source",
+        choices=["git", "openshift"],
+        default="git",
+        help="Inventory source to query",
+    )
+    list_parser.add_argument(
         "--fleet-clusters",
         type=Path,
-        required=True,
+        required=False,
         help="Path to the fleet-clusters Git checkout",
+    )
+    list_parser.add_argument(
+        "--openshift-kubeconfig",
+        type=Path,
+        required=False,
+        help="Path to a read-only OpenShift kubeconfig",
     )
     list_parser.add_argument("--operator", required=True)
     list_parser.add_argument("--idempotency-key", required=True)
@@ -54,6 +68,16 @@ def main(
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> int:
     args = build_parser().parse_args(argv)
+    if args.source == "git" and args.fleet_clusters is None:
+        print("aura: --fleet-clusters is required for --source git", file=stderr)
+        return 2
+    if args.source == "openshift" and args.openshift_kubeconfig is None:
+        print(
+            "aura: --openshift-kubeconfig is required for --source openshift",
+            file=stderr,
+        )
+        return 2
+
     command_id = command_id_factory()
     command = CommandEnvelope(
         command_id=command_id,
@@ -64,9 +88,18 @@ def main(
         idempotency_key=args.idempotency_key,
         status=CommandState.RECEIVED,
     )
-    service = InventoryService(
-        collector=collector or GitInventoryCollector(args.fleet_clusters)
-    )
+    if collector is not None:
+        selected_collector = collector
+    elif args.source == "openshift":
+        selected_collector = OpenShiftInventoryCollector(
+            client=OpenShiftCLIInventoryClient(
+                kubeconfig_path=args.openshift_kubeconfig
+            )
+        )
+    else:
+        selected_collector = GitInventoryCollector(args.fleet_clusters)
+
+    service = InventoryService(collector=selected_collector)
     roles = {OperatorRole(role) for role in args.role}
 
     try:
