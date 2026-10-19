@@ -1,4 +1,4 @@
 """Aura application services."""
 
-__all__ = ["inventory"]
+__all__ = ["cwa", "inventory"]
 
