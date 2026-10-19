@@ -107,7 +107,44 @@ class EvidenceSnapshot(BaseModel):
         return value
 
 
+class AuditEventType(StrEnum):
+    """Event types recorded in the Aura audit trail."""
+
+    COMMAND_RECEIVED = "command_received"
+    EVIDENCE_COLLECTED = "evidence_collected"
+    CONTEXT_ASSEMBLED = "context_assembled"
+    MODEL_CALLED = "model_called"
+    PROPOSAL_CREATED = "proposal_created"
+    APPROVAL_RECORDED = "approval_recorded"
+    EXECUTION_STARTED = "execution_started"
+    EXECUTION_FINISHED = "execution_finished"
+    COMMAND_REJECTED = "command_rejected"
+
+
+class AuditEvent(BaseModel):
+    """An append-only record for an Aura action."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: UUID
+    command_id: UUID
+    event_type: AuditEventType
+    occurred_at: AwareDatetime
+    actor: str = Field(min_length=1)
+    data: dict[str, Any]
+    previous_event_id: UUID | None = None
+
+    @field_validator("actor")
+    @classmethod
+    def reject_blank_actor(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be blank")
+        return value
+
+
 __all__ = [
+    "AuditEvent",
+    "AuditEventType",
     "CommandEnvelope",
     "CommandState",
     "CommandType",
