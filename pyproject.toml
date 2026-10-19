@@ -5,6 +5,7 @@ description = "Operator control plane for OpenShift Partner Labs"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.11",
+    "PyYAML>=6.0.2",
 ]
 
 [dependency-groups]
