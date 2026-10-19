@@ -1,0 +1,25 @@
+[project]
+name = "aura-control-plane"
+version = "0.1.0"
+description = "Operator control plane for OpenShift Partner Labs"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.11",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aura"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
