@@ -36,6 +36,7 @@ from aura.contracts import (
 )
 from aura.cwa import CWASnapshot, CWATrace
 from aura.diagnosis import (
+    DiagnosisAnswer,
     DiagnosisEvidenceUnavailable,
     DiagnosisModel,
     DiagnosisRecord,
@@ -420,6 +421,19 @@ def _diagnosis_trace(
     )
 
 
+def _diagnosis_answer(
+    diagnosis_record: DiagnosisRecord,
+    assembly: CWAAssemblyResult,
+    evidence_snapshot: EvidenceSnapshot,
+) -> DiagnosisAnswer:
+    return DiagnosisAnswer(
+        diagnosis=diagnosis_record,
+        evidence_snapshot_id=evidence_snapshot.snapshot_id,
+        evidence_snapshot_digest=evidence_snapshot.snapshot_digest,
+        cwa_trace_id=assembly.trace.trace_id,
+    )
+
+
 def _diagnose_and_trace(
     args: argparse.Namespace,
     command_id: UUID,
@@ -542,7 +556,7 @@ def _assemble_and_diagnose(
     diagnosis_model: DiagnosisModel | None,
     always_diagnose: bool,
     clock: Callable[[], datetime],
-) -> tuple[DiagnosisRecord | None, str | None]:
+) -> tuple[DiagnosisAnswer | None, str | None]:
     evidence_audit_event = _evidence_audit_event(
         command,
         result.snapshot,
@@ -608,7 +622,16 @@ def _assemble_and_diagnose(
         except AuditEventAlreadyStored as error:
             return None, str(error)
 
-    return diagnosis_record, refusal_error
+    diagnosis_answer = (
+        _diagnosis_answer(
+            diagnosis_record,
+            assembly,
+            result.snapshot,
+        )
+        if diagnosis_record is not None
+        else None
+    )
+    return diagnosis_answer, refusal_error
 
 
 def _run_workflow_inspect(
@@ -690,14 +713,14 @@ def _run_diagnose_state(
         print(f"aura: {error}", file=stderr)
         return 2
 
-    diagnosis_record: DiagnosisRecord | None = None
+    diagnosis_answer: DiagnosisAnswer | None = None
     _, persistence_error = _persist_evidence(args, command, result)
     if persistence_error is not None:
         print(f"aura: {persistence_error}", file=stderr)
         return 2
 
     if args.cwa_dir is not None:
-        diagnosis_record, assembly_error = _assemble_and_diagnose(
+        diagnosis_answer, assembly_error = _assemble_and_diagnose(
             args,
             command,
             result,
@@ -711,14 +734,14 @@ def _run_diagnose_state(
             print(f"aura: {assembly_error}", file=stderr)
             return 2
 
-    if diagnosis_record is None:
+    if diagnosis_answer is None:
         print(
             "aura: --cwa-dir is required for diagnose state",
             file=stderr,
         )
         return 2
 
-    print(diagnosis_record.response.model_dump_json(indent=2))
+    print(diagnosis_answer.model_dump_json(indent=2))
     return 0
 
 

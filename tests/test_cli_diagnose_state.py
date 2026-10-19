@@ -100,13 +100,27 @@ def test_cli_diagnose_state_returns_cluster_diagnosis(
 
     assert exit_code == 0
     captured = capsys.readouterr()
-    response = json.loads(captured.out)
+    answer = json.loads(captured.out)
+    diagnosis = answer["diagnosis"]
+    response = diagnosis["response"]
     assert response["summary"] == (
         "Cluster example is defined and deployed, but its latest workflow failed."
     )
     assert response["recommended_inspection"]["description"] == (
         "Inspect the failed TaskRun provision-task-abc."
     )
+    assert answer["evidence_snapshot_id"] == str(UUID(int=40))
+    assert answer["evidence_snapshot_digest"] == json.loads(
+        next(snapshot_dir.glob("*.json")).read_text()
+    )["snapshot_digest"]
+    assert answer["cwa_trace_id"] == json.loads(
+        next((cwa_dir / "traces").glob("*.json")).read_text()
+    )["trace_id"]
+    assert diagnosis["diagnosis_id"] == json.loads(
+        next(diagnosis_dir.glob("*.json")).read_text()
+    )["diagnosis_id"]
+    assert diagnosis["provider_name"] == "aura"
+    assert diagnosis["model_name"] == "cluster-state-deterministic"
 
     assert len(list(snapshot_dir.glob("*.json"))) == 1
     assert len(list(audit_dir.glob("*.json"))) == 3

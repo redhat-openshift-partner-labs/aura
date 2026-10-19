@@ -156,6 +156,17 @@ class DiagnosisRecord(BaseModel):
         return self
 
 
+class DiagnosisAnswer(BaseModel):
+    """Operator-facing diagnosis bundle with provenance links."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    diagnosis: DiagnosisRecord
+    evidence_snapshot_id: UUID
+    evidence_snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    cwa_trace_id: UUID
+
+
 def compute_diagnosis_response_digest(
     response: DiagnosisResponse,
 ) -> str:
@@ -184,6 +195,7 @@ class DiagnosisModel(Protocol):
 
 
 __all__ = [
+    "DiagnosisAnswer",
     "DiagnosisFact",
     "DiagnosisEvidenceUnavailable",
     "DiagnosisInference",
