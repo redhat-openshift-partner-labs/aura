@@ -119,6 +119,7 @@ class GitInventoryCollector:
             ),
             "aws_credentials_mode": metadata.get("aws-credentials-mode"),
             "crossplane_template": crossplane_template,
+            "kustomizations": self._kustomizations(cluster_path),
             "install_image_set": self._patch_value(
                 cluster_patches,
                 "/spec/provisioning/imageSetRef/name",
@@ -135,6 +136,14 @@ class GitInventoryCollector:
     def _load_yaml(path: Path) -> Any:
         with path.open(encoding="utf-8") as stream:
             return yaml.safe_load(stream)
+
+    @staticmethod
+    def _kustomizations(cluster_path: Path) -> list[str]:
+        return sorted(
+            path.name
+            for path in cluster_path.iterdir()
+            if path.is_dir() and (path / "kustomization.yaml").is_file()
+        )
 
     @staticmethod
     def _patch_value(patches: Any, json_path: str) -> Any:

@@ -12,10 +12,22 @@ def write_cluster(root: Path) -> None:
     metadata = cluster / "metadata.yaml"
     cluster_deployment = cluster / "hive" / "patches" / "clusterdeployment.yaml"
     managed_cluster = cluster / "hive" / "patches" / "managedcluster.yaml"
+    hive_kustomization = cluster / "hive" / "kustomization.yaml"
     crossplane = cluster / "crossplane" / "kustomization.yaml"
 
     metadata.parent.mkdir(parents=True)
     cluster_deployment.parent.mkdir(parents=True)
+    hive_kustomization.write_text(
+        "\n".join(
+            [
+                "apiVersion: kustomize.config.k8s.io/v1beta1",
+                "kind: Kustomization",
+                "resources:",
+                "- patches",
+            ]
+        ),
+        encoding="utf-8",
+    )
     crossplane.parent.mkdir(parents=True)
 
     metadata.write_text(
@@ -100,6 +112,10 @@ def test_git_inventory_collector_returns_typed_evidence(tmp_path: Path) -> None:
         "environment": "development",
         "aws_credentials_mode": "scoped",
         "crossplane_template": "crossplane-scoped",
+        "kustomizations": [
+            "crossplane",
+            "hive",
+        ],
         "install_image_set": "img4.21.13-x86-64-appsub",
     }
     assert snapshot.redactions == []
