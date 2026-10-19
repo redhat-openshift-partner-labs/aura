@@ -224,6 +224,4 @@ def test_cli_inventory_list_matches_scoped_aws_fixture(
         ).read_text(encoding="utf-8")
     )
     actual = json.loads(captured.out)
-    del actual["items"][0]["item_id"]
-    del expected["items"][0]["item_id"]
     assert actual == expected

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
 from pydantic import ValidationError
 
-from aura.contracts import EvidenceItem, EvidenceSnapshot
+from aura.contracts import (
+    EvidenceItem,
+    EvidenceSnapshot,
+    compute_snapshot_digest,
+)
 
 
 def make_snapshot(**overrides: object) -> EvidenceSnapshot:
@@ -47,6 +52,33 @@ def test_evidence_snapshot_round_trips_through_json() -> None:
     restored = EvidenceSnapshot.model_validate_json(snapshot.model_dump_json())
 
     assert restored == snapshot
+
+
+def test_evidence_snapshot_computes_digest() -> None:
+    snapshot = make_snapshot()
+
+    assert snapshot.snapshot_digest == compute_snapshot_digest(snapshot)
+    assert len(snapshot.snapshot_digest) == 64
+    assert all(
+        character in "0123456789abcdef"
+        for character in snapshot.snapshot_digest
+    )
+
+
+def test_evidence_snapshot_digest_is_deterministic() -> None:
+    first = make_snapshot()
+    second = make_snapshot()
+
+    assert first.snapshot_digest == second.snapshot_digest
+
+
+def test_evidence_snapshot_detects_digest_tampering() -> None:
+    snapshot = make_snapshot()
+    value = json.loads(snapshot.model_dump_json())
+    value["items"][0]["data"]["cluster_name"] = "tampered"
+
+    with pytest.raises(ValidationError):
+        EvidenceSnapshot.model_validate(value)
 
 
 def test_evidence_snapshot_allows_empty_items_for_missing_evidence() -> None:

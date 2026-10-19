@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from enum import StrEnum
+from hashlib import sha256
 from typing import Any
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 
 class CommandType(StrEnum):
@@ -91,6 +100,7 @@ class EvidenceSnapshot(BaseModel):
     source_version: str = Field(min_length=1)
     items: list[EvidenceItem] = Field(default_factory=list)
     redactions: list[str] = Field(default_factory=list)
+    snapshot_digest: str = Field(default="")
 
     @field_validator("collector", "collector_version", "source", "source_version")
     @classmethod
@@ -105,6 +115,28 @@ class EvidenceSnapshot(BaseModel):
         if any(not entry.strip() for entry in value):
             raise ValueError("redaction entries must not be blank")
         return value
+
+    @model_validator(mode="after")
+    def validate_snapshot_digest(self) -> "EvidenceSnapshot":
+        computed_digest = compute_snapshot_digest(self)
+        if not self.snapshot_digest:
+            self.snapshot_digest = computed_digest
+        elif self.snapshot_digest != computed_digest:
+            raise ValueError("snapshot digest does not match snapshot content")
+        return self
+
+
+def compute_snapshot_digest(snapshot: EvidenceSnapshot) -> str:
+    """Return a canonical SHA-256 digest for an evidence snapshot."""
+
+    payload = snapshot.model_dump(mode="json", exclude={"snapshot_digest"})
+    canonical_json = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return sha256(canonical_json.encode("utf-8")).hexdigest()
 
 
 class AuditEventType(StrEnum):
@@ -150,5 +182,6 @@ __all__ = [
     "CommandType",
     "EvidenceItem",
     "EvidenceSnapshot",
+    "compute_snapshot_digest",
 ]
 

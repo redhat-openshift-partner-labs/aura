@@ -8,7 +8,7 @@
   "source_version": "492bc8e07afddcd557441ddb7d72158de60ab8cb",
   "items": [
     {
-      "item_id": "00000000-0000-0000-0000-000000000051",
+      "item_id": "055d89c2-e2f9-5b3e-b622-ad063960c351",
       "kind": "cluster_definition",
       "data": {
         "path": "provision/0171d46a-scopedaws",
@@ -27,6 +27,7 @@
       }
     }
   ],
-  "redactions": []
+  "redactions": [],
+  "snapshot_digest": "b4003f0ce02b98df5843e85f4047ccd436227dd57ab622675020444a4032d56f"
 }
 
