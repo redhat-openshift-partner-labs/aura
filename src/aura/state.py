@@ -17,12 +17,20 @@ class CommandStateMachine:
             {CommandState.COLLECTING_EVIDENCE}
         ),
         CommandState.COLLECTING_EVIDENCE: frozenset(
-            {CommandState.ASSEMBLING_CONTEXT}
+            {
+                CommandState.ASSEMBLING_CONTEXT,
+                CommandState.SUCCEEDED,
+                CommandState.FAILED,
+            }
         ),
-        CommandState.ASSEMBLING_CONTEXT: frozenset({CommandState.MODEL_CALLED}),
-        CommandState.MODEL_CALLED: frozenset({CommandState.PROPOSAL_READY}),
+        CommandState.ASSEMBLING_CONTEXT: frozenset(
+            {CommandState.MODEL_CALLED, CommandState.FAILED}
+        ),
+        CommandState.MODEL_CALLED: frozenset(
+            {CommandState.PROPOSAL_READY, CommandState.FAILED}
+        ),
         CommandState.PROPOSAL_READY: frozenset(
-            {CommandState.AWAITING_APPROVAL}
+            {CommandState.AWAITING_APPROVAL, CommandState.FAILED}
         ),
         CommandState.AWAITING_APPROVAL: frozenset(
             {CommandState.APPROVED, CommandState.REJECTED}
