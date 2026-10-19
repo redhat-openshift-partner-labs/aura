@@ -14,7 +14,11 @@ from aura.audit_store import (
 from aura.authorization import OperatorRole
 from aura.collectors.git_inventory import GitInventoryCollector
 from aura.collectors.openshift_cli_client import OpenShiftCLIInventoryClient
+from aura.collectors.openshift_cli_tekton_client import (
+    OpenShiftCLITektonClient,
+)
 from aura.collectors.openshift_inventory import OpenShiftInventoryCollector
+from aura.collectors.tekton_inventory import TektonInventoryCollector
 from aura.cwa_store import (
     CWASnapshotAlreadyStored,
     CWATraceAlreadyStored,
@@ -53,7 +57,108 @@ from aura.services.inventory import (
     InvalidCommandType,
     UnauthorizedCommand,
 )
+from aura.services.workflow import (
+    InvalidWorkflowCommand,
+    UnauthorizedWorkflowCommand,
+    WorkflowService,
+)
 from aura.state import InvalidCommandTransition
+
+
+def _add_evidence_output_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    parser.add_argument(
+        "--snapshot-dir",
+        type=Path,
+        required=False,
+        help="Directory in which to store the evidence snapshot",
+    )
+    parser.add_argument(
+        "--audit-dir",
+        type=Path,
+        required=False,
+        help="Directory in which to store audit events",
+    )
+
+
+def _add_operator_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    parser.add_argument("--operator", required=True)
+    parser.add_argument("--idempotency-key", required=True)
+    parser.add_argument(
+        "--role",
+        action="append",
+        choices=[role.value for role in OperatorRole],
+        default=["viewer"],
+        help="Operator role; may be repeated",
+    )
+
+
+def _add_inventory_list_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    parser.add_argument(
+        "--source",
+        choices=["git", "openshift"],
+        default="git",
+        help="Inventory source to query",
+    )
+    parser.add_argument(
+        "--fleet-clusters",
+        type=Path,
+        required=False,
+        help="Path to the fleet-clusters Git checkout",
+    )
+    parser.add_argument(
+        "--openshift-kubeconfig",
+        type=Path,
+        required=False,
+        help="Path to a read-only OpenShift kubeconfig",
+    )
+    _add_evidence_output_arguments(parser)
+    parser.add_argument(
+        "--cwa-dir",
+        type=Path,
+        required=False,
+        help="Directory in which to store CWA snapshots and traces",
+    )
+    parser.add_argument(
+        "--diagnosis-dir",
+        type=Path,
+        required=False,
+        help="Directory in which to store diagnosis responses",
+    )
+    parser.add_argument(
+        "--query",
+        default="list inventory",
+        help="Operator query used for CWA assembly",
+    )
+    _add_operator_arguments(parser)
+
+
+def _add_workflow_inspect_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    parser.add_argument(
+        "--openshift-kubeconfig",
+        type=Path,
+        required=True,
+        help="Path to a read-only OpenShift kubeconfig",
+    )
+    parser.add_argument(
+        "--namespace",
+        required=False,
+        help="Tekton namespace to inspect; omit for all namespaces",
+    )
+    _add_evidence_output_arguments(parser)
+    parser.add_argument(
+        "--query",
+        default="inspect workflows",
+        help="Operator query recorded with the command",
+    )
+    _add_operator_arguments(parser)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -65,66 +170,19 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     list_parser = inventory_command_parser.add_parser("list")
-    list_parser.add_argument(
-        "--source",
-        choices=["git", "openshift"],
-        default="git",
-        help="Inventory source to query",
+    _add_inventory_list_arguments(list_parser)
+
+    workflow_parser = command_parser.add_parser("workflow")
+    workflow_command_parser = workflow_parser.add_subparsers(
+        dest="workflow_command",
+        required=True,
     )
-    list_parser.add_argument(
-        "--fleet-clusters",
-        type=Path,
-        required=False,
-        help="Path to the fleet-clusters Git checkout",
-    )
-    list_parser.add_argument(
-        "--openshift-kubeconfig",
-        type=Path,
-        required=False,
-        help="Path to a read-only OpenShift kubeconfig",
-    )
-    list_parser.add_argument(
-        "--snapshot-dir",
-        type=Path,
-        required=False,
-        help="Directory in which to store the evidence snapshot",
-    )
-    list_parser.add_argument(
-        "--audit-dir",
-        type=Path,
-        required=False,
-        help="Directory in which to store audit events",
-    )
-    list_parser.add_argument(
-        "--cwa-dir",
-        type=Path,
-        required=False,
-        help="Directory in which to store CWA snapshots and traces",
-    )
-    list_parser.add_argument(
-        "--diagnosis-dir",
-        type=Path,
-        required=False,
-        help="Directory in which to store diagnosis responses",
-    )
-    list_parser.add_argument(
-        "--query",
-        default="list inventory",
-        help="Operator query used for CWA assembly",
-    )
-    list_parser.add_argument("--operator", required=True)
-    list_parser.add_argument("--idempotency-key", required=True)
-    list_parser.add_argument(
-        "--role",
-        action="append",
-        choices=[role.value for role in OperatorRole],
-        default=["viewer"],
-        help="Operator role; may be repeated",
-    )
+    inspect_parser = workflow_command_parser.add_parser("inspect")
+    _add_workflow_inspect_arguments(inspect_parser)
     return parser
 
 
-def _argument_error(args: argparse.Namespace) -> str | None:
+def _inventory_argument_error(args: argparse.Namespace) -> str | None:
     if args.source == "git" and args.fleet_clusters is None:
         return "--fleet-clusters is required for --source git"
     if args.source == "openshift" and args.openshift_kubeconfig is None:
@@ -133,6 +191,20 @@ def _argument_error(args: argparse.Namespace) -> str | None:
         return "--audit-dir is required with --cwa-dir"
     if args.diagnosis_dir is not None and args.cwa_dir is None:
         return "--cwa-dir is required with --diagnosis-dir"
+    return None
+
+
+def _workflow_argument_error(args: argparse.Namespace) -> str | None:
+    if args.openshift_kubeconfig is None:
+        return "--openshift-kubeconfig is required"
+    return None
+
+
+def _argument_error(args: argparse.Namespace) -> str | None:
+    if args.command == "inventory":
+        return _inventory_argument_error(args)
+    if args.command == "workflow":
+        return _workflow_argument_error(args)
     return None
 
 
@@ -149,6 +221,20 @@ def _selected_collector(
             )
         )
     return GitInventoryCollector(args.fleet_clusters)
+
+
+def _selected_workflow_collector(
+    args: argparse.Namespace,
+    collector: EvidenceCollector | None,
+) -> EvidenceCollector:
+    if collector is not None:
+        return collector
+    return TektonInventoryCollector(
+        client=OpenShiftCLITektonClient(
+            kubeconfig_path=args.openshift_kubeconfig,
+            namespace=args.namespace,
+        )
+    )
 
 
 def _diagnosis_record(
@@ -264,6 +350,68 @@ def _context_audit_event(
     )
 
 
+def _run_workflow_inspect(
+    args: argparse.Namespace,
+    *,
+    collector: EvidenceCollector | None,
+    command_id_factory: Callable[[], UUID],
+    clock: Callable[[], datetime],
+) -> int:
+    stderr = sys.stderr
+    command = CommandEnvelope(
+        command_id=command_id_factory(),
+        command_type=CommandType.WORKFLOW_INSPECT,
+        operator_id=args.operator,
+        created_at=clock(),
+        input={
+            "query": args.query,
+            "namespace": args.namespace,
+            "history": [],
+        },
+        idempotency_key=args.idempotency_key,
+        status=CommandState.RECEIVED,
+    )
+    selected_collector = _selected_workflow_collector(args, collector)
+    service = WorkflowService(collector=selected_collector)
+    roles = {OperatorRole(role) for role in args.role}
+
+    try:
+        result = service.inspect_workflows(command, roles)
+    except (
+        UnauthorizedWorkflowCommand,
+        InvalidWorkflowCommand,
+        InvalidCommandTransition,
+    ) as error:
+        print(f"aura: {error}", file=stderr)
+        return 2
+
+    if args.snapshot_dir is not None:
+        try:
+            JsonEvidenceSnapshotStore(args.snapshot_dir).save(
+                result.snapshot
+            )
+        except EvidenceSnapshotAlreadyStored as error:
+            print(f"aura: {error}", file=stderr)
+            return 2
+
+    if args.audit_dir is not None:
+        evidence_audit_event = _evidence_audit_event(
+            command,
+            result.snapshot,
+            args.snapshot_dir is not None,
+        )
+        try:
+            JsonAuditEventStore(args.audit_dir).save(
+                evidence_audit_event
+            )
+        except AuditEventAlreadyStored as error:
+            print(f"aura: {error}", file=stderr)
+            return 2
+
+    print(result.snapshot.model_dump_json(indent=2))
+    return 0
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -280,6 +428,14 @@ def main(
             file=stderr,
         )
         return 2
+
+    if args.command == "workflow":
+        return _run_workflow_inspect(
+            args,
+            collector=collector,
+            command_id_factory=command_id_factory,
+            clock=clock,
+        )
 
     command_id = command_id_factory()
     command = CommandEnvelope(
