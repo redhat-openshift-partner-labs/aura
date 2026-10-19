@@ -1,0 +1,32 @@
+{
+  "snapshot_id": "00000000-0000-0000-0000-000000000050",
+  "command_id": "00000000-0000-0000-0000-000000000001",
+  "collector": "git_inventory",
+  "collector_version": "0.1.0",
+  "collected_at": "2026-10-19T00:00:00Z",
+  "source": "fleet-clusters",
+  "source_version": "492bc8e07afddcd557441ddb7d72158de60ab8cb",
+  "items": [
+    {
+      "item_id": "00000000-0000-0000-0000-000000000051",
+      "kind": "cluster_definition",
+      "data": {
+        "path": "provision/0171d46a-scopedaws",
+        "cluster_name": "0171d46a-scopedaws",
+        "cloud_provider": "aws",
+        "region": "us-east-2",
+        "tier": "base",
+        "environment": "development",
+        "aws_credentials_mode": "scoped",
+        "crossplane_template": "crossplane-scoped",
+        "kustomizations": [
+          "crossplane",
+          "hive"
+        ],
+        "install_image_set": "img4.21.13-x86-64-appsub"
+      }
+    }
+  ],
+  "redactions": []
+}
+
