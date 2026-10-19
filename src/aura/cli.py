@@ -5,13 +5,23 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from sys import stderr
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
+from aura.audit_store import (
+    AuditEventAlreadyStored,
+    JsonAuditEventStore,
+)
 from aura.authorization import OperatorRole
 from aura.collectors.git_inventory import GitInventoryCollector
 from aura.collectors.openshift_cli_client import OpenShiftCLIInventoryClient
 from aura.collectors.openshift_inventory import OpenShiftInventoryCollector
-from aura.contracts import CommandEnvelope, CommandState, CommandType
+from aura.contracts import (
+    AuditEvent,
+    AuditEventType,
+    CommandEnvelope,
+    CommandState,
+    CommandType,
+)
 from aura.evidence_store import (
     EvidenceSnapshotAlreadyStored,
     JsonEvidenceSnapshotStore,
@@ -57,6 +67,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         required=False,
         help="Directory in which to store the evidence snapshot",
+    )
+    list_parser.add_argument(
+        "--audit-dir",
+        type=Path,
+        required=False,
+        help="Directory in which to store audit events",
     )
     list_parser.add_argument("--operator", required=True)
     list_parser.add_argument("--idempotency-key", required=True)
@@ -128,6 +144,31 @@ def main(
                 result.snapshot
             )
         except EvidenceSnapshotAlreadyStored as error:
+            print(f"aura: {error}", file=stderr)
+            return 2
+
+    if args.audit_dir is not None:
+        event = AuditEvent(
+            event_id=uuid5(
+                command.command_id,
+                f"evidence_collected:{result.snapshot.snapshot_id}",
+            ),
+            command_id=command.command_id,
+            event_type=AuditEventType.EVIDENCE_COLLECTED,
+            occurred_at=result.snapshot.collected_at,
+            actor=command.operator_id,
+            data={
+                "snapshot_id": str(result.snapshot.snapshot_id),
+                "snapshot_digest": result.snapshot.snapshot_digest,
+                "collector": result.snapshot.collector,
+                "source": result.snapshot.source,
+                "source_version": result.snapshot.source_version,
+                "persisted": args.snapshot_dir is not None,
+            },
+        )
+        try:
+            JsonAuditEventStore(args.audit_dir).save(event)
+        except AuditEventAlreadyStored as error:
             print(f"aura: {error}", file=stderr)
             return 2
 

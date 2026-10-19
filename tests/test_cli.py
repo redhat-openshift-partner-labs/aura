@@ -4,7 +4,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import final
-from uuid import UUID
+from uuid import UUID, uuid5
 
 import aura.collectors.git_inventory as git_inventory
 from aura.cli import main
@@ -100,6 +100,59 @@ def test_cli_inventory_list_persists_snapshot(
         snapshot_path.read_text(encoding="utf-8")
     )
     assert stored_snapshot == snapshot
+
+
+def test_cli_inventory_list_records_audit_event(
+    tmp_path,
+    capsys,
+) -> None:
+    snapshot_dir = tmp_path / "snapshots"
+    audit_dir = tmp_path / "audit"
+
+    exit_code = main(
+        [
+            "inventory",
+            "list",
+            "--fleet-clusters",
+            str(tmp_path),
+            "--operator",
+            "operator@example.com",
+            "--idempotency-key",
+            "test-key",
+            "--snapshot-dir",
+            str(snapshot_dir),
+            "--audit-dir",
+            str(audit_dir),
+        ],
+        collector=FakeCollector(),
+        command_id_factory=lambda: UUID(int=1),
+    )
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    snapshot = json.loads(captured.out)
+    event_files = list(audit_dir.glob("*.json"))
+    assert len(event_files) == 1
+
+    event = json.loads(event_files[0].read_text(encoding="utf-8"))
+    expected_event_id = uuid5(
+        UUID(int=1),
+        f"evidence_collected:{snapshot['snapshot_id']}",
+    )
+    assert event["event_id"] == str(expected_event_id)
+    assert event["command_id"] == str(UUID(int=1))
+    assert event["event_type"] == "evidence_collected"
+    assert event["occurred_at"] == snapshot["collected_at"]
+    assert event["actor"] == "operator@example.com"
+    assert event["data"] == {
+        "snapshot_id": snapshot["snapshot_id"],
+        "snapshot_digest": snapshot["snapshot_digest"],
+        "collector": snapshot["collector"],
+        "source": snapshot["source"],
+        "source_version": snapshot["source_version"],
+        "persisted": True,
+    }
+    assert event["previous_event_id"] is None
 
 
 def test_cli_inventory_list_matches_scoped_aws_fixture(
