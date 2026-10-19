@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+import json
+from hashlib import sha256
 from typing import Protocol
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from aura.cwa import CWASnapshot
 
@@ -99,6 +108,54 @@ class DiagnosisModelUnavailable(Exception):
     """Raised when a diagnosis model cannot return a response."""
 
 
+class DiagnosisRecord(BaseModel):
+    """Immutable diagnosis response linked to its CWA input."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    diagnosis_id: UUID
+    command_id: UUID
+    cwa_snapshot_id: UUID
+    cwa_snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    provider_name: str = Field(min_length=1)
+    model_name: str = Field(min_length=1)
+    used_fallback: bool
+    diagnosed_at: AwareDatetime
+    response: DiagnosisResponse
+    response_digest: str = Field(default="")
+
+    @field_validator("provider_name", "model_name")
+    @classmethod
+    def reject_blank_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be blank")
+        return value
+
+    @model_validator(mode="after")
+    def validate_response_digest(self) -> "DiagnosisRecord":
+        computed_digest = compute_diagnosis_response_digest(self.response)
+        if not self.response_digest:
+            self.response_digest = computed_digest
+        elif self.response_digest != computed_digest:
+            raise ValueError("response digest does not match response")
+        return self
+
+
+def compute_diagnosis_response_digest(
+    response: DiagnosisResponse,
+) -> str:
+    """Return a canonical SHA-256 digest for a diagnosis response."""
+
+    payload = response.model_dump(mode="json")
+    canonical_json = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
 class DiagnosisModel(Protocol):
     """Provider-independent contract for diagnosis models."""
 
@@ -116,6 +173,8 @@ __all__ = [
     "DiagnosisInference",
     "DiagnosisModel",
     "DiagnosisModelUnavailable",
+    "DiagnosisRecord",
     "DiagnosisResponse",
     "RecommendedInspection",
+    "compute_diagnosis_response_digest",
 ]

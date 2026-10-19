@@ -251,6 +251,145 @@ def test_cli_inventory_list_assembles_and_persists_cwa(
     }
 
 
+def test_cli_inventory_list_persists_diagnosis_and_model_audit(
+    tmp_path,
+    capsys,
+) -> None:
+    audit_dir = tmp_path / "audit"
+    cwa_dir = tmp_path / "cwa"
+    diagnosis_dir = tmp_path / "diagnoses"
+
+    exit_code = main(
+        [
+            "inventory",
+            "list",
+            "--fleet-clusters",
+            str(tmp_path),
+            "--operator",
+            "operator@example.com",
+            "--idempotency-key",
+            "test-key",
+            "--query",
+            "list clusters",
+            "--audit-dir",
+            str(audit_dir),
+            "--cwa-dir",
+            str(cwa_dir),
+            "--diagnosis-dir",
+            str(diagnosis_dir),
+        ],
+        collector=FakeCollector(),
+        command_id_factory=lambda: UUID(int=1),
+        clock=lambda: datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    assert exit_code == 0
+    capsys.readouterr()
+
+    cwa_snapshot_files = list(
+        (cwa_dir / "snapshots").glob("*.json")
+    )
+    cwa_trace_files = list((cwa_dir / "traces").glob("*.json"))
+    diagnosis_files = list(diagnosis_dir.glob("*.json"))
+    assert len(cwa_snapshot_files) == 1
+    assert len(cwa_trace_files) == 1
+    assert len(diagnosis_files) == 1
+
+    cwa_snapshot = json.loads(
+        cwa_snapshot_files[0].read_text(encoding="utf-8")
+    )
+    cwa_trace = json.loads(
+        cwa_trace_files[0].read_text(encoding="utf-8")
+    )
+    diagnosis = json.loads(
+        diagnosis_files[0].read_text(encoding="utf-8")
+    )
+    expected_diagnosis_id = uuid5(
+        UUID(int=1),
+        f"diagnosis:{cwa_snapshot['snapshot_id']}",
+    )
+
+    assert diagnosis["diagnosis_id"] == str(expected_diagnosis_id)
+    assert diagnosis["cwa_snapshot_id"] == cwa_snapshot["snapshot_id"]
+    assert diagnosis["cwa_snapshot_digest"] == (
+        cwa_snapshot["snapshot_digest"]
+    )
+    assert diagnosis["provider_name"] == "aura"
+    assert diagnosis["model_name"] == "deterministic-fallback"
+    assert diagnosis["used_fallback"] is True
+    assert diagnosis["response"]["summary"] == (
+        "No model diagnosis is available."
+    )
+    assert cwa_trace["model_provider"] == "aura"
+    assert cwa_trace["model_name"] == "deterministic-fallback"
+    assert cwa_trace["response_digest"] == diagnosis["response_digest"]
+
+    events = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in audit_dir.glob("*.json")
+    ]
+    assert len(events) == 3
+    context_event = next(
+        event
+        for event in events
+        if event["event_type"] == "context_assembled"
+    )
+    model_event = next(
+        event
+        for event in events
+        if event["event_type"] == "model_called"
+    )
+    expected_model_event_id = uuid5(
+        UUID(int=1),
+        f"model_called:{expected_diagnosis_id}",
+    )
+    assert model_event["event_id"] == str(expected_model_event_id)
+    assert model_event["previous_event_id"] == (
+        context_event["event_id"]
+    )
+    assert model_event["data"] == {
+        "diagnosis_id": str(expected_diagnosis_id),
+        "response_digest": diagnosis["response_digest"],
+        "cwa_snapshot_id": cwa_snapshot["snapshot_id"],
+        "cwa_snapshot_digest": cwa_snapshot["snapshot_digest"],
+        "trace_id": cwa_trace["trace_id"],
+        "provider_name": "aura",
+        "model_name": "deterministic-fallback",
+        "used_fallback": True,
+        "persisted": True,
+    }
+
+
+def test_cli_rejects_diagnosis_dir_without_cwa_dir(
+    tmp_path,
+    capsys,
+) -> None:
+    exit_code = main(
+        [
+            "inventory",
+            "list",
+            "--fleet-clusters",
+            str(tmp_path),
+            "--operator",
+            "operator@example.com",
+            "--idempotency-key",
+            "test-key",
+            "--audit-dir",
+            str(tmp_path / "audit"),
+            "--diagnosis-dir",
+            str(tmp_path / "diagnoses"),
+        ],
+        collector=FakeCollector(),
+        command_id_factory=lambda: UUID(int=1),
+    )
+
+    assert exit_code == 2
+    captured = capsys.readouterr()
+    assert captured.err == (
+        "aura: --cwa-dir is required with --diagnosis-dir\n"
+    )
+
+
 def test_cli_inventory_list_matches_scoped_aws_fixture(
     tmp_path,
     capsys,
