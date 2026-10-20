@@ -115,6 +115,9 @@ def test_redacts_parameters_with_secret_terms(name: str) -> None:
     assert result.redacted_fields == [name]
 
 
-@pytest.mark.parametrize("name", ["keycloak-admin-secret", "spoke-kubeconfig"])
+@pytest.mark.parametrize(
+    "name",
+    ["keycloak-admin-secret", "spoke-kubeconfig", "htpasswd-provider-name"],
+)
 def test_keeps_allowlisted_parameters(name: str) -> None:
     assert redact_parameters({name: "value"}).value == {name: "value"}

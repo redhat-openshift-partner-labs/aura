@@ -45,6 +45,7 @@ PARAMETER_SECRET_TERMS = (
 
 NON_SECRET_PARAMETERS = frozenset(
     {
+        "htpasswd-provider-name",
         "keycloak-admin-secret",
         "spoke-kubeconfig",
     }
