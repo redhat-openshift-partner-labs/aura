@@ -11,13 +11,25 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-192 passed
+199 passed
 ```
 
 Run diff hygiene:
 
 ```bash
 git diff --check
+```
+
+Run the structural quality gate:
+
+```bash
+ripwire . --quality-delta
+```
+
+Expected current result:
+
+```text
+gating="0"
 ```
 
 The test suite covers:
@@ -117,6 +129,46 @@ Latest validation observed:
 | Workflow views | 34 |
 | Correlated workflow views | 34 |
 | Uncorrelated workflow views | 0 |
+
+## Live Diagnosis Validation
+
+Validate the scoped-AWS fixture:
+
+```bash
+UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura diagnose state \
+  --cluster 0171d46a-scopedaws \
+  --fleet-clusters ../fleet-clusters \
+  --openshift-kubeconfig "$AURA_KUBECONFIG" \
+  --snapshot-dir ./local/snapshots \
+  --audit-dir ./local/audit \
+  --cwa-dir ./local/cwa \
+  --diagnosis-dir ./local/diagnoses \
+  --operator operator@example.com \
+  --idempotency-key live-diagnosis-001 \
+  --command-dir ./local/commands
+```
+
+Latest validation observed:
+
+| Check | Result |
+| --- | --- |
+| Fixture diagnosis | Exit code `0`; latest PipelineRun reported as `Succeeded` |
+| Evidence items | 1 definition, 1 actual state, 1 PipelineRun, 1 correlation |
+| Provenance | Evidence, CWA snapshot, CWA trace, diagnosis, and audit records linked by matching IDs and digests |
+| Non-provisioned cluster | `1bd62dc5-hpezerto` refused with `OpenShift actual state` and `Tekton PipelineRun status` missing; no diagnosis record was written |
+
+## Idempotency Validation
+
+Repeat a command with an idempotency key that has already completed.
+
+Expected result:
+
+- Exit code `2`.
+- Standard error contains `aura: idempotency key already succeeded`.
+- No JSON is written to standard output.
+- No new command, evidence, CWA, or audit record is created.
+
+Failed commands do not create a completed-key record and may be retried with the same key.
 
 ## Record Persistence Validation
 

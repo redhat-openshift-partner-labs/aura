@@ -2,7 +2,7 @@
 
 ## Status
 
-Complete and revalidated on 2026-10-19 through commit `7debde5`.
+Complete and revalidated on 2026-10-19 through implementation commit `97c6ece`.
 
 ## Objective
 
@@ -106,13 +106,16 @@ No execution command is allowed in Phase 1.
 - [x] Aura refuses to answer when required evidence is missing.
 - [x] Aura returns schema-valid JSON from every model call.
 - [x] Aura provides a deterministic fallback answer when the model is unavailable.
+- [x] Aura suppresses completed idempotency keys before evidence collection.
+- [x] Aura reports OpenShift CLI failures concisely without partial JSON.
 
 ## Validation Record
 
 | Check | Result |
 | --- | --- |
-| Automated tests | `192 passed` with `uv run --no-sync pytest` |
+| Automated tests | `199 passed` with `uv run --no-sync pytest` |
 | Diff hygiene | `git diff --check` passed |
+| Quality gate | `ripwire . --quality-delta` reported zero regressions |
 | Scoped-AWS fixture | Validated `provision/0171d46a-scopedaws` at `fleet-clusters` commit `492bc8e07afddcd557441ddb7d72158de60ab8cb` |
 | Git inventory | Reported active and archived definitions, including incomplete definitions with status |
 | Live OpenShift | Read-only service account listed 13 cluster states |
@@ -121,8 +124,11 @@ No execution command is allowed in Phase 1.
 | Workflow view | Correlated all 34 PipelineRuns to their `cluster-name` parameter |
 | Immutable records | Stored one evidence snapshot, one CWA snapshot, one CWA trace, and linked audit events with matching digests |
 | Model contract | Automated tests validate strict JSON responses, deterministic fallback, and refusal when required evidence is missing |
+| Live diagnosis | Diagnosed `0171d46a-scopedaws` with Git, OpenShift, Tekton, and correlation evidence |
+| Non-provisioned refusal | Refused diagnosis for `1bd62dc5-hpezerto` with structured missing evidence and no diagnosis record |
+| Duplicate idempotency key | Rejected before collection with no new command record |
 | Protected repositories | `fleet`, `fleet-cluster-scaffold`, `fleet-clusters`, and `portal` had no tracked modifications |
-| Post-audit fixes | Commit `7debde5` added conflict indicators, incomplete-definition handling, explicit PipelineRun selection, and structured non-provisioned diagnosis |
+| Post-audit fixes | Commits `7debde5`, `447f748`, and `97c6ece` added conflict indicators, incomplete-definition handling, explicit PipelineRun selection, structured non-provisioned diagnosis, concise `oc` errors, and completed-key suppression |
 
 ## Out of Scope
 

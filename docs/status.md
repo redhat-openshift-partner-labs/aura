@@ -8,13 +8,17 @@ Validation summary:
 
 | Check | Result |
 | --- | --- |
-| Automated tests | 192 passed |
+| Automated tests | 199 passed |
 | Scoped-AWS fixture | `provision/0171d46a-scopedaws` |
 | Fixture source commit | `492bc8e07afddcd557441ddb7d72158de60ab8cb` |
 | Live OpenShift cluster states | 13 |
 | Live Tekton PipelineRuns | 34 |
 | Combined inventory records | 16 |
 | Correlated workflow views | 34 of 34 |
+| Live cluster diagnosis | Fixture cluster diagnosed with four evidence items |
+| Non-provisioned refusal | Archived cluster refused with structured missing evidence |
+| Duplicate idempotency key | Rejected before collection with no new command record |
+| Quality gate | `ripwire . --quality-delta` reported zero regressions |
 | Protected repository tracked changes | None |
 
 ## Implemented
@@ -65,6 +69,8 @@ The model protocol remains provider-independent. A future provider must consume 
 
 | Commit | Change |
 | --- | --- |
+| `97c6ece` | Suppressed reuse of completed idempotency keys |
+| `447f748` | Validated selectors and reported `oc` failures concisely |
 | `7debde5` | Hardened conflict, PipelineRun selection, and non-provisioned diagnosis |
 | `9ebfd9b` | Reported active and archived definition conflicts |
 | `786ab17` | Recorded Phase 1 validation |

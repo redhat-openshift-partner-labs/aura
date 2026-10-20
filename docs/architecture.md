@@ -121,7 +121,8 @@ The command exits with code `2`. Evidence, CWA snapshot, CWA trace, and audit re
 | Unauthorized role | Service error, exit code `2` |
 | Missing diagnosis evidence | Refusal, exit code `2`, records preserved |
 | Duplicate immutable record | Store error, exit code `2` |
-| External `oc` failure | Unhandled process error with non-zero exit |
+| External `oc` failure | Converted to `OpenShiftCLIError`; CLI reports a concise error and exits `2` without partial JSON |
 | Model unavailable | Generic diagnosis service falls back deterministically |
+| Completed idempotency key reused | CLI exits `2` before evidence collection and creates no new records |
 
-Duplicate idempotency-key suppression is not implemented. The key is recorded in the command envelope but is not used to reject a repeated command.
+Command records are written only after all requested evidence, CWA, diagnosis, and persistence work succeeds. Failed commands remain retryable with the same key.
