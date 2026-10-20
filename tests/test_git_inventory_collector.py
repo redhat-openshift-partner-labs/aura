@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
@@ -87,23 +88,70 @@ def write_cluster(
     )
 
 
-def test_git_inventory_collector_returns_typed_evidence(tmp_path: Path) -> None:
-    write_cluster(tmp_path)
-    collector = GitInventoryCollector(root=tmp_path)
+def commit_repository(root: Path) -> str:
+    subprocess.run(
+        ["git", "-C", str(root), "init"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(root), "add", "-f", "."],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "-c",
+            "user.name=Aura Tests",
+            "-c",
+            "user.email=aura@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--no-verify",
+            "-m",
+            "fixture",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    revision = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return revision.stdout.strip()
 
-    snapshot = collector.collect(
+
+def collect_snapshot(
+    root: Path,
+    *,
+    source_version: str | None = None,
+):
+    return GitInventoryCollector(root=root).collect(
         command_id=UUID("00000000-0000-0000-0000-000000000001"),
         snapshot_id=UUID("00000000-0000-0000-0000-000000000050"),
         collected_at=datetime(2026, 1, 1, tzinfo=UTC),
-        source_version="0123456789abcdef0123456789abcdef01234567",
+        source_version=source_version,
     )
+
+
+def test_git_inventory_collector_returns_typed_evidence(tmp_path: Path) -> None:
+    write_cluster(tmp_path)
+    revision = commit_repository(tmp_path)
+    snapshot = collect_snapshot(tmp_path, source_version=revision)
 
     assert snapshot.collector == "git_inventory"
     assert snapshot.collector_version == "0.1.0"
     assert snapshot.source == "fleet-clusters"
-    assert snapshot.source_version == (
-        "0123456789abcdef0123456789abcdef01234567"
-    )
+    assert snapshot.source_version == revision
     assert len(snapshot.items) == 1
 
     item = snapshot.items[0]
@@ -136,12 +184,9 @@ def test_git_inventory_collector_lists_active_and_archived_clusters(
         directory="archive",
         cluster_name="archived-example",
     )
-    collector = GitInventoryCollector(root=tmp_path)
-
-    snapshot = collector.collect(
-        command_id=UUID("00000000-0000-0000-0000-000000000001"),
-        snapshot_id=UUID("00000000-0000-0000-0000-000000000050"),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    commit_repository(tmp_path)
+    snapshot = collect_snapshot(
+        tmp_path,
         source_version="0123456789abcdef0123456789abcdef01234567",
     )
 
@@ -157,12 +202,13 @@ def test_git_inventory_collector_lists_active_and_archived_clusters(
 def test_git_inventory_collector_reports_incomplete_cluster(tmp_path: Path) -> None:
     incomplete = tmp_path / "provision" / "incomplete"
     incomplete.mkdir(parents=True)
-    collector = GitInventoryCollector(root=tmp_path)
-
-    snapshot = collector.collect(
-        command_id=UUID("00000000-0000-0000-0000-000000000001"),
-        snapshot_id=UUID("00000000-0000-0000-0000-000000000050"),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    (incomplete / "README.md").write_text(
+        "Incomplete committed definition.\n",
+        encoding="utf-8",
+    )
+    commit_repository(tmp_path)
+    snapshot = collect_snapshot(
+        tmp_path,
         source_version="0123456789abcdef0123456789abcdef01234567",
     )
 
@@ -179,4 +225,30 @@ def test_git_inventory_collector_reports_incomplete_cluster(tmp_path: Path) -> N
             "metadata.yaml",
         ],
     }
+
+
+def test_git_inventory_collector_reads_head_not_working_tree(
+    tmp_path: Path,
+) -> None:
+    write_cluster(tmp_path)
+    revision = commit_repository(tmp_path)
+    (tmp_path / "provision" / "example" / "metadata.yaml").write_text(
+        "platform: gcp\n",
+        encoding="utf-8",
+    )
+    snapshot = collect_snapshot(tmp_path)
+
+    assert snapshot.source_version == revision
+    assert [item.data["cloud_provider"] for item in snapshot.items] == ["aws"]
+
+
+def test_git_inventory_collector_ignores_untracked_cluster_directories(
+    tmp_path: Path,
+) -> None:
+    write_cluster(tmp_path)
+    commit_repository(tmp_path)
+    write_cluster(tmp_path, cluster_name="uncommitted")
+    snapshot = collect_snapshot(tmp_path)
+
+    assert [item.data["cluster_name"] for item in snapshot.items] == ["example"]
 

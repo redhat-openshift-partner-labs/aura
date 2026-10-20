@@ -26,6 +26,8 @@ Never modify:
 
 The current runtime only reads `fleet-clusters`. The other protected repositories remain outside the Phase 1 runtime.
 
+Git evidence is read from the committed `HEAD` tree. Uncommitted working-tree changes and untracked files are not treated as desired state.
+
 ## Service Account
 
 Use a dedicated service account such as:

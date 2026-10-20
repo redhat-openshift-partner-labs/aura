@@ -6,7 +6,7 @@ Aura is a read-only sidecar control plane. Existing systems remain authoritative
 
 | Data | Authority |
 | --- | --- |
-| Desired cluster definition | `fleet-clusters` Git |
+| Desired cluster definition | `fleet-clusters` Git commit at `HEAD` |
 | Actual cluster state | OpenShift |
 | Workflow execution | Tekton |
 | Operator request data | Portal, when eventually integrated |
@@ -58,7 +58,7 @@ Phase 1 performs only these external reads:
 
 | Source | Read |
 | --- | --- |
-| Git | Working-tree YAML files and current commit ID |
+| Git | Committed YAML files from `HEAD` |
 | OpenShift | `clusterdeployments` and `managedclusters` |
 | Tekton | `pipelineruns` and `taskruns` |
 

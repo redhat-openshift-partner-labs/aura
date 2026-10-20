@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-199 passed
+201 passed
 ```
 
 Run diff hygiene:
@@ -26,11 +26,7 @@ Run the structural quality gate:
 ripwire . --quality-delta
 ```
 
-Expected current result:
-
-```text
-gating="0"
-```
+Without a committed baseline, this compares the working tree with `HEAD`; a clean tree therefore reports zero regressions but does not evaluate already-committed quality. A committed baseline is pending closure hardening.
 
 The test suite covers:
 

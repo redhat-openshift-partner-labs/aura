@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, final
 from uuid import UUID, uuid4, uuid5
 
 import yaml
@@ -13,8 +13,82 @@ import yaml
 from aura.contracts import EvidenceItem, EvidenceSnapshot
 
 
+@final
+class _GitTree:
+    """Read-only access to the committed tree at HEAD."""
+
+    def __init__(
+        self,
+        *,
+        root: Path,
+        tracked_paths: frozenset[str],
+    ) -> None:
+        self.root = root
+        self.tracked_paths = tracked_paths
+
+    @classmethod
+    def load(cls, root: Path) -> "_GitTree":
+        output = cls._git(
+            root,
+            ["ls-tree", "-r", "-z", "--name-only", "HEAD"],
+        )
+        return cls(
+            root=root,
+            tracked_paths=frozenset(
+                path for path in output.split("\0") if path
+            ),
+        )
+
+    def file(self, path: str) -> str:
+        return self._git(self.root, ["show", f"HEAD:{path}"])
+
+    def cluster_directories(self) -> list[tuple[str, str]]:
+        statuses = {
+            "provision": "active",
+            "archive": "archived",
+        }
+        directories = {
+            f"{parts[0]}/{parts[1]}": statuses[parts[0]]
+            for tracked_path in self.tracked_paths
+            if len(parts := tracked_path.split("/", maxsplit=2)) >= 3
+            and parts[0] in statuses
+        }
+        directory_order = {"provision": 0, "archive": 1}
+        return sorted(
+            directories.items(),
+            key=lambda item: (
+                directory_order[item[0].split("/", maxsplit=1)[0]],
+                item[0],
+            ),
+        )
+
+    def kustomizations(self, cluster_path: str) -> list[str]:
+        prefix = f"{cluster_path}/"
+        names = {
+            remainder.split("/", maxsplit=1)[0]
+            for tracked_path in self.tracked_paths
+            if tracked_path.startswith(prefix)
+            and (
+                remainder := tracked_path[len(prefix) :]
+            ).count("/") == 1
+            and remainder.endswith("/kustomization.yaml")
+        }
+        return sorted(names)
+
+    @staticmethod
+    def _git(root: Path, arguments: list[str]) -> str:
+        result = subprocess.run(
+            ["git", "-C", str(root), *arguments],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout
+
+
+@final
 class GitInventoryCollector:
-    """Collects cluster definitions from a fleet-clusters working tree."""
+    """Collects cluster definitions from a fleet-clusters Git checkout."""
 
     collector_version = "0.1.0"
     _required_files = (
@@ -39,6 +113,7 @@ class GitInventoryCollector:
 
         resolved_snapshot_id = snapshot_id or uuid4()
         resolved_collected_at = collected_at or datetime.now(UTC)
+        tree = _GitTree.load(self.root)
         resolved_source_version = source_version or self._git_revision()
         items = [
             self._read_cluster(
@@ -46,16 +121,9 @@ class GitInventoryCollector:
                 status=status,
                 command_id=command_id,
                 source_version=resolved_source_version,
+                tree=tree,
             )
-            for directory, status in (
-                ("provision", "active"),
-                ("archive", "archived"),
-            )
-            if (self.root / directory).is_dir()
-            for cluster_path in sorted(
-                (self.root / directory).iterdir()
-            )
-            if cluster_path.is_dir()
+            for cluster_path, status in tree.cluster_directories()
         ]
 
         return EvidenceSnapshot(
@@ -72,17 +140,18 @@ class GitInventoryCollector:
 
     def _read_cluster(
         self,
-        cluster_path: Path,
+        cluster_path: str,
         *,
         status: str,
         command_id: UUID,
         source_version: str,
+        tree: _GitTree,
     ) -> EvidenceItem:
-        relative_path = cluster_path.relative_to(self.root).as_posix()
+        relative_path = cluster_path
         missing_files = [
             required
             for required in self._required_files
-            if not (cluster_path / required).is_file()
+            if f"{cluster_path}/{required}" not in tree.tracked_paths
         ]
         if missing_files:
             return EvidenceItem(
@@ -95,15 +164,18 @@ class GitInventoryCollector:
                 },
             )
 
-        metadata = self._load_yaml(cluster_path / "metadata.yaml")
+        metadata = self._load_yaml(tree, f"{cluster_path}/metadata.yaml")
         cluster_patches = self._load_yaml(
-            cluster_path / "hive" / "patches" / "clusterdeployment.yaml"
+            tree,
+            f"{cluster_path}/hive/patches/clusterdeployment.yaml",
         )
         managed_patches = self._load_yaml(
-            cluster_path / "hive" / "patches" / "managedcluster.yaml"
+            tree,
+            f"{cluster_path}/hive/patches/managedcluster.yaml",
         )
         crossplane = self._load_yaml(
-            cluster_path / "crossplane" / "kustomization.yaml"
+            tree,
+            f"{cluster_path}/crossplane/kustomization.yaml",
         )
 
         resources = crossplane.get("resources", [])
@@ -128,7 +200,7 @@ class GitInventoryCollector:
             ),
             "aws_credentials_mode": metadata.get("aws-credentials-mode"),
             "crossplane_template": crossplane_template,
-            "kustomizations": self._kustomizations(cluster_path),
+            "kustomizations": tree.kustomizations(cluster_path),
             "install_image_set": self._patch_value(
                 cluster_patches,
                 "/spec/provisioning/imageSetRef/name",
@@ -141,18 +213,8 @@ class GitInventoryCollector:
             data=data,
         )
 
-    @staticmethod
-    def _load_yaml(path: Path) -> Any:
-        with path.open(encoding="utf-8") as stream:
-            return yaml.safe_load(stream)
-
-    @staticmethod
-    def _kustomizations(cluster_path: Path) -> list[str]:
-        return sorted(
-            path.name
-            for path in cluster_path.iterdir()
-            if path.is_dir() and (path / "kustomization.yaml").is_file()
-        )
+    def _load_yaml(self, tree: _GitTree, path: str) -> Any:
+        return yaml.safe_load(tree.file(path))
 
     @staticmethod
     def _patch_value(patches: Any, json_path: str) -> Any:
@@ -162,13 +224,10 @@ class GitInventoryCollector:
         raise ValueError(f"missing patch path: {json_path}")
 
     def _git_revision(self) -> str:
-        result = subprocess.run(
-            ["git", "-C", str(self.root), "rev-parse", "HEAD"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        return result.stdout.strip()
+        return _GitTree._git(
+            self.root,
+            ["rev-parse", "HEAD"],
+        ).strip()
 
 
 __all__ = ["GitInventoryCollector"]

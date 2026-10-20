@@ -31,7 +31,7 @@ Completed commands store their idempotency key in `--command-dir`. Reusing a key
 | Flag | Required | Default | Acceptable values |
 | --- | --- | --- | --- |
 | `--source` | No | `git` | `git`, `openshift`, `combined` |
-| `--fleet-clusters` | Required for `git` and `combined` | None | Path to a local `fleet-clusters` checkout |
+| `--fleet-clusters` | Required for `git` and `combined` | None | Path to a local `fleet-clusters` Git checkout with committed definitions |
 | `--openshift-kubeconfig` | Required for `openshift` and `combined` | None | Path to a read-only kubeconfig |
 | `--cwa-dir` | No | None | Writable directory |
 | `--diagnosis-dir` | No | None | Writable directory |

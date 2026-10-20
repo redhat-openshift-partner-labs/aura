@@ -1,6 +1,6 @@
 # Aura Control Plane
 
-Aura is a read-only operator control plane for OpenShift Partner Labs. It correlates `fleet-clusters` Git definitions, OpenShift actual state, and Tekton workflow state into typed, auditable evidence. Phase 1 is complete and validated.
+Aura is a read-only operator control plane for OpenShift Partner Labs. It correlates committed `fleet-clusters` Git definitions, OpenShift actual state, and Tekton workflow state into typed, auditable evidence. Phase 1 functional scope is implemented; closure hardening is in progress.
 
 Aura is a sidecar to the existing lifecycle systems. It does not replace RabbitMQ, Tekton, Git, ACM/Hive, or Portal, and it does not write to those systems.
 

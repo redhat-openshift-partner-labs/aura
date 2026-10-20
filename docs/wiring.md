@@ -22,7 +22,7 @@ All services extend `EvidenceCommandService`. Before collection they:
 
 ### Git
 
-`GitInventoryCollector` reads:
+`GitInventoryCollector` reads the committed tree at `HEAD`:
 
 | Directory | Emitted status |
 | --- | --- |
@@ -36,7 +36,7 @@ Required files for a complete definition:
 - `hive/patches/managedcluster.yaml`
 - `crossplane/kustomization.yaml`
 
-The source version is the current Git commit from `git rev-parse HEAD`.
+The source version is the `HEAD` commit from `git rev-parse HEAD`. Working-tree modifications and untracked files are not evidence.
 
 ### OpenShift
 

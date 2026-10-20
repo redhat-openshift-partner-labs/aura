@@ -12,7 +12,7 @@ An `EvidenceSnapshot` is the frozen result of one collector invocation.
 | `collector_version` | Collector implementation version |
 | `collected_at` | UTC collection timestamp |
 | `source` | Human-readable source or joined sources |
-| `source_version` | Git commit, joined resource versions, or supplied version |
+| `source_version` | Git `HEAD` commit, joined resource versions, or supplied version |
 | `items` | Typed evidence items |
 | `redactions` | Fields removed before storage |
 | `snapshot_digest` | SHA-256 digest of canonical snapshot JSON |

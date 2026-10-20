@@ -2,13 +2,13 @@
 
 ## Phase 1
 
-Phase 1 is complete and validated. The implementation provides a read-only assistant with immutable evidence and CWA provenance.
+Phase 1 functional scope is implemented. Closure hardening is in progress, so Phase 1 is not considered closed until the automation-grade gaps are resolved.
 
 Validation summary:
 
 | Check | Result |
 | --- | --- |
-| Automated tests | 199 passed |
+| Automated tests | 201 passed |
 | Scoped-AWS fixture | `provision/0171d46a-scopedaws` |
 | Fixture source commit | `492bc8e07afddcd557441ddb7d72158de60ab8cb` |
 | Live OpenShift cluster states | 13 |
@@ -18,14 +18,14 @@ Validation summary:
 | Live cluster diagnosis | Fixture cluster diagnosed with four evidence items |
 | Non-provisioned refusal | Archived cluster refused with structured missing evidence |
 | Duplicate idempotency key | Rejected before collection with no new command record |
-| Quality gate | `ripwire . --quality-delta` reported zero regressions |
+| Quality gate | Pending committed baseline during closure hardening |
 | Protected repository tracked changes | None |
 
 ## Implemented
 
 | Area | Capability |
 | --- | --- |
-| Git inventory | Reads `provision/` and `archive/`, and marks definitions `active` or `archived` |
+| Git inventory | Reads committed `HEAD` definitions in `provision/` and `archive/`, and marks them `active` or `archived` |
 | Incomplete definitions | Reports missing required files without discarding definition status |
 | OpenShift inventory | Reads `ClusterDeployment` and `ManagedCluster` resources |
 | Tekton inventory | Reads `PipelineRun` and `TaskRun` resources and failed-task summaries |
@@ -81,12 +81,13 @@ The model protocol remains provider-independent. A future provider must consume 
 | `e1c36a5` | Returned diagnosis provenance bundle |
 | `bdd49b7` | Refused missing diagnosis evidence |
 
-## Next Phase
+## Next Work
 
-Phase 2 should begin with proposals only:
+Do not begin Phase 2 until Phase 1 closure hardening is complete. The remaining closure-hardening sequence is:
 
-1. Define proposal contracts.
-2. Add deterministic patch and pipeline proposal generators.
-3. Add guard validation.
-4. Keep execution disabled.
-5. Continue test-driven development and incremental conventional commits.
+1. Enforce restricted store permissions and evidence redaction.
+2. Correct diagnosis lifecycle and failed-command provenance.
+3. Implement request-bound, concurrency-safe idempotency.
+4. Add concise CLI and collector error contracts.
+5. Improve source provenance for OpenShift and Tekton.
+6. Establish the public remote, CI, and quality baseline.

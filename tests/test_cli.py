@@ -10,6 +10,7 @@ import aura.collectors.git_inventory as git_inventory
 from aura.cli import main
 from aura.collectors.git_inventory import GitInventoryCollector
 from aura.contracts import EvidenceSnapshot
+from test_git_inventory_collector import commit_repository
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -533,6 +534,7 @@ def test_cli_inventory_list_matches_scoped_aws_fixture(
         ),
         encoding="utf-8",
     )
+    commit_repository(tmp_path)
 
     class FixedDateTime(datetime):
         @classmethod

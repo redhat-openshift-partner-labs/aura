@@ -2,7 +2,7 @@
 
 ## Status
 
-Complete and revalidated on 2026-10-19 through implementation commit `97c6ece`.
+Functional scope implemented. Closure hardening is in progress; Phase 1 is not closed until automation-grade gaps are resolved.
 
 ## Objective
 
@@ -99,6 +99,7 @@ No execution command is allowed in Phase 1.
 ## Acceptance Criteria
 
 - [x] Aura lists cluster definitions without writing to Git.
+- [x] Aura reads Git cluster definitions from committed `HEAD`, not the working tree.
 - [x] Aura lists OpenShift resources without write permissions.
 - [x] Aura correlates Git, OpenShift, and Tekton data by cluster name.
 - [x] Aura stores the frozen evidence snapshot.
@@ -113,9 +114,9 @@ No execution command is allowed in Phase 1.
 
 | Check | Result |
 | --- | --- |
-| Automated tests | `199 passed` with `uv run --no-sync pytest` |
+| Automated tests | `201 passed` with `uv run --no-sync pytest` |
 | Diff hygiene | `git diff --check` passed |
-| Quality gate | `ripwire . --quality-delta` reported zero regressions |
+| Quality gate | Pending committed baseline during closure hardening |
 | Scoped-AWS fixture | Validated `provision/0171d46a-scopedaws` at `fleet-clusters` commit `492bc8e07afddcd557441ddb7d72158de60ab8cb` |
 | Git inventory | Reported active and archived definitions, including incomplete definitions with status |
 | Live OpenShift | Read-only service account listed 13 cluster states |
