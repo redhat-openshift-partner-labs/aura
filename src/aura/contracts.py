@@ -59,6 +59,23 @@ def _resolve_digest(
     return digest
 
 
+def _assign_digest(
+    record: BaseModel,
+    field_name: str,
+    computed_digest: str,
+    mismatch_message: str,
+) -> None:
+    setattr(
+        record,
+        field_name,
+        _resolve_digest(
+            getattr(record, field_name),
+            computed_digest,
+            mismatch_message,
+        ),
+    )
+
+
 class CommandEnvelope(BaseModel):
     """Envelope for an operator-issued Aura command."""
 
@@ -91,13 +108,15 @@ class CommandEnvelope(BaseModel):
 
     @model_validator(mode="after")
     def validate_command_digests(self) -> "CommandEnvelope":
-        self.request_digest = _resolve_digest(
-            self.request_digest,
+        _assign_digest(
+            self,
+            "request_digest",
             compute_command_request_digest(self),
             "command request digest does not match request",
         )
-        self.record_digest = _resolve_digest(
-            self.record_digest,
+        _assign_digest(
+            self,
+            "record_digest",
             compute_command_record_digest(self),
             "command record digest does not match record",
         )
@@ -177,8 +196,9 @@ class EvidenceSnapshot(BaseModel):
 
     @model_validator(mode="after")
     def validate_snapshot_digest(self) -> "EvidenceSnapshot":
-        self.snapshot_digest = _resolve_digest(
-            self.snapshot_digest,
+        _assign_digest(
+            self,
+            "snapshot_digest",
             compute_snapshot_digest(self),
             "snapshot digest does not match snapshot content",
         )
@@ -231,8 +251,9 @@ class AuditEvent(BaseModel):
 
     @model_validator(mode="after")
     def validate_event_digest(self) -> "AuditEvent":
-        self.event_digest = _resolve_digest(
-            self.event_digest,
+        _assign_digest(
+            self,
+            "event_digest",
             compute_audit_event_digest(self),
             "audit event digest does not match event",
         )

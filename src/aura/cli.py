@@ -987,32 +987,6 @@ def _persist_command_received(
     return event, None
 
 
-def _evidence_audit_event(
-    command: CommandEnvelope,
-    snapshot: EvidenceSnapshot,
-    persisted: bool,
-    previous_event_id: UUID | None = None,
-) -> AuditEvent:
-    return _audit_event(
-        command,
-        event_id=uuid5(
-            command.command_id,
-            f"evidence_collected:{snapshot.snapshot_id}",
-        ),
-        event_type=AuditEventType.EVIDENCE_COLLECTED,
-        occurred_at=snapshot.collected_at,
-        data={
-            "snapshot_id": str(snapshot.snapshot_id),
-            "snapshot_digest": snapshot.snapshot_digest,
-            "collector": snapshot.collector,
-            "source": snapshot.source,
-            "source_version": snapshot.source_version,
-            "persisted": persisted,
-        },
-        previous_event_id=previous_event_id,
-    )
-
-
 def _context_audit_event(
     command: CommandEnvelope,
     assembly: CWAAssemblyResult,
@@ -1055,14 +1029,16 @@ def _audit_event(
     data: dict[str, object],
     previous_event_id: UUID | None = None,
 ) -> AuditEvent:
-    return AuditEvent(
-        event_id=event_id,
-        command_id=command.command_id,
-        event_type=event_type,
-        occurred_at=occurred_at,
-        actor=command.operator_id,
-        data=data,
-        previous_event_id=previous_event_id,
+    return AuditEvent.model_validate(
+        {
+            "event_id": event_id,
+            "command_id": command.command_id,
+            "event_type": event_type,
+            "occurred_at": occurred_at,
+            "actor": command.operator_id,
+            "data": data,
+            "previous_event_id": previous_event_id,
+        }
     )
 
 
@@ -1082,11 +1058,24 @@ def _persist_evidence(
 
     evidence_audit_event: AuditEvent | None = None
     if args.audit_dir is not None:
-        evidence_audit_event = _evidence_audit_event(
+        snapshot = result.snapshot
+        evidence_audit_event = _audit_event(
             command,
-            result.snapshot,
-            args.snapshot_dir is not None,
-            previous_event_id,
+            event_id=uuid5(
+                command.command_id,
+                f"evidence_collected:{snapshot.snapshot_id}",
+            ),
+            event_type=AuditEventType.EVIDENCE_COLLECTED,
+            occurred_at=snapshot.collected_at,
+            data={
+                "snapshot_id": str(snapshot.snapshot_id),
+                "snapshot_digest": snapshot.snapshot_digest,
+                "collector": snapshot.collector,
+                "source": snapshot.source,
+                "source_version": snapshot.source_version,
+                "persisted": args.snapshot_dir is not None,
+            },
+            previous_event_id=previous_event_id,
         )
         error = _record_store_error(
             lambda: JsonAuditEventStore(args.audit_dir).save(
