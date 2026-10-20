@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 1 is implemented and validated. Later phases remain draft for review.
+Phase 1 is implemented, validated, and published. The [Phase 2](05-phase-2-proposals.md) draft was revised after validation against the protected repositories and the live hub, and awaits approval. Phase 3 remains a draft that must be aligned with Phase 2 before implementation.
 
 ## Objective
 
@@ -25,6 +25,7 @@ Aura will help a human operator understand current state, diagnose problems, pre
 | Source of truth | Git for desired state, OpenShift for actual state, Aura only for commands and audit |
 | Portal integration | Read-only or none; Aura does not write Portal's database |
 | Model integration | Every model call is assembled through Context Window Architecture (CWA) |
+| Phase 2 generation | Deterministic only; no model writes proposals |
 | First release | Read-only diagnosis and inventory |
 | Autonomous execution | Deferred until guarded, approved execution is proven |
 

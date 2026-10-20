@@ -119,5 +119,5 @@ The model protocol remains provider-independent. A future provider must consume 
 
 Phase 1 is published. Remaining work:
 
-1. `fleet-clusters` owners backfill `metadata.yaml` and its `platform` key for the definitions listed in [Open Questions](plans/08-open-questions.md#fleet-clusters-data).
-2. Phase 2 starts only after its draft plan is reviewed and approved.
+1. `fleet-clusters` owners backfill `metadata.yaml` and its `platform` key for the definitions listed in [Open Questions](plans/08-open-questions.md#fleet-clusters-data), pushing any added `metadata.yaml` with `[skip-provision]` in the head commit message, and decide how to remediate the stranded deprovision sentinels.
+2. Phase 2 starts only after the [revised draft plan](plans/05-phase-2-proposals.md) is approved; its prerequisites P0 through P4 come first.

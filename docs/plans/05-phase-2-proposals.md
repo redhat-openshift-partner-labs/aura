@@ -1,96 +1,196 @@
 # Phase 2: Proposals
 
+## Status
+
+Draft, revised after validation on 2026-10-20 against `fleet` commit `b8302da`, `fleet-clusters` commit `492bc8e07afddcd557441ddb7d72158de60ab8cb`, `fleet-cluster-scaffold` commit `e5346c3`, and the live hub. Implementation starts only after this plan is approved.
+
 ## Objective
 
-Let Aura prepare reviewable changes without executing them.
+Let Aura prepare reviewable, evidence-linked changes without executing them. A Phase 2 proposal never writes Git, never creates Kubernetes resources, and never starts a pipeline.
 
-Phase 2 generates:
+## Decisions
 
-- Cluster scaffold commands.
-- Git patches.
-- Deprovision plans.
-- Tekton pipeline proposals.
-- Human-readable explanations of expected effects.
+| Decision | Position |
+| --- | --- |
+| Proposal generator | Deterministic only. Artifacts come from the pinned scaffold, fixed templates, and evidence. Explanations, risks, and rollback text come from fixed templates. No model writes any part of a proposal. |
+| CWA | Assembled for every proposal for traceability. The deterministic generator is recorded as provider `aura`, as in Phase 1. |
+| Proposal types | New cluster scaffold, deprovision sentinel, post-provision rerun, and allow-listed existing-cluster edits |
+| Pipeline definitions | Read from the live hub with the read-only service account |
+| Scaffold execution | Pinned local `fleet-cluster-scaffold` checkout, run in a temporary workspace |
+| External model | Not used in Phase 2 |
 
-No proposal is executed in Phase 2.
+## Lifecycle Facts
 
-## Proposal Types
+Proposals must reflect how the existing systems act on Git. These behaviors were verified in the commits listed under Status:
 
-| Proposal | Input | Output |
+| Event on `fleet-clusters` `main` | Effect |
+| --- | --- |
+| A push whose commits add any file under `provision/` | EventListener starts `pre-provision` for the first cluster name found, which chains into `provision` and then `post-provision`. |
+| The push head commit message contains `[skip-provision]` | The pre-provision trigger is suppressed. Only the head commit message is checked. |
+| A push whose commits add a file under `deprovision/` | EventListener starts `deprovision` for the first cluster name found, after stripping `-archive` from the file name. |
+| `deprovision` succeeds | The pipeline creates a GitHub deployment status; the `archive-cluster` Action moves `provision/<id>` to `archive/<id>` and removes `deprovision/<id>-archive`. |
+| The sentinel is `deprovision/<id>` without `-archive` | Deprovision runs, but the archive Action fails because it requires `deprovision/<id>-archive`. |
+| A push that only modifies existing files | No pipeline runs. Argo CD syncs only `fleet/hub-config`, so nothing applies the change. |
+| An HTTP body with `action: post-provision` sent to the EventListener | `post-provision` starts. This trigger has no webhook-secret interceptor. |
+
+Consequences:
+
+1. Merging a `fleet-clusters` patch is the execution step. Phase 2 must state the trigger effect of every patch.
+2. Every patch touches exactly one cluster, because only the first cluster name in a push triggers a pipeline.
+3. A patch that adds files under an existing `provision/<id>` re-provisions that cluster unless it is pushed as a head commit containing `[skip-provision]`.
+4. Pre-provision, provision, and deprovision runs are started only through Git. Aura does not propose PipelineRuns for them.
+
+## Prerequisites
+
+These must land before proposal types that depend on them:
+
+| ID | Change | Needed by |
 | --- | --- | --- |
-| New cluster scaffold | Operator request and cluster metadata | Scaffold command and generated files |
-| Cluster patch | Existing Git state and requested change | Unified diff |
-| Deprovision plan | Cluster inventory and lifecycle policy | Ordered action plan |
-| Pipeline proposal | Cluster state and workflow need | Pipeline name, parameters, and expected result |
-| Remediation proposal | Diagnosis and evidence | Next safe action |
+| P0 | Git collector reads `deprovision/` sentinels, records whether each has the `-archive` suffix, and inventory distinguishes pending, stranded, and archived deprovisions | Deprovision sentinel, inventory accuracy |
+| P1 | Tekton collector records redacted `spec.params` and workspace bindings, not only `cluster-name` | Post-provision rerun |
+| P2 | Read-only RBAC adds `list` on `pipelines.tekton.dev` in `openshift-pipelines`, and a collector reads Pipeline parameter definitions | Post-provision rerun |
+| P3 | Append-only proposal store and `Proposal` contract | All proposal types |
+| P4 | `propose` CLI commands, authorized for `proposer` and `admin` | All proposal types |
 
-## Proposal Flow
+At the validated commit, seven bare `deprovision/<id>` sentinels exist and seven deprovision PipelineRuns succeeded; six of those clusters still appear under `provision/` with no OpenShift resources. P0 makes that state visible instead of reporting it as `missing-openshift`.
+
+## Proposal Lifecycle
+
+A proposal command follows the Phase 1 lifecycle and ends `succeeded` once its proposal record is stored. The proposal record carries its own status, starting at `proposal_ready`. Phase 3 adds approval records that move a proposal to `awaiting_approval`, `approved`, or `rejected`; Phase 2 never does.
 
 ```mermaid
 flowchart LR
-  O[Operator Request] --> E[Evidence Collection]
-  E --> C[CWA Snapshot]
-  C --> M[Model]
-  M --> V[Schema Validation]
-  V --> P[Proposal]
-  P --> R[Human Review]
-  R -->|Reject| A[End]
-  R -->|Accept| X[Phase 3 Execution]
+  O[Operator request] --> E[Evidence collection]
+  E --> C[CWA snapshot and trace]
+  C --> G[Deterministic generator]
+  G --> V[Schema and repository validation]
+  V -->|Fails| R[Refused command]
+  V -->|Passes| P[(Proposal record: proposal_ready)]
+  P --> H[Human review outside Aura]
 ```
 
-## Patch Boundary
+## Proposal Types
 
-Aura must produce patches before it is allowed to create PRs.
+### New Cluster Scaffold
 
-Patch requirements:
+| Aspect | Rule |
+| --- | --- |
+| Input | Cloud, cluster name, region, tier, topology, and optional scaffold flags |
+| Preconditions | Name is a DNS-1123 label; no `provision/`, `archive/`, or `deprovision/` entry and no OpenShift resource uses the name; cloud is `aws` |
+| Generation | Pinned scaffold, run with `--cluster-templates-dir` pointing at `cluster-templates/` exported from the base commit |
+| Artifact | Patch that adds only `provision/<id>/**` |
+| Validation | Scaffold `kustomize build` passes; applying the patch to the base commit and running `GitInventoryCollector` yields one complete `cluster_definition` whose `cluster_name` is `<id>` |
+| Trigger effect | Merge starts pre-provision, provision, and post-provision |
+| Commit message | Must not contain `[skip-provision]` |
+| Reversibility | Before merge, discard. After merge, only a deprovision reverses it. |
 
-1. Base patch against a recorded Git commit.
-2. Include only files relevant to the requested cluster.
-3. Exclude secrets.
-4. Include a human-readable explanation.
-5. Include a rollback description.
-6. Validate with repository-specific structural checks where possible.
-7. Never apply the patch automatically in Phase 2.
+### Deprovision Sentinel
 
-## Scaffold Boundary
+| Aspect | Rule |
+| --- | --- |
+| Input | Cluster name |
+| Preconditions | `provision/<id>` exists; no `archive/<id>`; no existing `deprovision/<id>` or `deprovision/<id>-archive`; no definition conflict; OpenShift resources exist |
+| Artifact | Patch that adds the empty file `deprovision/<id>-archive` |
+| Validation | Exactly one added file, and its name ends in `-archive` |
+| Trigger effect | Merge starts deprovision; success triggers the archive Action |
+| Reversibility | Irreversible once the pipeline starts. Before merge, discard. |
 
-Aura invokes `fleet-cluster-scaffold` as a versioned external command.
+### Post-Provision Rerun
 
-The adapter must:
+| Aspect | Rule |
+| --- | --- |
+| Input | Cluster name and optional source PipelineRun |
+| Preconditions | OpenShift `Provisioned` is `True`; a prior `post-provision` PipelineRun exists for the cluster; the source run is not running |
+| Artifact | A PipelineRun manifest with `generateName`, copying the source run's redacted parameters and workspace bindings. It is not applied. |
+| Validation | Every required Pipeline parameter is present, no unknown parameter is present, and values contain no secret material. Workspace secrets are referenced by name only. |
+| Trigger effect | Phase 3 creates the PipelineRun through the Kubernetes API, never through the unauthenticated EventListener |
+| Reversibility | Not reversible; post-provision tasks change the spoke cluster |
 
-- Run in an isolated workspace.
-- Pin the scaffold version.
-- Capture stdout, stderr, exit code, and generated file list.
-- Treat scaffold output as untrusted file data.
-- Validate generated paths before exposing them to the operator.
+### Existing-Cluster Edits
 
-Aura must not modify `fleet-cluster-scaffold`.
+| Aspect | Rule |
+| --- | --- |
+| Input | Cluster name and an allow-listed edit kind |
+| Initial allow list | Backfill `metadata.yaml`, and backfill `platform` in an existing `metadata.yaml` |
+| Values | Derived from evidence only: `platform` from the ClusterDeployment platform patch path, other keys from the latest post-provision PipelineRun parameters. A value with no evidence is not invented; the proposal is refused. |
+| Artifact | Patch that touches only files under one `provision/<id>` |
+| Validation | Applying the patch yields one complete `cluster_definition`, and combined inventory for the cluster no longer reports `incomplete-definition` or `incomplete-metadata` |
+| Trigger effect | Adding a file re-triggers pre-provision unless the push head commit contains `[skip-provision]`. Modifying a file triggers nothing and applies nothing. |
+| Commit message | Must contain `[skip-provision]` when the patch adds a file, and must be the push head commit |
+| Reversibility | Revert the commit |
 
-## Proposal Output Contract
-
-Every proposal includes:
+## Proposal Contract
 
 | Field | Purpose |
 | --- | --- |
 | `proposal_id` | Unique identifier |
 | `command_id` | Originating command |
-| `proposal_type` | Proposal family |
+| `proposal_type` | `scaffold`, `deprovision`, `post_provision_rerun`, or `cluster_edit` |
+| `cluster_name` | The single target cluster |
+| `status` | `proposal_ready` in Phase 2 |
+| `base_commit` | `fleet-clusters` commit the patch applies to |
+| `evidence_snapshot_id` and `evidence_snapshot_digest` | Evidence the proposal was derived from |
+| `cwa_snapshot_id` and `cwa_trace_id` | CWA provenance |
+| `generator` and `generator_version` | Deterministic generator, plus scaffold commit when used |
 | `summary` | Operator-facing description |
 | `expected_effect` | Intended outcome |
+| `trigger_effect` | Pipelines or Actions that merging or applying will start, or `none` |
+| `commit_message` | Required commit message, including `[skip-provision]` when needed |
 | `risks` | Known risks and side effects |
-| `rollback` | Manual rollback approach |
-| `patch` | Optional unified diff |
-| `execution_plan` | Ordered adapter steps |
-| `requires_approval` | Always true in Phase 2 |
+| `reversibility` | `reversible`, `reversible_before_merge`, or `irreversible` |
+| `rollback` | Manual rollback, or the point after which none exists |
+| `patch` | Unified diff, for Git proposals |
+| `pipeline_run` | PipelineRun manifest, for rerun proposals |
+| `proposal_digest` | SHA-256 over canonical JSON of all fields above |
+
+A proposal is stale when `fleet-clusters` `HEAD` moves past `base_commit` and touches the target cluster, or when its evidence no longer matches live state. Phase 2 reports staleness; Phase 3 refuses stale proposals.
+
+## Scaffold Boundary
+
+- Run `fleet-cluster-scaffold` from a local checkout at a recorded commit, not its package version.
+- Run in a new temporary directory containing only an export of `fleet-clusters` at the base commit.
+- Pass no credentials and no kubeconfig; the scaffold needs neither.
+- Capture stdout, stderr, exit code, and the generated file list.
+- Reject any generated path outside `provision/<id>/`, any symlink, and any file the redaction policy would alter.
+- Require `kustomize` on the operator host; refuse when it is missing rather than passing `--skip-validation`.
+- Never modify `fleet-cluster-scaffold`.
 
 ## Acceptance Criteria
 
-- Aura can generate a patch for a representative cluster change.
-- Aura can generate a deprovision plan without executing it.
-- Aura can propose a Tekton PipelineRun with parameters.
-- Every proposal is schema-valid.
-- Every proposal references its evidence snapshot and CWA trace.
-- Every proposal includes risks and rollback.
+- Each proposal type is generated for a representative cluster and is schema-valid.
+- Every Git proposal applies cleanly to its `base_commit` with `git apply --check`.
+- Every Git proposal touches exactly one cluster.
+- Applying a scaffold or edit proposal to its base commit yields a complete `cluster_definition` for the target.
+- Every proposal states its trigger effect, and tests cover each row of the lifecycle facts table.
+- An edit proposal that adds a file under an existing `provision/<id>` always requires `[skip-provision]`.
+- A deprovision proposal always uses the `-archive` suffix and is refused when any sentinel already exists.
+- A post-provision rerun proposal is refused when a required parameter is missing or an unknown parameter is present.
+- Every proposal references its evidence snapshot, CWA trace, and base commit, and carries a verified `proposal_digest`.
+- Proposals contain no secret values.
+- A stale proposal is reported as stale.
+- No Git write, Kubernetes write, or pipeline start occurs.
 - No protected repository is modified.
-- No command executes without moving to Phase 3.
 
+## Out of Scope
+
+- Model-generated proposals or explanations.
+- PipelineRun proposals for pre-provision, provision, or deprovision.
+- Remediation proposals; `diagnose state` keeps providing read-only next steps.
+- Applying patches, creating branches, or opening pull requests.
+- Approval records.
+- Azure, GCP, and IBM Cloud scaffolds.
+
+## Phase 3 Impact
+
+Approval of this plan requires these changes to [Phase 3](06-phase-3-approved-execution.md) before it is implemented:
+
+- The Git adapter is the execution path for scaffold, deprovision, and edit proposals, and it must push the proposal as the head commit with the required message.
+- The Tekton adapter is limited to post-provision reruns, created through the Kubernetes API.
+- The guard refuses stale proposals and proposals whose `proposal_digest` changed.
+
+## Open Questions
+
+1. How should stranded clusters with bare sentinels be remediated? Re-adding a `-archive` sentinel re-runs deprovision against already-removed resources, and whether that pipeline is idempotent is unverified.
+2. Should the `fleet-clusters` README be corrected to document `deprovision/<id>-archive`? Aura cannot change it.
+3. The post-provision EventListener trigger accepts unauthenticated requests. This belongs to `fleet`, but Phase 3 must not depend on it.
+4. Which further edit kinds belong on the allow list once their apply path is known?

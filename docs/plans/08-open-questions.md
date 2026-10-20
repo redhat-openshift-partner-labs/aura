@@ -41,6 +41,8 @@ Status: open.
 
 Aura reports these as `cluster_definition_incomplete` items with `missing_files: ["metadata.yaml"]`, includes them in combined inventory, and refuses diagnosis with `Git cluster definition files`. Aura does not modify `fleet-clusters`; resolution is a backfill by the repository owners.
 
+Warning: adding `metadata.yaml` adds a file under `provision/<id>`, which the `fleet` EventListener treats as a pre-provision trigger. Push the backfill with `[skip-provision]` in the push head commit message; the trigger checks only the head commit. See [Phase 2 lifecycle facts](05-phase-2-proposals.md#lifecycle-facts).
+
 ### Backfill `platform` in legacy `metadata.yaml` files
 
 Status: open.
@@ -53,6 +55,14 @@ At the same commit, 11 of the 12 complete definitions have a `metadata.yaml` wit
 | `archive/` | `1bd62dc5-hpezerto`, `ai-test-cluster`, `ai-workload`, `pchriste` |
 
 Aura keeps the desired `cloud_provider` as `null` rather than inferring it. When every other compared field matches OpenShift, combined inventory reports `drift_indicator: incomplete-metadata` instead of `detected`.
+
+Editing an existing `metadata.yaml` modifies a file and triggers nothing, so `[skip-provision]` is not required for that change alone.
+
+### Stranded deprovision sentinels
+
+Status: open.
+
+The `archive-cluster` Action requires `deprovision/<id>-archive`, but at the validated commit seven sentinels lack the suffix: `10f25620-vscopeocpv`, `264c5202-codvoqs`, `379b5094-ibmvirt`, `639caee9-zenml1x3`, `9d0b02b8-zoomcc42`, `bf2f78dc-vantiqfips`, and `f6f3eba2-redisvirt`. Seven deprovision PipelineRuns succeeded on the hub. The first six clusters remain under `provision/` with no OpenShift resources, which Phase 1 inventory reports as `missing-openshift`; `f6f3eba2-redisvirt` is already archived with a leftover sentinel. The `fleet-clusters` README documents the bare `deprovision/<id>` form. Remediation is undecided because re-adding a `-archive` sentinel re-runs deprovision.
 
 ## Operator Interface
 
