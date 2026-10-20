@@ -7,8 +7,13 @@ from uuid import UUID
 from aura.collectors.git_inventory import GitInventoryCollector
 
 
-def write_cluster(root: Path) -> None:
-    cluster = root / "provision" / "example"
+def write_cluster(
+    root: Path,
+    *,
+    directory: str = "provision",
+    cluster_name: str = "example",
+) -> None:
+    cluster = root / directory / cluster_name
     metadata = cluster / "metadata.yaml"
     cluster_deployment = cluster / "hive" / "patches" / "clusterdeployment.yaml"
     managed_cluster = cluster / "hive" / "patches" / "managedcluster.yaml"
@@ -45,7 +50,7 @@ def write_cluster(root: Path) -> None:
             [
                 "- op: replace",
                 "  path: /metadata/name",
-                "  value: example",
+                f"  value: {cluster_name}",
                 "- op: replace",
                 "  path: /spec/platform/aws/region",
                 "  value: us-east-2",
@@ -105,6 +110,7 @@ def test_git_inventory_collector_returns_typed_evidence(tmp_path: Path) -> None:
     assert item.kind == "cluster_definition"
     assert item.data == {
         "path": "provision/example",
+        "status": "active",
         "cluster_name": "example",
         "cloud_provider": "aws",
         "region": "us-east-2",
@@ -119,6 +125,33 @@ def test_git_inventory_collector_returns_typed_evidence(tmp_path: Path) -> None:
         "install_image_set": "img4.21.13-x86-64-appsub",
     }
     assert snapshot.redactions == []
+
+
+def test_git_inventory_collector_lists_active_and_archived_clusters(
+    tmp_path: Path,
+) -> None:
+    write_cluster(tmp_path)
+    write_cluster(
+        tmp_path,
+        directory="archive",
+        cluster_name="archived-example",
+    )
+    collector = GitInventoryCollector(root=tmp_path)
+
+    snapshot = collector.collect(
+        command_id=UUID("00000000-0000-0000-0000-000000000001"),
+        snapshot_id=UUID("00000000-0000-0000-0000-000000000050"),
+        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+        source_version="0123456789abcdef0123456789abcdef01234567",
+    )
+
+    assert [
+        (item.data["cluster_name"], item.data["status"])
+        for item in snapshot.items
+    ] == [
+        ("example", "active"),
+        ("archived-example", "archived"),
+    ]
 
 
 def test_git_inventory_collector_reports_incomplete_cluster(tmp_path: Path) -> None:
@@ -138,6 +171,7 @@ def test_git_inventory_collector_reports_incomplete_cluster(tmp_path: Path) -> N
     assert item.kind == "cluster_definition_incomplete"
     assert item.data == {
         "path": "provision/incomplete",
+        "status": "active",
         "missing_files": [
             "crossplane/kustomization.yaml",
             "hive/patches/clusterdeployment.yaml",

@@ -12,6 +12,7 @@
       "kind": "cluster_definition",
       "data": {
         "path": "provision/0171d46a-scopedaws",
+        "status": "active",
         "cluster_name": "0171d46a-scopedaws",
         "cloud_provider": "aws",
         "region": "us-east-2",
@@ -28,6 +29,6 @@
     }
   ],
   "redactions": [],
-  "snapshot_digest": "b4003f0ce02b98df5843e85f4047ccd436227dd57ab622675020444a4032d56f"
+  "snapshot_digest": "b09dfcb6f09df5f22d02e91cde508524620c4e87ad0f2d985bdb601a41485f55"
 }
 

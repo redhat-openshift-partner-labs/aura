@@ -78,13 +78,19 @@ def definition(
     cluster_name: str,
     *,
     region: str = "us-east-2",
+    status: str = "active",
 ) -> EvidenceItem:
     return EvidenceItem(
         item_id=UUID(int=11),
         kind="cluster_definition",
         data={
             "cluster_name": cluster_name,
-            "path": f"provision/{cluster_name}",
+            "path": (
+                "archive"
+                if status == "archived"
+                else "provision"
+            ) + f"/{cluster_name}",
+            "status": status,
             "cloud_provider": "aws",
             "region": region,
             "tier": "base",
@@ -192,6 +198,7 @@ def test_cluster_inventory_collector_correlates_sources() -> None:
     )
     assert inventory.data == {
         "cluster_name": "example",
+        "definition_status": "active",
         "tier": "base",
         "cloud_provider": "aws",
         "region": "us-east-2",
@@ -238,6 +245,41 @@ def test_cluster_inventory_collector_reports_drift_and_missing_sources() -> None
     assert inventories["git-only"].data["actual_state"] is None
     assert inventories["orphan"].data["drift_indicator"] == "missing-git"
     assert inventories["orphan"].data["desired_state"] is None
+
+
+def test_cluster_inventory_collector_distinguishes_archived_clusters() -> None:
+    collector = ClusterInventoryCollector(
+        git_collector=git_collector(
+            definition("archived-clean", status="archived"),
+            definition("archived-with-resources", status="archived"),
+        ),
+        openshift_collector=openshift_collector(
+            actual_state("archived-with-resources")
+        ),
+        tekton_collector=tekton_collector(),
+    )
+
+    snapshot = collector.collect(
+        command_id=UUID(int=1),
+        snapshot_id=UUID(int=40),
+        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    inventories = {
+        item.data["cluster_name"]: item.data
+        for item in snapshot.items
+        if item.kind == "cluster_inventory"
+    }
+    assert inventories["archived-clean"][
+        "definition_status"
+    ] == "archived"
+    assert inventories["archived-clean"]["drift_indicator"] == "archived"
+    assert inventories["archived-with-resources"][
+        "definition_status"
+    ] == "archived"
+    assert inventories["archived-with-resources"]["drift_indicator"] == (
+        "archived-with-openshift-resources"
+    )
 
 
 def test_cli_inventory_list_combined_returns_view(

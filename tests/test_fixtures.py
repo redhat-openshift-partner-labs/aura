@@ -25,6 +25,7 @@ def test_fleet_clusters_inventory_fixture_is_valid() -> None:
 
     item = snapshot.items[0]
     assert item.kind == "cluster_definition"
+    assert item.data["status"] == "active"
     assert item.data["cluster_name"] == "0171d46a-scopedaws"
     assert item.data["cloud_provider"] == "aws"
     assert item.data["region"] == "us-east-2"

@@ -35,20 +35,26 @@ class GitInventoryCollector:
         collected_at: datetime | None = None,
         source_version: str | None = None,
     ) -> EvidenceSnapshot:
-        """Return a typed inventory snapshot for all provisioned clusters."""
+        """Return a typed inventory snapshot for all cluster definitions."""
 
         resolved_snapshot_id = snapshot_id or uuid4()
         resolved_collected_at = collected_at or datetime.now(UTC)
         resolved_source_version = source_version or self._git_revision()
-        provision_root = self.root / "provision"
-
         items = [
             self._read_cluster(
                 cluster_path,
+                status=status,
                 command_id=command_id,
                 source_version=resolved_source_version,
             )
-            for cluster_path in sorted(provision_root.iterdir())
+            for directory, status in (
+                ("provision", "active"),
+                ("archive", "archived"),
+            )
+            if (self.root / directory).is_dir()
+            for cluster_path in sorted(
+                (self.root / directory).iterdir()
+            )
             if cluster_path.is_dir()
         ]
 
@@ -68,6 +74,7 @@ class GitInventoryCollector:
         self,
         cluster_path: Path,
         *,
+        status: str,
         command_id: UUID,
         source_version: str,
     ) -> EvidenceItem:
@@ -83,6 +90,7 @@ class GitInventoryCollector:
                 kind="cluster_definition_incomplete",
                 data={
                     "path": relative_path,
+                    "status": status,
                     "missing_files": missing_files,
                 },
             )
@@ -103,6 +111,7 @@ class GitInventoryCollector:
 
         data = {
             "path": relative_path,
+            "status": status,
             "cluster_name": self._patch_value(cluster_patches, "/metadata/name"),
             "cloud_provider": metadata.get("platform"),
             "region": self._patch_value(

@@ -136,6 +136,9 @@ class ClusterInventoryCollector:
             kind="cluster_inventory",
             data={
                 "cluster_name": cluster_name,
+                "definition_status": (
+                    git_item.data.get("status") if git_item else None
+                ),
                 "tier": display_state.get("tier"),
                 "cloud_provider": display_state.get("cloud_provider"),
                 "region": display_state.get("region"),
@@ -283,6 +286,12 @@ class ClusterInventoryCollector:
     ) -> str:
         if git_item is None:
             return "missing-git"
+        if git_item.data.get("status") == "archived":
+            return (
+                "archived-with-openshift-resources"
+                if openshift_item is not None
+                else "archived"
+            )
         if openshift_item is None:
             return "missing-openshift"
         if desired_state != actual_state:
