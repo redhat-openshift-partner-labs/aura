@@ -105,8 +105,12 @@ class ClusterInventoryCollector:
             tekton_snapshot,
             openshift_items=openshift_items,
         )
+        sentinels = self._grouped_items_by_cluster(
+            git_snapshot,
+            kinds={"deprovision_sentinel"},
+        )
         cluster_names = sorted(
-            set(git_items) | set(openshift_items)
+            set(git_items) | set(openshift_items) | set(sentinels)
         )
 
         return [
@@ -115,6 +119,7 @@ class ClusterInventoryCollector:
                 git_items=git_items.get(cluster_name, []),
                 openshift_item=openshift_items.get(cluster_name),
                 pipeline_items=pipeline_items.get(cluster_name, []),
+                sentinels=sentinels.get(cluster_name, []),
                 command_id=command_id,
             )
             for cluster_name in cluster_names
@@ -127,9 +132,13 @@ class ClusterInventoryCollector:
         git_items: list[EvidenceItem],
         openshift_item: EvidenceItem | None,
         pipeline_items: list[EvidenceItem],
+        sentinels: list[EvidenceItem],
         command_id: UUID,
     ) -> EvidenceItem:
         definition_conflict = len(git_items) > 1
+        deprovision_status = _deprovision_status(
+            git_items, openshift_item, sentinels
+        )
         definition_statuses = sorted(
             {
                 str(item.data.get("status"))
@@ -158,6 +167,10 @@ class ClusterInventoryCollector:
                 "definition_statuses": definition_statuses,
                 "definition_conflict": definition_conflict,
                 "definition_kind": git_item.kind if git_item else None,
+                "deprovision_status": deprovision_status,
+                "deprovision_sentinels": [
+                    str(item.data["path"]) for item in sentinels
+                ],
                 "tier": display_state.get("tier"),
                 "cloud_provider": display_state.get("cloud_provider"),
                 "region": display_state.get("region"),
@@ -175,6 +188,7 @@ class ClusterInventoryCollector:
                     desired_state=desired_state,
                     actual_state=actual_state,
                     definition_conflict=definition_conflict,
+                    deprovision_status=deprovision_status,
                 ),
             },
         )
@@ -312,6 +326,27 @@ class ClusterInventoryCollector:
         return {field: latest.data.get(field) for field in fields}
 
 
+DEPROVISION_REQUESTED = frozenset({"pending", "archive-pending", "stranded"})
+
+
+def _deprovision_status(
+    git_items: list[EvidenceItem],
+    openshift_item: EvidenceItem | None,
+    sentinels: list[EvidenceItem],
+) -> str | None:
+    if not sentinels:
+        return None
+    if not git_items:
+        return "orphaned"
+    if all(item.data.get("status") == "archived" for item in git_items):
+        return "leftover"
+    if openshift_item is not None:
+        return "pending"
+    if any(item.data.get("archive_suffix") for item in sentinels):
+        return "archive-pending"
+    return "stranded"
+
+
 def _drift_indicator(
     *,
     git_item: EvidenceItem | None,
@@ -319,11 +354,14 @@ def _drift_indicator(
     desired_state: dict[str, object] | None,
     actual_state: dict[str, object] | None,
     definition_conflict: bool,
+    deprovision_status: str | None,
 ) -> str:
     if definition_conflict:
         return "definition-conflict"
     if git_item is None:
         return "missing-git"
+    if deprovision_status in DEPROVISION_REQUESTED:
+        return "deprovision-requested"
     if git_item.data.get("status") == "archived":
         return (
             "archived-with-openshift-resources"

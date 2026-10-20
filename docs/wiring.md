@@ -40,6 +40,8 @@ Required files for a complete definition:
 
 A definition missing a required file is emitted as `cluster_definition_incomplete`. A definition whose YAML is malformed, has the wrong document shape, or lacks a required patch path is emitted as `cluster_definition_invalid`; other definitions are still collected. Both kinds use the directory name as `cluster_name`. Invalid-YAML errors report only the file and line, never file content.
 
+Top-level files under `deprovision/`, other than `README.md`, are emitted as `deprovision_sentinel` items. The sentinel `deprovision/<id>-archive` names cluster `<id>` with `archive_suffix: true`; a bare `deprovision/<id>` has `archive_suffix: false`.
+
 Required patch paths:
 
 | File | Paths |

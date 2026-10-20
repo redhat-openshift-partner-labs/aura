@@ -13,6 +13,9 @@ import yaml
 from aura.contracts import EvidenceItem, EvidenceSnapshot
 
 
+ARCHIVE_SUFFIX = "-archive"
+
+
 class GitInventoryError(RuntimeError):
     """Raised when committed Git evidence cannot be read."""
 
@@ -56,6 +59,9 @@ class _GitTree:
 
     def cluster_directories(self) -> list[tuple[str, str]]:
         return _cluster_directories(self.tracked_paths)
+
+    def deprovision_sentinels(self) -> list[str]:
+        return _deprovision_sentinels(self.tracked_paths)
 
     def kustomizations(self, cluster_path: str) -> list[str]:
         return _kustomizations(self.tracked_paths, cluster_path)
@@ -109,6 +115,37 @@ def _cluster_directories(
             directory_order[item[0].split("/", maxsplit=1)[0]],
             item[0],
         ),
+    )
+
+
+def _deprovision_sentinels(tracked_paths: frozenset[str]) -> list[str]:
+    return sorted(
+        tracked_path
+        for tracked_path in tracked_paths
+        if len(parts := tracked_path.split("/")) == 2
+        and parts[0] == "deprovision"
+        and parts[1] != "README.md"
+    )
+
+
+def _sentinel_item(
+    path: str,
+    *,
+    command_id: UUID,
+    source_version: str,
+) -> EvidenceItem:
+    name = Path(path).name
+    archive_suffix = name.endswith(ARCHIVE_SUFFIX)
+    return EvidenceItem(
+        item_id=uuid5(command_id, f"{source_version}:{path}"),
+        kind="deprovision_sentinel",
+        data={
+            "path": path,
+            "cluster_name": (
+                name.removesuffix(ARCHIVE_SUFFIX) if archive_suffix else name
+            ),
+            "archive_suffix": archive_suffix,
+        },
     )
 
 
@@ -274,6 +311,14 @@ class GitInventoryCollector:
             )
             for cluster_path, status in tree.cluster_directories()
         ]
+        items.extend(
+            _sentinel_item(
+                path,
+                command_id=command_id,
+                source_version=resolved_source_version,
+            )
+            for path in tree.deprovision_sentinels()
+        )
 
         return EvidenceSnapshot(
             snapshot_id=resolved_snapshot_id,

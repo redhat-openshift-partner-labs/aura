@@ -58,7 +58,7 @@ Phase 1 performs only these external reads:
 
 | Source | Read |
 | --- | --- |
-| Git | Committed YAML files from `HEAD` |
+| Git | Committed definition files and the `deprovision/` listing from `HEAD` |
 | OpenShift | `clusterdeployments` and `managedclusters` |
 | Tekton | `pipelineruns` and `taskruns` |
 

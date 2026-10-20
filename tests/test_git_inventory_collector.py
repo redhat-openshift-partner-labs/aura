@@ -312,6 +312,42 @@ def test_git_inventory_collector_reports_invalid_definition(
     }
 
 
+def test_git_inventory_collector_reports_deprovision_sentinels(
+    tmp_path: Path,
+) -> None:
+    write_cluster(tmp_path)
+    deprovision = tmp_path / "deprovision"
+    deprovision.mkdir()
+    for name in ("README.md", "example", "other-archive"):
+        (deprovision / name).write_text("", encoding="utf-8")
+    commit_repository(tmp_path)
+
+    snapshot = collect_snapshot(tmp_path)
+
+    assert [
+        (item.kind, item.data)
+        for item in snapshot.items
+        if item.kind == "deprovision_sentinel"
+    ] == [
+        (
+            "deprovision_sentinel",
+            {
+                "path": "deprovision/example",
+                "cluster_name": "example",
+                "archive_suffix": False,
+            },
+        ),
+        (
+            "deprovision_sentinel",
+            {
+                "path": "deprovision/other-archive",
+                "cluster_name": "other",
+                "archive_suffix": True,
+            },
+        ),
+    ]
+
+
 def test_git_inventory_collector_reads_head_not_working_tree(
     tmp_path: Path,
 ) -> None:

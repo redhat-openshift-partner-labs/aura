@@ -24,6 +24,7 @@ An `EvidenceSnapshot` is the frozen result of one collector invocation.
 | `cluster_definition` | Git | Complete active or archived desired-state definition |
 | `cluster_definition_incomplete` | Git | Definition directory with missing required files; `cluster_name` is the directory name |
 | `cluster_definition_invalid` | Git | Definition with all required files whose YAML or required patch paths cannot be interpreted; `cluster_name` is the directory name and `error` names the file and problem |
+| `deprovision_sentinel` | Git | File under `deprovision/`, other than `README.md`; `cluster_name` strips a `-archive` suffix and `archive_suffix` records whether it was present |
 | `cluster_actual_state` | OpenShift | Complete observed cluster state |
 | `cluster_actual_state_incomplete` | OpenShift | Cluster resource with missing status data |
 | `pipeline_run` | Tekton | PipelineRun and summarized TaskRuns |
@@ -40,6 +41,8 @@ An `EvidenceSnapshot` is the frozen result of one collector invocation.
 | `definition_statuses` | Every matching Git status |
 | `definition_conflict` | Whether multiple Git definitions match one cluster |
 | `definition_kind` | Matching Git item kind, or `null` when no definition or a conflict exists |
+| `deprovision_status` | Deprovision state derived from sentinels, definitions, and OpenShift, or `null` without a sentinel |
+| `deprovision_sentinels` | Paths of matching `deprovision/` sentinels |
 | `tier` | Desired or actual state |
 | `cloud_provider` | Desired or actual state |
 | `region` | Desired or actual state |
@@ -63,6 +66,17 @@ Drift values:
 | `archived` | Archived definition has no OpenShift resource |
 | `archived-with-openshift-resources` | Archived definition still has an OpenShift resource |
 | `definition-conflict` | Active and archived Git definitions both match one cluster |
+| `deprovision-requested` | An active definition has a deprovision sentinel; see `deprovision_status` |
+
+Deprovision status values:
+
+| Value | Meaning |
+| --- | --- |
+| `pending` | Active definition with a sentinel and OpenShift resources still present |
+| `archive-pending` | Active definition with a `-archive` sentinel and no OpenShift resources; the archive Action has not moved it yet |
+| `stranded` | Active definition with only bare sentinels and no OpenShift resources; the archive Action requires `deprovision/<id>-archive` and cannot archive it |
+| `leftover` | Every matching definition is archived, but a sentinel remains |
+| `orphaned` | A sentinel exists without any matching definition |
 
 ## PipelineRun Item Fields
 

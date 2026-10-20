@@ -205,6 +205,8 @@ def test_cluster_inventory_collector_correlates_sources() -> None:
         "definition_statuses": ["active"],
         "definition_conflict": False,
         "definition_kind": "cluster_definition",
+        "deprovision_status": None,
+        "deprovision_sentinels": [],
         "tier": "base",
         "cloud_provider": "aws",
         "region": "us-east-2",
@@ -391,6 +393,69 @@ def test_cluster_inventory_collector_reports_invalid_definition(
     assert inventory.data["definition_kind"] == "cluster_definition_invalid"
     assert inventory.data["desired_state"] is None
     assert inventory.data["drift_indicator"] == "invalid-definition"
+
+
+def test_cluster_inventory_collector_reports_deprovision_status(
+    tmp_path: Path,
+) -> None:
+    for name in ("pending", "stranded", "archive-pending", "active"):
+        write_cluster(tmp_path, cluster_name=name)
+    write_cluster(tmp_path, directory="archive", cluster_name="leftover")
+    deprovision = tmp_path / "deprovision"
+    deprovision.mkdir()
+    for name in (
+        "pending",
+        "stranded",
+        "archive-pending-archive",
+        "leftover",
+        "orphaned-archive",
+    ):
+        (deprovision / name).write_text("", encoding="utf-8")
+    commit_repository(tmp_path)
+    collector = ClusterInventoryCollector(
+        git_collector=GitInventoryCollector(tmp_path),
+        openshift_collector=openshift_collector(actual_state("pending")),
+        tekton_collector=tekton_collector(),
+    )
+
+    snapshot = collector.collect(
+        command_id=UUID(int=1),
+        snapshot_id=UUID(int=40),
+        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    assert {
+        item.data["cluster_name"]: (
+            item.data["deprovision_status"],
+            item.data["deprovision_sentinels"],
+            item.data["drift_indicator"],
+        )
+        for item in snapshot.items
+        if item.kind == "cluster_inventory"
+    } == {
+        "active": (None, [], "missing-openshift"),
+        "archive-pending": (
+            "archive-pending",
+            ["deprovision/archive-pending-archive"],
+            "deprovision-requested",
+        ),
+        "leftover": ("leftover", ["deprovision/leftover"], "archived"),
+        "orphaned": (
+            "orphaned",
+            ["deprovision/orphaned-archive"],
+            "missing-git",
+        ),
+        "pending": (
+            "pending",
+            ["deprovision/pending"],
+            "deprovision-requested",
+        ),
+        "stranded": (
+            "stranded",
+            ["deprovision/stranded"],
+            "deprovision-requested",
+        ),
+    }
 
 
 def test_cluster_inventory_collector_reports_definition_conflict() -> None:
