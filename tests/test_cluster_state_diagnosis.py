@@ -368,6 +368,31 @@ def test_cluster_state_diagnosis_model_explains_deprovision_requests(
     assert sentinel_item.item_id in response.evidence_ids
 
 
+def test_cluster_state_diagnosis_model_explains_stranded_cluster_without_runs(
+    tmp_path,
+) -> None:
+    write_deprovisioned_cluster(tmp_path, "example")
+    evidence_snapshot = collect_cluster_state(
+        git_collector=GitInventoryCollector(tmp_path),
+        openshift_collector=EmptyCollector(),
+        tekton_collector=EmptyCollector(),
+    )
+
+    response = ClusterStateDiagnosisModel().diagnose(
+        make_cwa_snapshot(evidence_snapshot)
+    )
+
+    assert response.summary == (
+        "Cluster example has no OpenShift resources and only the bare "
+        "deprovision sentinel deprovision/example; no PipelineRun is "
+        "retained for it."
+    )
+    assert [inference.confidence for inference in response.inferences] == [
+        0.8
+    ]
+    assert response.confidence == 0.6
+
+
 def test_cluster_state_diagnosis_model_requires_provisioned_condition() -> None:
     evidence_snapshot = collect_cluster_state(
         git_collector=FakeGitCollector(),

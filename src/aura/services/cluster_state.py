@@ -102,20 +102,6 @@ class ClusterStateDiagnosisModel:
             correlation, items_by_id, "deprovision_sentinel_evidence_ids"
         )
         facts.extend(_sentinel_facts(sentinels, cluster_name))
-        inferences = _inferences(
-            pipeline_item,
-            cluster_name=cluster_name,
-            provisioned=provisioned,
-        )
-        recommended_inspection = _recommended_inspection(
-            pipeline_item,
-            provisioned=provisioned,
-        )
-        summary = _summary(
-            pipeline_item,
-            cluster_name=cluster_name,
-            provisioned=provisioned,
-        )
         deprovision = _deprovision_answer(
             correlation.data.get("deprovision_status"),
             sentinels,
@@ -124,9 +110,18 @@ class ClusterStateDiagnosisModel:
         )
         if deprovision is not None:
             summary, recommended_inspection, inferences = deprovision
-        confidence = {"Failed": 0.8, "Succeeded": 0.9}.get(
-            str(pipeline_item.data.get("status")),
-            0.6,
+        else:
+            summary, recommended_inspection, inferences = _pipeline_answer(
+                pipeline_item,
+                cluster_name=cluster_name,
+                provisioned=provisioned,
+            )
+        confidence = (
+            {"Failed": 0.8, "Succeeded": 0.9}.get(
+                str(pipeline_item.data.get("status")), 0.6
+            )
+            if pipeline_item is not None
+            else 0.6
         )
 
         return DiagnosisResponse(
@@ -236,7 +231,7 @@ class ClusterStateDiagnosisModel:
 
 def _primary_pipeline_item(
     pipeline_items: list[EvidenceItem],
-) -> EvidenceItem:
+) -> EvidenceItem | None:
     failed = [
         item
         for item in pipeline_items
@@ -247,7 +242,7 @@ def _primary_pipeline_item(
         for item in pipeline_items
         if item.data.get("status") not in {"Failed", "Succeeded"}
     ]
-    return (failed or incomplete or pipeline_items)[0]
+    return next(iter(failed or incomplete or pipeline_items), None)
 
 
 def _inferences(
@@ -372,10 +367,29 @@ def _sentinel_facts(
     ]
 
 
+def _pipeline_answer(
+    pipeline_item: EvidenceItem | None,
+    *,
+    cluster_name: str,
+    provisioned: bool,
+) -> tuple[str, RecommendedInspection, list[DiagnosisInference]]:
+    if pipeline_item is None:
+        raise DiagnosisEvidenceUnavailable(["Tekton PipelineRun status"])
+    return (
+        _summary(
+            pipeline_item, cluster_name=cluster_name, provisioned=provisioned
+        ),
+        _recommended_inspection(pipeline_item, provisioned=provisioned),
+        _inferences(
+            pipeline_item, cluster_name=cluster_name, provisioned=provisioned
+        ),
+    )
+
+
 def _deprovision_answer(
     status: object,
     sentinels: list[EvidenceItem],
-    pipeline_item: EvidenceItem,
+    pipeline_item: EvidenceItem | None,
     *,
     cluster_name: str,
 ) -> tuple[str, RecommendedInspection, list[DiagnosisInference]] | None:
@@ -384,36 +398,38 @@ def _deprovision_answer(
     summary, inspection, inferences = _deprovision_text(
         status, sentinels, pipeline_item, cluster_name=cluster_name
     )
-    return (
-        summary,
-        inspection,
-        [
+    if pipeline_item is not None:
+        inferences = [
             *inferences,
             *_inferences(
                 pipeline_item, cluster_name=cluster_name, provisioned=True
             ),
-        ],
-    )
+        ]
+    return summary, inspection, inferences
 
 
 def _deprovision_text(
     status: object,
     sentinels: list[EvidenceItem],
-    pipeline_item: EvidenceItem,
+    pipeline_item: EvidenceItem | None,
     *,
     cluster_name: str,
 ) -> tuple[str, RecommendedInspection, list[DiagnosisInference]]:
     paths = ", ".join(str(item.data["path"]) for item in sentinels)
-    name = pipeline_item.data.get("pipeline_run_name")
-    run = f"PipelineRun {name} {_outcome(pipeline_item)}"
+    if pipeline_item is None:
+        run = "no PipelineRun is retained for it"
+        subject = "the remaining OpenShift resources"
+    else:
+        name = pipeline_item.data.get("pipeline_run_name")
+        run = f"PipelineRun {name} {_outcome(pipeline_item)}"
+        subject = f"PipelineRun {name} and the remaining OpenShift resources"
     if status == "pending":
         return (
             f"Cluster {cluster_name} has a pending deprovision request in "
             f"{paths}, and {run}.",
             RecommendedInspection(
                 description=(
-                    f"Inspect PipelineRun {name} and the remaining OpenShift "
-                    f"resources for cluster {cluster_name}."
+                    f"Inspect {subject} for cluster {cluster_name}."
                 )
             ),
             [],

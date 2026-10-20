@@ -113,7 +113,7 @@ Model output is untrusted data. Pydantic validates the exact response shape, con
 | OpenShift `Provisioned` condition | `OpenShift Provisioned condition` |
 | OpenShift actual state, unless an active definition has a deprovision sentinel | `OpenShift actual state` |
 | ManagedCluster status | `ManagedCluster status` |
-| Tekton run | `Tekton PipelineRun status` |
+| Tekton run, unless deprovision is requested | `Tekton PipelineRun status` |
 
 The command exits with code `2`. Evidence, CWA snapshot, CWA trace, and audit records are still preserved.
 

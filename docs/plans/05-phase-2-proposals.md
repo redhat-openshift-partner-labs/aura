@@ -52,7 +52,7 @@ These must land before proposal types that depend on them:
 | P3 | Append-only proposal store and `Proposal` contract | All proposal types |
 | P4 | `propose` CLI commands, authorized for `proposer` and `admin` | All proposal types |
 
-At the validated commit, seven bare `deprovision/<id>` sentinels exist and seven deprovision PipelineRuns succeeded; six of those clusters still appear under `provision/` with no OpenShift resources. P0 makes that state visible instead of reporting it as `missing-openshift`.
+At the validated commit, seven bare `deprovision/<id>` sentinels exist; six of those clusters still appear under `provision/` with no OpenShift resources, and only two still have a retained deprovision PipelineRun. P0 makes that state visible instead of reporting it as `missing-openshift`.
 
 ## Proposal Lifecycle
 

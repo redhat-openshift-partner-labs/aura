@@ -273,6 +273,8 @@ class ClusterStateCollector:
                     f"Selected Tekton PipelineRun {pipeline_run}"
                 )
                 return missing
+            if deprovision_requested:
+                return missing
             missing.append("Tekton PipelineRun status")
         return missing
 

@@ -530,6 +530,27 @@ def test_cluster_state_collector_explains_deprovision_of_legacy_definition(
     assert snapshot.items[-1].data["missing_evidence"] == []
 
 
+@pytest.mark.parametrize(
+    ("pipeline_run", "missing"),
+    [(None, []), ("missing-run", ["Selected Tekton PipelineRun missing-run"])],
+)
+def test_cluster_state_collector_allows_pruned_runs_after_deprovision(
+    tmp_path: Path,
+    pipeline_run: str | None,
+    missing: list[str],
+) -> None:
+    write_deprovisioned_cluster(tmp_path, "example")
+
+    snapshot = collect_cluster_state(
+        git_collector=GitInventoryCollector(tmp_path),
+        openshift_collector=EmptyCollector(),
+        tekton_collector=EmptyCollector(),
+        pipeline_run=pipeline_run,
+    )
+
+    assert snapshot.items[-1].data["missing_evidence"] == missing
+
+
 def test_cluster_state_collector_requires_openshift_for_leftover_sentinel(
     tmp_path: Path,
 ) -> None:
