@@ -76,6 +76,7 @@ class _GitTree:
                 f"git checkout is not usable: {root}"
             ) from error
 
+
 def _run_git(root: Path, arguments: list[str]) -> str:
     if not root.is_dir():
         raise GitInventoryError(f"git checkout is not usable: {root}")
@@ -126,6 +127,112 @@ def _kustomizations(
         and remainder.endswith("/kustomization.yaml")
     }
     return sorted(names)
+
+
+def _definition_data(
+    cluster_path: str,
+    *,
+    status: str,
+    tree: _GitTree,
+) -> dict[str, Any]:
+    metadata = _load_mapping(tree, cluster_path, "metadata.yaml")
+    cluster_file = "hive/patches/clusterdeployment.yaml"
+    managed_file = "hive/patches/managedcluster.yaml"
+    cluster_patches = _load_patches(tree, cluster_path, cluster_file)
+    managed_patches = _load_patches(tree, cluster_path, managed_file)
+    crossplane_file = "crossplane/kustomization.yaml"
+    crossplane = _load_mapping(tree, cluster_path, crossplane_file)
+
+    resources = crossplane.get("resources", [])
+    if not isinstance(resources, list) or not all(
+        isinstance(resource, str) for resource in resources
+    ):
+        raise _InvalidDefinition(
+            f"{crossplane_file}: expected resources to be a list of paths"
+        )
+    crossplane_template = Path(resources[0]).name if resources else ""
+
+    return {
+        "path": cluster_path,
+        "status": status,
+        "cluster_name": _patch_value(
+            cluster_patches,
+            cluster_file,
+            "/metadata/name",
+        ),
+        "cloud_provider": metadata.get("platform"),
+        "region": _patch_value(
+            cluster_patches,
+            cluster_file,
+            "/spec/platform/aws/region",
+        ),
+        "tier": _patch_value(
+            managed_patches,
+            managed_file,
+            "/metadata/labels/tier",
+        ),
+        "environment": _patch_value(
+            managed_patches,
+            managed_file,
+            "/metadata/labels/environment",
+        ),
+        "aws_credentials_mode": metadata.get("aws-credentials-mode"),
+        "crossplane_template": crossplane_template,
+        "kustomizations": tree.kustomizations(cluster_path),
+        "install_image_set": _patch_value(
+            cluster_patches,
+            cluster_file,
+            "/spec/provisioning/imageSetRef/name",
+        ),
+    }
+
+
+def _load_yaml(tree: _GitTree, cluster_path: str, name: str) -> Any:
+    try:
+        return yaml.safe_load(tree.file(f"{cluster_path}/{name}"))
+    except yaml.YAMLError as error:
+        mark = getattr(error, "problem_mark", None)
+        location = f" at line {mark.line + 1}" if mark is not None else ""
+        raise _InvalidDefinition(
+            f"{name}: invalid YAML{location}"
+        ) from error
+
+
+def _load_mapping(
+    tree: _GitTree,
+    cluster_path: str,
+    name: str,
+) -> dict[str, Any]:
+    document = _load_yaml(tree, cluster_path, name)
+    if not isinstance(document, dict):
+        raise _InvalidDefinition(f"{name}: expected a mapping")
+    return document
+
+
+def _load_patches(
+    tree: _GitTree,
+    cluster_path: str,
+    name: str,
+) -> list[dict[str, Any]]:
+    document = _load_yaml(tree, cluster_path, name)
+    if not isinstance(document, list) or not all(
+        isinstance(patch, dict) for patch in document
+    ):
+        raise _InvalidDefinition(
+            f"{name}: expected a list of patch operations"
+        )
+    return document
+
+
+def _patch_value(
+    patches: list[dict[str, Any]],
+    name: str,
+    json_path: str,
+) -> Any:
+    for patch in patches:
+        if patch.get("path") == json_path:
+            return patch.get("value")
+    raise _InvalidDefinition(f"{name}: missing patch path {json_path}")
 
 
 @final
@@ -209,7 +316,7 @@ class GitInventoryCollector:
 
         item_id = uuid5(command_id, f"{source_version}:{relative_path}")
         try:
-            data = self._definition_data(
+            data = _definition_data(
                 cluster_path,
                 status=status,
                 tree=tree,
@@ -231,114 +338,6 @@ class GitInventoryCollector:
             kind="cluster_definition",
             data=data,
         )
-
-    def _definition_data(
-        self,
-        cluster_path: str,
-        *,
-        status: str,
-        tree: _GitTree,
-    ) -> dict[str, Any]:
-        metadata = self._load_mapping(tree, cluster_path, "metadata.yaml")
-        cluster_file = "hive/patches/clusterdeployment.yaml"
-        managed_file = "hive/patches/managedcluster.yaml"
-        cluster_patches = self._load_patches(tree, cluster_path, cluster_file)
-        managed_patches = self._load_patches(tree, cluster_path, managed_file)
-        crossplane_file = "crossplane/kustomization.yaml"
-        crossplane = self._load_mapping(tree, cluster_path, crossplane_file)
-
-        resources = crossplane.get("resources", [])
-        if not isinstance(resources, list) or not all(
-            isinstance(resource, str) for resource in resources
-        ):
-            raise _InvalidDefinition(
-                f"{crossplane_file}: expected resources to be a list of paths"
-            )
-        crossplane_template = Path(resources[0]).name if resources else ""
-
-        return {
-            "path": cluster_path,
-            "status": status,
-            "cluster_name": self._patch_value(
-                cluster_patches,
-                cluster_file,
-                "/metadata/name",
-            ),
-            "cloud_provider": metadata.get("platform"),
-            "region": self._patch_value(
-                cluster_patches,
-                cluster_file,
-                "/spec/platform/aws/region",
-            ),
-            "tier": self._patch_value(
-                managed_patches,
-                managed_file,
-                "/metadata/labels/tier",
-            ),
-            "environment": self._patch_value(
-                managed_patches,
-                managed_file,
-                "/metadata/labels/environment",
-            ),
-            "aws_credentials_mode": metadata.get("aws-credentials-mode"),
-            "crossplane_template": crossplane_template,
-            "kustomizations": tree.kustomizations(cluster_path),
-            "install_image_set": self._patch_value(
-                cluster_patches,
-                cluster_file,
-                "/spec/provisioning/imageSetRef/name",
-            ),
-        }
-
-    @staticmethod
-    def _load_yaml(tree: _GitTree, cluster_path: str, name: str) -> Any:
-        try:
-            return yaml.safe_load(tree.file(f"{cluster_path}/{name}"))
-        except yaml.YAMLError as error:
-            mark = getattr(error, "problem_mark", None)
-            location = f" at line {mark.line + 1}" if mark is not None else ""
-            raise _InvalidDefinition(
-                f"{name}: invalid YAML{location}"
-            ) from error
-
-    @classmethod
-    def _load_mapping(
-        cls,
-        tree: _GitTree,
-        cluster_path: str,
-        name: str,
-    ) -> dict[str, Any]:
-        document = cls._load_yaml(tree, cluster_path, name)
-        if not isinstance(document, dict):
-            raise _InvalidDefinition(f"{name}: expected a mapping")
-        return document
-
-    @classmethod
-    def _load_patches(
-        cls,
-        tree: _GitTree,
-        cluster_path: str,
-        name: str,
-    ) -> list[dict[str, Any]]:
-        document = cls._load_yaml(tree, cluster_path, name)
-        if not isinstance(document, list) or not all(
-            isinstance(patch, dict) for patch in document
-        ):
-            raise _InvalidDefinition(
-                f"{name}: expected a list of patch operations"
-            )
-        return document
-
-    @staticmethod
-    def _patch_value(
-        patches: list[dict[str, Any]],
-        name: str,
-        json_path: str,
-    ) -> Any:
-        for patch in patches:
-            if patch.get("path") == json_path:
-                return patch.get("value")
-        raise _InvalidDefinition(f"{name}: missing patch path {json_path}")
 
     def _git_revision(self, tree: _GitTree) -> str:
         return tree.revision

@@ -169,7 +169,7 @@ class ClusterInventoryCollector:
                 "latest_pipeline_run": self._latest_pipeline_run(
                     pipeline_items
                 ),
-                "drift_indicator": self._drift_indicator(
+                "drift_indicator": _drift_indicator(
                     git_item=git_item,
                     openshift_item=openshift_item,
                     desired_state=desired_state,
@@ -311,43 +311,44 @@ class ClusterInventoryCollector:
         )
         return {field: latest.data.get(field) for field in fields}
 
-    @staticmethod
-    def _drift_indicator(
-        *,
-        git_item: EvidenceItem | None,
-        openshift_item: EvidenceItem | None,
-        desired_state: dict[str, object] | None,
-        actual_state: dict[str, object] | None,
-        definition_conflict: bool,
-    ) -> str:
-        if definition_conflict:
-            return "definition-conflict"
-        if git_item is None:
-            return "missing-git"
-        if git_item.data.get("status") == "archived":
-            return (
-                "archived-with-openshift-resources"
-                if openshift_item is not None
-                else "archived"
-            )
-        if openshift_item is None:
-            return "missing-openshift"
-        if git_item.kind == "cluster_definition_incomplete":
-            return "incomplete-definition"
-        if git_item.kind == "cluster_definition_invalid":
-            return "invalid-definition"
-        if desired_state is None or actual_state is None:
-            return "detected"
-        compared_fields = set(desired_state) - {"cloud_provider"}
-        if any(
-            desired_state[field] != actual_state.get(field)
-            for field in compared_fields
-        ):
-            return "detected"
-        if desired_state["cloud_provider"] is None:
-            return "incomplete-metadata"
-        if desired_state["cloud_provider"] != actual_state["cloud_provider"]:
-            return "detected"
-        return "none"
+
+def _drift_indicator(
+    *,
+    git_item: EvidenceItem | None,
+    openshift_item: EvidenceItem | None,
+    desired_state: dict[str, object] | None,
+    actual_state: dict[str, object] | None,
+    definition_conflict: bool,
+) -> str:
+    if definition_conflict:
+        return "definition-conflict"
+    if git_item is None:
+        return "missing-git"
+    if git_item.data.get("status") == "archived":
+        return (
+            "archived-with-openshift-resources"
+            if openshift_item is not None
+            else "archived"
+        )
+    if openshift_item is None:
+        return "missing-openshift"
+    if git_item.kind == "cluster_definition_incomplete":
+        return "incomplete-definition"
+    if git_item.kind == "cluster_definition_invalid":
+        return "invalid-definition"
+    if desired_state is None or actual_state is None:
+        return "detected"
+    compared_fields = set(desired_state) - {"cloud_provider"}
+    if any(
+        desired_state[field] != actual_state.get(field)
+        for field in compared_fields
+    ):
+        return "detected"
+    if desired_state["cloud_provider"] is None:
+        return "incomplete-metadata"
+    if desired_state["cloud_provider"] != actual_state["cloud_provider"]:
+        return "detected"
+    return "none"
+
 
 __all__ = ["ClusterInventoryCollector"]

@@ -99,18 +99,18 @@ class ClusterStateDiagnosisModel:
             correlation=correlation,
             provisioned_condition=provisioned_condition,
         )
-        pipeline_item = self._primary_pipeline_item(pipeline_items)
+        pipeline_item = _primary_pipeline_item(pipeline_items)
         cluster_name = str(correlation.data["cluster_name"])
-        inferences = self._inferences(
+        inferences = _inferences(
             pipeline_item,
             cluster_name=cluster_name,
             provisioned=provisioned,
         )
-        recommended_inspection = self._recommended_inspection(
+        recommended_inspection = _recommended_inspection(
             pipeline_item,
             provisioned=provisioned,
         )
-        summary = self._summary(
+        summary = _summary(
             pipeline_item,
             cluster_name=cluster_name,
             provisioned=provisioned,
@@ -224,111 +224,111 @@ class ClusterStateDiagnosisModel:
             )
         return facts
 
-    @staticmethod
-    def _primary_pipeline_item(
-        pipeline_items: list[EvidenceItem],
-    ) -> EvidenceItem:
-        failed = [
-            item
-            for item in pipeline_items
-            if item.data.get("status") == "Failed"
-        ]
-        incomplete = [
-            item
-            for item in pipeline_items
-            if item.data.get("status") not in {"Failed", "Succeeded"}
-        ]
-        return (failed or incomplete or pipeline_items)[0]
 
-    @staticmethod
-    def _inferences(
-        pipeline_item: EvidenceItem,
-        *,
-        cluster_name: str,
-        provisioned: bool,
-    ) -> list[DiagnosisInference]:
-        status = pipeline_item.data.get("status")
-        name = pipeline_item.data.get("pipeline_run_name")
-        if status == "Failed":
-            statement = (
-                "The failed PipelineRun may explain the current cluster state."
-                if provisioned
-                else (
-                    "The failed PipelineRun may explain why cluster "
-                    f"{cluster_name} is not provisioned."
-                )
-            )
-            return [DiagnosisInference(statement=statement, confidence=0.7)]
-        if status == "Succeeded":
-            return []
-        return [
-            DiagnosisInference(
-                statement=(
-                    f"PipelineRun {name} has not completed, so the "
-                    "cluster state may still change."
-                ),
-                confidence=0.6,
-            )
-        ]
+def _primary_pipeline_item(
+    pipeline_items: list[EvidenceItem],
+) -> EvidenceItem:
+    failed = [
+        item
+        for item in pipeline_items
+        if item.data.get("status") == "Failed"
+    ]
+    incomplete = [
+        item
+        for item in pipeline_items
+        if item.data.get("status") not in {"Failed", "Succeeded"}
+    ]
+    return (failed or incomplete or pipeline_items)[0]
 
-    @staticmethod
-    def _recommended_inspection(
-        pipeline_item: EvidenceItem,
-        *,
-        provisioned: bool,
-    ) -> RecommendedInspection:
-        status = pipeline_item.data.get("status")
-        if status == "Failed":
-            failed_task = pipeline_item.data.get("failed_task") or {}
-            task_name = failed_task.get("name", "the failed task")
-            subject = f"the failed TaskRun {task_name}"
-        elif status == "Succeeded":
-            subject = None
-        else:
-            subject = (
-                "the conditions and TaskRuns of incomplete PipelineRun "
-                f"{pipeline_item.data.get('pipeline_run_name')}"
-            )
-        if subject is None:
-            description = (
-                "Review the cluster's current state and recent workflow."
-                if provisioned
-                else (
-                    "Read-only inspect the OpenShift Provisioned condition "
-                    "and the cluster's recent workflow."
-                )
-            )
-        elif provisioned:
-            description = f"Inspect {subject}."
-        else:
-            description = (
-                f"Read-only inspect {subject} "
-                "and the OpenShift Provisioned condition."
-            )
-        return RecommendedInspection(description=description)
 
-    @staticmethod
-    def _summary(
-        pipeline_item: EvidenceItem,
-        *,
-        cluster_name: str,
-        provisioned: bool,
-    ) -> str:
-        outcome = {
-            "Failed": "failed",
-            "Succeeded": "succeeded",
-        }.get(str(pipeline_item.data.get("status")), "has not completed")
-        run = f"PipelineRun {pipeline_item.data.get('pipeline_run_name')}"
-        if not provisioned:
-            return (
-                f"Cluster {cluster_name} is defined but not provisioned, "
-                f"and {run} {outcome}."
+def _inferences(
+    pipeline_item: EvidenceItem,
+    *,
+    cluster_name: str,
+    provisioned: bool,
+) -> list[DiagnosisInference]:
+    status = pipeline_item.data.get("status")
+    name = pipeline_item.data.get("pipeline_run_name")
+    if status == "Failed":
+        statement = (
+            "The failed PipelineRun may explain the current cluster state."
+            if provisioned
+            else (
+                "The failed PipelineRun may explain why cluster "
+                f"{cluster_name} is not provisioned."
             )
-        conjunction = "but" if outcome == "failed" else "and"
-        return (
-            f"Cluster {cluster_name} is defined and deployed, "
-            f"{conjunction} {run} {outcome}."
         )
+        return [DiagnosisInference(statement=statement, confidence=0.7)]
+    if status == "Succeeded":
+        return []
+    return [
+        DiagnosisInference(
+            statement=(
+                f"PipelineRun {name} has not completed, so the "
+                "cluster state may still change."
+            ),
+            confidence=0.6,
+        )
+    ]
+
+
+def _recommended_inspection(
+    pipeline_item: EvidenceItem,
+    *,
+    provisioned: bool,
+) -> RecommendedInspection:
+    status = pipeline_item.data.get("status")
+    if status == "Failed":
+        failed_task = pipeline_item.data.get("failed_task") or {}
+        task_name = failed_task.get("name", "the failed task")
+        subject = f"the failed TaskRun {task_name}"
+    elif status == "Succeeded":
+        subject = None
+    else:
+        subject = (
+            "the conditions and TaskRuns of incomplete PipelineRun "
+            f"{pipeline_item.data.get('pipeline_run_name')}"
+        )
+    if subject is None:
+        description = (
+            "Review the cluster's current state and recent workflow."
+            if provisioned
+            else (
+                "Read-only inspect the OpenShift Provisioned condition "
+                "and the cluster's recent workflow."
+            )
+        )
+    elif provisioned:
+        description = f"Inspect {subject}."
+    else:
+        description = (
+            f"Read-only inspect {subject} "
+            "and the OpenShift Provisioned condition."
+        )
+    return RecommendedInspection(description=description)
+
+
+def _summary(
+    pipeline_item: EvidenceItem,
+    *,
+    cluster_name: str,
+    provisioned: bool,
+) -> str:
+    outcome = {
+        "Failed": "failed",
+        "Succeeded": "succeeded",
+    }.get(str(pipeline_item.data.get("status")), "has not completed")
+    run = f"PipelineRun {pipeline_item.data.get('pipeline_run_name')}"
+    if not provisioned:
+        return (
+            f"Cluster {cluster_name} is defined but not provisioned, "
+            f"and {run} {outcome}."
+        )
+    conjunction = "but" if outcome == "failed" else "and"
+    return (
+        f"Cluster {cluster_name} is defined and deployed, "
+        f"{conjunction} {run} {outcome}."
+    )
 
 
 class ClusterStateService(EvidenceCommandService):
