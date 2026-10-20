@@ -463,7 +463,10 @@ def _fail_command(
             previous_event_id=previous_event_id,
             occurred_at=clock(),
         )
-        audit_error = _save_audit_event(args, event)
+        audit_error = _record_store_error(
+            lambda: JsonAuditEventStore(args.audit_dir).save(event),
+            (AuditEventAlreadyStored,),
+        )
         command_store_error = command_store_error or audit_error
     print(f"aura: {command_store_error or error}", file=sys.stderr)
     return 2
@@ -977,7 +980,10 @@ def _persist_command_received(
     if args.audit_dir is None:
         return None, None
     event = _command_received_audit_event(command)
-    error = _save_audit_event(args, event)
+    error = _record_store_error(
+        lambda: JsonAuditEventStore(args.audit_dir).save(event),
+        (AuditEventAlreadyStored,),
+    )
     if error is not None:
         return None, error
     return event, None
@@ -1066,21 +1072,16 @@ def _persist_evidence(
             args.snapshot_dir is not None,
             previous_event_id,
         )
-        error = _save_audit_event(args, evidence_audit_event)
+        error = _record_store_error(
+            lambda: JsonAuditEventStore(args.audit_dir).save(
+                evidence_audit_event
+            ),
+            (AuditEventAlreadyStored,),
+        )
         if error is not None:
             return None, error
 
     return evidence_audit_event, None
-
-
-def _save_audit_event(
-    args: argparse.Namespace,
-    event: AuditEvent,
-) -> str | None:
-    return _record_store_error(
-        lambda: JsonAuditEventStore(args.audit_dir).save(event),
-        (AuditEventAlreadyStored,),
-    )
 
 
 def _assembly_request(
@@ -1183,7 +1184,10 @@ def _assemble_and_diagnose(
         result.snapshot,
         evidence_audit_event.event_id,
     )
-    error = _save_audit_event(args, context_event)
+    error = _record_store_error(
+        lambda: JsonAuditEventStore(args.audit_dir).save(context_event),
+        (AuditEventAlreadyStored,),
+    )
     if error is not None:
         return None, error
 
@@ -1195,7 +1199,10 @@ def _assemble_and_diagnose(
             context_event.event_id,
             args.diagnosis_dir is not None,
         )
-        error = _save_audit_event(args, model_event)
+        error = _record_store_error(
+            lambda: JsonAuditEventStore(args.audit_dir).save(model_event),
+            (AuditEventAlreadyStored,),
+        )
         if error is not None:
             return None, error
 
@@ -1208,7 +1215,10 @@ def _assemble_and_diagnose(
             previous_event_id=context_event.event_id,
             occurred_at=clock(),
         )
-        error = _save_audit_event(args, refusal_event)
+        error = _record_store_error(
+            lambda: JsonAuditEventStore(args.audit_dir).save(refusal_event),
+            (AuditEventAlreadyStored,),
+        )
         if error is not None:
             return None, error
 
