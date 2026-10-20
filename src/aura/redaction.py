@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -11,15 +12,20 @@ from aura.contracts import EvidenceSnapshot
 
 DEFAULT_SECRET_FIELDS = frozenset(
     {
+        "access_token",
         "api_key",
         "authorization",
+        "aws_secret_access_key",
+        "bearer_token",
         "client_secret",
         "cookie",
         "kubeconfig",
         "password",
         "private_key",
         "pull_secret",
+        "refresh_token",
         "secret",
+        "secret_access_key",
         "ssh_private_key",
         "token",
     }
@@ -42,7 +48,7 @@ class RedactionPolicy:
 
     def __post_init__(self) -> None:
         self.secret_fields = frozenset(
-            name.lower() for name in self.secret_fields
+            _normalized_field(name) for name in self.secret_fields
         )
 
     def redact(self, value: Any) -> RedactionResult:
@@ -64,7 +70,7 @@ class RedactionPolicy:
             for key, item in value.items():
                 key_text = str(key)
                 child_path = [*path, key_text]
-                if key_text.lower() in self.secret_fields:
+                if _normalized_field(key_text) in self.secret_fields:
                     redacted_fields.append(self._path(child_path))
                     result[key_text] = "[REDACTED]"
                 else:
@@ -92,6 +98,12 @@ class RedactionPolicy:
             else:
                 result += f".{part}"
         return result
+
+
+def _normalized_field(name: str) -> str:
+    """Fold case and separators so `pullSecret` matches `pull_secret`."""
+
+    return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
 def redact(value: Any) -> RedactionResult:

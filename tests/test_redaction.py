@@ -76,3 +76,34 @@ def test_redaction_preserves_non_secret_scalars_and_containers() -> None:
     assert result.value == value
     assert result.redacted_fields == []
 
+
+
+def test_redacts_secret_field_spelling_variants() -> None:
+    value = {
+        "pullSecret": "pull",
+        "Client-Secret": "client",
+        "aws_secret_access_key": "aws",
+        "accessToken": "access",
+        "ssh-private-key": "ssh",
+        "pullSecretRef": {"name": "pull-secret"},
+        "tokenTTL": "1h",
+    }
+
+    result = redact(value)
+
+    assert result.value == {
+        "pullSecret": "[REDACTED]",
+        "Client-Secret": "[REDACTED]",
+        "aws_secret_access_key": "[REDACTED]",
+        "accessToken": "[REDACTED]",
+        "ssh-private-key": "[REDACTED]",
+        "pullSecretRef": {"name": "pull-secret"},
+        "tokenTTL": "1h",
+    }
+    assert result.redacted_fields == [
+        "Client-Secret",
+        "accessToken",
+        "aws_secret_access_key",
+        "pullSecret",
+        "ssh-private-key",
+    ]

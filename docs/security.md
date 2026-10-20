@@ -104,19 +104,24 @@ Every command must print `yes`.
 
 `RedactionPolicy` removes values for these field names:
 
+- `access_token`
 - `api_key`
 - `authorization`
+- `aws_secret_access_key`
+- `bearer_token`
 - `client_secret`
 - `cookie`
 - `kubeconfig`
 - `password`
 - `private_key`
 - `pull_secret`
+- `refresh_token`
 - `secret`
+- `secret_access_key`
 - `ssh_private_key`
 - `token`
 
-Matching is case-insensitive and recursive through mappings and lists. Removed field paths are recorded without their values.
+Matching ignores case and non-alphanumeric separators, so `pullSecret`, `pull-secret`, and `PULL_SECRET` all match `pull_secret`. The normalized name must match exactly, so references such as `pullSecretRef` are kept. Matching is recursive through mappings and lists. Removed field paths are recorded without their values.
 
 Redaction is a defense in depth. Collectors should still avoid reading secret values in the first place.
 
