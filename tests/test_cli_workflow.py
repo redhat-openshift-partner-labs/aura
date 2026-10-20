@@ -7,6 +7,7 @@ from uuid import UUID, uuid5
 
 import aura.cli as cli
 from aura.cli import main
+from aura.collectors.oc_cli import OpenShiftCLIError
 from test_cluster_inventory_collector import (
     definition,
     git_collector,
@@ -60,6 +61,24 @@ class FakeOpenShiftCLITektonClient:
 
 def fake_inventory_client(**kwargs: object) -> FakeOpenShiftClient:
     return FakeOpenShiftClient()
+
+
+@final
+class FailingInventoryClient:
+    def __init__(self, **kwargs: object) -> None:
+        pass
+
+    def resource_version(self) -> str:
+        raise OpenShiftCLIError(
+            "oc command failed for clusterdeployments "
+            "(exit 1): Error from server (Forbidden): denied"
+        )
+
+    def list_cluster_deployments(self) -> list[dict[str, Any]]:
+        return []
+
+    def list_managed_clusters(self) -> list[dict[str, Any]]:
+        return []
 
 
 def fake_git_collector(root: Path):
@@ -137,6 +156,47 @@ def test_cli_workflow_inspect_uses_correlated_collector(
     assert snapshot["items"][0]["kind"] == "cluster_actual_state"
     assert snapshot["items"][-1]["kind"] == "workflow_view"
     assert stderr == ""
+
+
+def test_cli_workflow_inspect_reports_oc_failure(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    kubeconfig = tmp_path / "aura-readonly"
+    kubeconfig.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        cli,
+        "OpenShiftCLIInventoryClient",
+        FailingInventoryClient,
+    )
+    monkeypatch.setattr(
+        cli,
+        "OpenShiftCLITektonClient",
+        FakeOpenShiftCLITektonClient,
+    )
+
+    exit_code = main(
+        [
+            "workflow",
+            "inspect",
+            "--openshift-kubeconfig",
+            str(kubeconfig),
+            "--operator",
+            "operator@example.com",
+            "--idempotency-key",
+            "test-key",
+        ],
+        command_id_factory=lambda: UUID(int=1),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert captured.err == (
+        "aura: oc command failed for clusterdeployments "
+        "(exit 1): Error from server (Forbidden): denied\n"
+    )
+    assert captured.out == ""
 
 
 def test_cli_workflow_inspect_returns_correlated_view(

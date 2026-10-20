@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+from subprocess import CalledProcessError
 from pathlib import Path
 from typing import final
 
+import pytest
+
+from aura.collectors.oc_cli import OpenShiftCLIError
 from aura.collectors.openshift_cli_client import OpenShiftCLIInventoryClient
 
 
@@ -96,3 +100,30 @@ def test_openshift_cli_client_reads_inventory(tmp_path: Path) -> None:
             "json",
         ],
     ]
+
+
+def test_openshift_cli_client_converts_oc_failure(
+    tmp_path: Path,
+) -> None:
+    kubeconfig = tmp_path / "aura-readonly"
+    kubeconfig.write_text("{}", encoding="utf-8")
+
+    def failing_runner(args: list[str]) -> str:
+        raise CalledProcessError(
+            returncode=1,
+            cmd=args,
+            stderr="Error from server (Forbidden): denied\n",
+        )
+
+    client = OpenShiftCLIInventoryClient(
+        kubeconfig_path=kubeconfig,
+        command_runner=failing_runner,
+    )
+
+    with pytest.raises(OpenShiftCLIError) as error:
+        client.list_cluster_deployments()
+
+    assert str(error.value) == (
+        "oc command failed for clusterdeployments "
+        "(exit 1): Error from server (Forbidden): denied"
+    )

@@ -10,6 +10,10 @@ from typing import Any, final
 CommandRunner = Callable[[Sequence[str]], str]
 
 
+class OpenShiftCLIError(RuntimeError):
+    """Raised when a read-only `oc` command fails."""
+
+
 def _run_command(args: Sequence[str]) -> str:
     result = subprocess.run(
         args,
@@ -68,7 +72,15 @@ class OpenShiftResource:
         elif self._namespace is not None:
             args.extend(["-n", self._namespace])
         args.extend(["-o", "json"])
-        return json.loads(self._command_runner(args))
+        try:
+            output = self._command_runner(args)
+        except subprocess.CalledProcessError as error:
+            raise OpenShiftCLIError(
+                f"oc command failed for {self._resource} "
+                f"(exit {error.returncode}): "
+                f"{str(error.stderr or '').strip()}"
+            ) from error
+        return json.loads(output)
 
 
 @final
@@ -121,6 +133,7 @@ class OpenShiftCLIResourceClient:
 __all__ = [
     "CommandRunner",
     "OpenShiftCLI",
+    "OpenShiftCLIError",
     "OpenShiftResource",
     "OpenShiftCLIResourceClient",
 ]

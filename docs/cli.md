@@ -126,7 +126,7 @@ Emitted item kinds:
 | `--audit-dir` | Yes when `--cwa-dir` is used | None | Writable directory |
 | `--diagnosis-dir` | No | None | Writable directory |
 | `--query` | No | `diagnose cluster state` | Any string |
-| `--pipeline-run` | No | Latest matching run | PipelineRun name or UID |
+| `--pipeline-run` | No | Latest matching run | Non-empty PipelineRun name or UID |
 
 Because `--cwa-dir` is required, `--audit-dir` is effectively required for `diagnose state`.
 
@@ -163,4 +163,4 @@ PipelineRun selection uses the latest matching run by `start_time` by default. P
 | `2` | Argument error, unauthorized command, diagnosis refusal, or duplicate record |
 | Other non-zero | Unhandled collector or process failure |
 
-Known limitation: an `oc` failure is not converted into a concise CLI error. It currently surfaces as an unhandled `CalledProcessError` with a non-zero exit.
+An `oc` failure is reported as a concise CLI error with exit code `2`; no partial JSON is printed.

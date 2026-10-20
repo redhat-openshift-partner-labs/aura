@@ -74,6 +74,8 @@ PipelineRun correlation first reads `spec.params` where `name` is `cluster-name`
 
 PipelineRun selection defaults to the latest matching run by `start_time`. The `diagnose state --pipeline-run` flag selects by PipelineRun name or UID. If multiple Git definitions match, the correlation records the conflict and diagnosis refuses to proceed.
 
+`oc` process failures are converted to `OpenShiftCLIError` before they reach command services. The CLI reports the resource, exit code, and final `oc` error line without printing partial JSON.
+
 ## Record Wiring
 
 | Flag | Store | Path pattern |

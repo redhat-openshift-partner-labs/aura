@@ -15,6 +15,7 @@ from aura.authorization import OperatorRole
 from aura.collectors.cluster_inventory import ClusterInventoryCollector
 from aura.collectors.cluster_state import ClusterStateCollector
 from aura.collectors.git_inventory import GitInventoryCollector
+from aura.collectors.oc_cli import OpenShiftCLIError
 from aura.collectors.openshift_cli_client import OpenShiftCLIInventoryClient
 from aura.collectors.openshift_cli_tekton_client import (
     OpenShiftCLITektonClient,
@@ -292,6 +293,8 @@ def _diagnose_state_argument_error(args: argparse.Namespace) -> str | None:
         return "--audit-dir is required with --cwa-dir"
     if args.diagnosis_dir is not None and args.cwa_dir is None:
         return "--cwa-dir is required with --diagnosis-dir"
+    if args.pipeline_run is not None and not args.pipeline_run.strip():
+        return "--pipeline-run must not be blank"
     return None
 
 
@@ -715,6 +718,7 @@ def _run_workflow_inspect(
         UnauthorizedWorkflowCommand,
         InvalidWorkflowCommand,
         InvalidCommandTransition,
+        OpenShiftCLIError,
     ) as error:
         print(f"aura: {error}", file=stderr)
         return 2
@@ -760,6 +764,7 @@ def _run_diagnose_state(
         UnauthorizedClusterStateCommand,
         InvalidClusterStateCommand,
         InvalidCommandTransition,
+        OpenShiftCLIError,
     ) as error:
         print(f"aura: {error}", file=stderr)
         return 2
@@ -850,6 +855,7 @@ def main(
         UnauthorizedCommand,
         InvalidCommandType,
         InvalidCommandTransition,
+        OpenShiftCLIError,
     ) as error:
         print(f"aura: {error}", file=stderr)
         return 2

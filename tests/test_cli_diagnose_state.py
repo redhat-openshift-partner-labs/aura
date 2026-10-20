@@ -116,6 +116,42 @@ def test_cli_diagnose_state_parses_pipeline_run() -> None:
     assert args.pipeline_run == "deploy-cluster-abc"
 
 
+def test_cli_diagnose_state_rejects_blank_pipeline_run(
+    capsys,
+) -> None:
+    exit_code = main(
+        [
+            "diagnose",
+            "state",
+            "--cluster",
+            "example",
+            "--fleet-clusters",
+            ".",
+            "--openshift-kubeconfig",
+            ".",
+            "--cwa-dir",
+            ".",
+            "--audit-dir",
+            ".",
+            "--operator",
+            "operator@example.com",
+            "--idempotency-key",
+            "test-key",
+            "--pipeline-run",
+            " ",
+        ],
+        collector=FakeClusterStateCollector(),
+        command_id_factory=lambda: UUID(int=1),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert captured.err == (
+        "aura: --pipeline-run must not be blank\n"
+    )
+    assert captured.out == ""
+
+
 def test_cli_diagnose_state_returns_cluster_diagnosis(
     tmp_path: Path,
     capsys,
