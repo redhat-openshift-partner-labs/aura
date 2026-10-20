@@ -54,7 +54,8 @@ Drift values:
 | Value | Meaning |
 | --- | --- |
 | `none` | Desired and actual state match |
-| `detected` | Desired and actual state differ |
+| `detected` | Desired and actual state differ in a known field |
+| `incomplete-metadata` | Known fields match, but `metadata.yaml` has no `platform`, so the desired cloud provider is unknown |
 | `incomplete-definition` | Active Git definition is missing required files and has an OpenShift resource, so desired and actual state cannot be compared |
 | `invalid-definition` | Active Git definition cannot be interpreted and has an OpenShift resource |
 | `missing-git` | OpenShift resource has no Git definition |

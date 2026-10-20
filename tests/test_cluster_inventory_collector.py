@@ -81,6 +81,7 @@ def definition(
     *,
     region: str = "us-east-2",
     status: str = "active",
+    cloud_provider: str | None = "aws",
 ) -> EvidenceItem:
     return EvidenceItem(
         item_id=UUID(int=11),
@@ -93,7 +94,7 @@ def definition(
                 else "provision"
             ) + f"/{cluster_name}",
             "status": status,
-            "cloud_provider": "aws",
+            "cloud_provider": cloud_provider,
             "region": region,
             "tier": "base",
             "install_image_set": "image-set",
@@ -250,6 +251,35 @@ def test_cluster_inventory_collector_reports_drift_and_missing_sources() -> None
     assert inventories["git-only"].data["actual_state"] is None
     assert inventories["orphan"].data["drift_indicator"] == "missing-git"
     assert inventories["orphan"].data["desired_state"] is None
+
+
+def test_cluster_inventory_collector_reports_incomplete_metadata() -> None:
+    collector = ClusterInventoryCollector(
+        git_collector=git_collector(
+            definition("legacy", cloud_provider=None),
+            definition("legacy-drifted", cloud_provider=None, region="us-east-1"),
+        ),
+        openshift_collector=openshift_collector(
+            actual_state("legacy"),
+            actual_state("legacy-drifted"),
+        ),
+        tekton_collector=tekton_collector(),
+    )
+
+    snapshot = collector.collect(
+        command_id=UUID(int=1),
+        snapshot_id=UUID(int=40),
+        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    inventories = {
+        item.data["cluster_name"]: item.data
+        for item in snapshot.items
+        if item.kind == "cluster_inventory"
+    }
+    assert inventories["legacy"]["drift_indicator"] == "incomplete-metadata"
+    assert inventories["legacy"]["desired_state"]["cloud_provider"] is None
+    assert inventories["legacy-drifted"]["drift_indicator"] == "detected"
 
 
 def test_cluster_inventory_collector_distinguishes_archived_clusters() -> None:

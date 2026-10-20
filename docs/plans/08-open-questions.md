@@ -41,6 +41,19 @@ Status: open.
 
 Aura reports these as `cluster_definition_incomplete` items with `missing_files: ["metadata.yaml"]`, includes them in combined inventory, and refuses diagnosis with `Git cluster definition files`. Aura does not modify `fleet-clusters`; resolution is a backfill by the repository owners.
 
+### Backfill `platform` in legacy `metadata.yaml` files
+
+Status: open.
+
+At the same commit, 11 of the 12 complete definitions have a `metadata.yaml` without `platform`; only `provision/0171d46a-scopedaws` declares it:
+
+| Directory | Definitions |
+| --- | --- |
+| `provision/` | `2dcb6934-thalescs`, `7676a3cc-edbvj8am`, `a238fb7d-validmin`, `d0519448-dh2idw57`, `ocp5rc`, `pchriste`, `virt-cookbook` |
+| `archive/` | `1bd62dc5-hpezerto`, `ai-test-cluster`, `ai-workload`, `pchriste` |
+
+Aura keeps the desired `cloud_provider` as `null` rather than inferring it. When every other compared field matches OpenShift, combined inventory reports `drift_indicator: incomplete-metadata` instead of `detected`.
+
 ## Operator Interface
 
 ### Which interface should ship first?

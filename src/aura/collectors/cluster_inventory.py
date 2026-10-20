@@ -336,7 +336,17 @@ class ClusterInventoryCollector:
             return "incomplete-definition"
         if git_item.kind == "cluster_definition_invalid":
             return "invalid-definition"
-        if desired_state != actual_state:
+        if desired_state is None or actual_state is None:
+            return "detected"
+        compared_fields = set(desired_state) - {"cloud_provider"}
+        if any(
+            desired_state[field] != actual_state.get(field)
+            for field in compared_fields
+        ):
+            return "detected"
+        if desired_state["cloud_provider"] is None:
+            return "incomplete-metadata"
+        if desired_state["cloud_provider"] != actual_state["cloud_provider"]:
             return "detected"
         return "none"
 
