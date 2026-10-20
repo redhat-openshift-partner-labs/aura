@@ -2,25 +2,28 @@
 
 ## Phase 1
 
-Phase 1 functional scope and closure hardening are implemented and validated. Publication to the public remote is the remaining operational step.
+Phase 1 functional scope and closure hardening are implemented and validated. Publication to the public remote is the remaining operational step and is performed by the operator. Two `fleet-clusters` data issues remain open in [Open Questions](plans/08-open-questions.md#fleet-clusters-data); Aura reports them rather than working around them.
 
-Validation summary:
+Validation summary, recorded at Aura commit `6dc0eb3`:
 
 | Check | Result |
 | --- | --- |
-| Automated tests | 237 passed |
+| Automated tests | 270 passed |
+| Quality gate | `adb2c2b..HEAD` passed with zero gating findings |
 | Scoped-AWS fixture | `provision/0171d46a-scopedaws` |
 | Fixture source commit | `492bc8e07afddcd557441ddb7d72158de60ab8cb` |
+| Git definitions | 26: 12 complete, 14 incomplete, 0 invalid |
 | Live OpenShift cluster states | 13 |
 | Live Tekton PipelineRuns | 34 |
-| Combined inventory records | 16 |
-| Combined inventory evidence items | 89 |
+| Combined inventory records | 25 |
+| Combined inventory evidence items | 98 |
+| Combined drift | 1 `none`, 6 `incomplete-metadata`, 5 `incomplete-definition`, 6 `missing-openshift`, 6 `archived`, 1 `definition-conflict`, 0 `detected`, 0 `missing-git` |
 | Workflow evidence items | 107 |
 | Correlated workflow views | 34 of 34 |
-| Live cluster diagnosis | Fixture cluster diagnosed with four evidence items |
-| Non-provisioned refusal | Archived cluster refused with structured missing evidence |
-| Duplicate idempotency key | Request-bound and concurrency-safe rejection before collection |
-| Quality gate | `adb2c2b..HEAD` passed with zero gating findings |
+| Live cluster diagnosis | `0171d46a-scopedaws` and `2dcb6934-thalescs` diagnosed, each citing three evidence items |
+| Refusals | Incomplete, archived non-provisioned, and conflicting definitions refused with structured missing evidence |
+| Duplicate idempotency key | Rejected before collection with no standard output |
+| Read-only RBAC | `list` allowed; `create`, `patch`, and `delete` denied |
 | Record durability | No `.tmp` files remained after fixture and live validation |
 | Protected repository tracked changes | None |
 
@@ -31,6 +34,8 @@ Validation summary:
 | Git inventory | Reads committed `HEAD` definitions in `provision/` and `archive/`, and marks them `active` or `archived` |
 | Git provenance | Resolves `HEAD` once and pins tree and blob reads to that revision |
 | Incomplete definitions | Reports missing required files with definition status and directory-derived cluster name; correlates them in combined inventory and diagnosis |
+| Invalid definitions | Reports malformed YAML, wrong document shapes, and missing required patch paths per definition without aborting collection |
+| Legacy metadata | Reports `incomplete-metadata` drift when `metadata.yaml` has no `platform` and other compared fields match |
 | OpenShift inventory | Reads `ClusterDeployment` and `ManagedCluster` resources |
 | Tekton inventory | Reads `PipelineRun` and `TaskRun` resources and failed-task summaries |
 | Cluster correlation | Combines Git, OpenShift, and Tekton evidence by cluster name and reports conflicting definitions |
@@ -38,13 +43,15 @@ Validation summary:
 | Cluster inventory | Emits desired state, actual state, provisioning status, latest run, and drift |
 | Workflow view | Emits run status, failed task, related cluster, and next diagnostic step |
 | Cluster-state diagnosis | Correlates evidence for one requested cluster and selects the latest PipelineRun by default |
-| Refusal | Refuses diagnosis when required evidence is missing, definitions conflict, or a selected PipelineRun is absent |
+| Refusal | Refuses diagnosis when required evidence is missing, a definition is incomplete or invalid, definitions conflict, or a selected PipelineRun is absent |
+| PipelineRun outcomes | Names the described PipelineRun and reports `failed`, `succeeded`, or `has not completed`; an incomplete run is never reported as succeeded |
 | Non-provisioned diagnosis | Reports the OpenShift `Provisioned` condition without claiming the cluster is deployed |
 | CWA | Assembles all nine required slots and computes a snapshot digest |
 | Provenance | Links evidence, CWA snapshot, CWA trace, diagnosis, and audit events |
-| Stores | Uses atomically published, append-only JSON records for evidence, CWA, audit, and diagnosis data |
+| Stores | Uses atomically published, append-only JSON records for evidence, CWA, audit, and diagnosis data; write failures become `failed` commands |
+| Redaction | Matches secret field names across case and separator variants |
 | Idempotency | Binds keys to one request and suppresses concurrent or sequential terminal-key reuse |
-| Authorization | Allows Phase 1 commands for `viewer` and `admin` roles |
+| Authorization | Allows Phase 1 commands for `viewer` and `admin` roles; supplied `--role` values replace the `viewer` default |
 | CLI | Provides `inventory list`, `workflow inspect`, and `diagnose state` |
 
 ## Current Model Behavior
@@ -73,6 +80,17 @@ The model protocol remains provider-independent. A future provider must consume 
 
 | Commit | Change |
 | --- | --- |
+| `6dc0eb3` | Folded metadata drift cases into the drift test |
+| `5c00ab0` | Collapsed command lookup failures |
+| `c162da8` | Shared test collection helpers and fakes |
+| `1f1bb22` | Hoisted stateless helpers out of collectors |
+| `ba44ea6` | Distinguished incomplete metadata from drift |
+| `2e518a3` | Matched secret field spelling variants |
+| `20b460e` | Reported record store failures without tracebacks |
+| `31ee2ab` | Reported incomplete PipelineRuns as not completed |
+| `2b894fe` | Reported invalid definitions as evidence |
+| `2d02a87` | Correlated incomplete definitions by directory name |
+| `1f9877e` | Replaced the default role with supplied roles |
 | `7e2ce61` | Removed digest and audit duplication |
 | `983f147` | Closed full-range quality regressions |
 | `8f8e069` | Inlined audit persistence |
@@ -99,4 +117,5 @@ The model protocol remains provider-independent. A future provider must consume 
 
 Do not begin Phase 2 until Phase 1 is published. The remaining sequence is:
 
-1. Push `main` to the public remote.
+1. The operator pushes `main` to the public remote.
+2. `fleet-clusters` owners backfill `metadata.yaml` and its `platform` key for the definitions listed in [Open Questions](plans/08-open-questions.md#fleet-clusters-data).

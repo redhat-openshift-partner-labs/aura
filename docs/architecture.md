@@ -108,6 +108,9 @@ Model output is untrusted data. Pydantic validates the exact response shape, con
 | Git definition | `Git cluster definition` |
 | Git required files | `Git cluster definition files` |
 | Interpretable Git definition | `Valid Git cluster definition` |
+| Single Git definition | `Conflicting Git cluster definitions` |
+| Selected PipelineRun | `Selected Tekton PipelineRun NAME_OR_UID` |
+| OpenShift `Provisioned` condition | `OpenShift Provisioned condition` |
 | OpenShift actual state | `OpenShift actual state` |
 | ManagedCluster status | `ManagedCluster status` |
 | Tekton run | `Tekton PipelineRun status` |

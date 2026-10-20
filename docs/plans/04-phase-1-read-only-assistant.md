@@ -2,7 +2,7 @@
 
 ## Status
 
-Functional scope implemented. Closure hardening is in progress; Phase 1 is not closed until automation-grade gaps are resolved.
+Implemented and validated, including closure hardening. Publication is the remaining operational step. Open `fleet-clusters` data issues are tracked in [Open Questions](08-open-questions.md#fleet-clusters-data).
 
 ## Objective
 
@@ -109,27 +109,33 @@ No execution command is allowed in Phase 1.
 - [x] Aura provides a deterministic fallback answer when the model is unavailable.
 - [x] Aura suppresses completed idempotency keys before evidence collection.
 - [x] Aura reports OpenShift CLI failures concisely without partial JSON.
+- [x] Aura reports incomplete and invalid Git definitions per definition without aborting collection.
+- [x] Aura correlates incomplete and invalid definitions by cluster name instead of reporting them as missing.
+- [x] Aura never reports an incomplete PipelineRun as succeeded.
+- [x] Aura authorizes only the roles an operator supplies.
+- [x] Aura stores a terminal `failed` record when a record write fails.
 
 ## Validation Record
 
+Recorded at Aura commit `6dc0eb3` against `fleet-clusters` commit `492bc8e07afddcd557441ddb7d72158de60ab8cb`. Procedures are in [Validation](../validation.md).
+
 | Check | Result |
 | --- | --- |
-| Automated tests | `201 passed` with `uv run --no-sync pytest` |
+| Automated tests | `270 passed` with `uv run --no-sync pytest` |
 | Diff hygiene | `git diff --check` passed |
-| Quality gate | Pending committed baseline during closure hardening |
-| Scoped-AWS fixture | Validated `provision/0171d46a-scopedaws` at `fleet-clusters` commit `492bc8e07afddcd557441ddb7d72158de60ab8cb` |
-| Git inventory | Reported active and archived definitions, including incomplete definitions with status |
+| Quality gate | `ripwire . --quality-delta=adb2c2b..HEAD` reported zero gating findings |
+| Git inventory | 26 definitions: 12 complete, 14 incomplete because `metadata.yaml` is absent, 0 invalid |
 | Live OpenShift | Read-only service account listed 13 cluster states |
 | Live Tekton | Read-only service account listed 34 PipelineRuns |
-| Combined inventory | Correlated 16 cluster inventory records across Git, OpenShift, and Tekton |
+| Combined inventory | 25 records; no `missing-git` or `detected` drift |
 | Workflow view | Correlated all 34 PipelineRuns to their `cluster-name` parameter |
-| Immutable records | Stored one evidence snapshot, one CWA snapshot, one CWA trace, and linked audit events with matching digests |
-| Model contract | Automated tests validate strict JSON responses, deterministic fallback, and refusal when required evidence is missing |
-| Live diagnosis | Diagnosed `0171d46a-scopedaws` with Git, OpenShift, Tekton, and correlation evidence |
-| Non-provisioned refusal | Refused diagnosis for `1bd62dc5-hpezerto` with structured missing evidence and no diagnosis record |
+| Immutable records | One evidence snapshot, one CWA snapshot, one CWA trace, and three linked audit events with matching digests |
+| Live diagnosis | Diagnosed `0171d46a-scopedaws` and `2dcb6934-thalescs`, each citing Git, OpenShift, and Tekton evidence |
+| Refusals | `423d216c-vistergy` refused for incomplete definition files, `1bd62dc5-hpezerto` for missing OpenShift and Tekton evidence, and `pchriste` for conflicting definitions |
 | Duplicate idempotency key | Rejected before collection with no new command record |
+| Read-only RBAC | `list` allowed on all four resources; `create`, `patch`, and `delete` denied |
 | Protected repositories | `fleet`, `fleet-cluster-scaffold`, `fleet-clusters`, and `portal` had no tracked modifications |
-| Post-audit fixes | Commits `7debde5`, `447f748`, and `97c6ece` added conflict indicators, incomplete-definition handling, explicit PipelineRun selection, structured non-provisioned diagnosis, concise `oc` errors, and completed-key suppression |
+| Closure fixes | Commits `1f9877e` through `6dc0eb3` fixed role defaults, incomplete and invalid definition correlation, incomplete-metadata drift, incomplete PipelineRun reporting, record write failures, and redaction variants |
 
 ## Out of Scope
 

@@ -6,7 +6,7 @@ Phase 1 is read-only:
 
 | System | Access | Writes |
 | --- | --- | --- |
-| `fleet-clusters` | Local working tree | None |
+| `fleet-clusters` | Committed `HEAD` of a local checkout | None |
 | OpenShift | Read-only Kubernetes API | None |
 | Tekton | Read-only Kubernetes API | None |
 | RabbitMQ | None | None |
@@ -73,7 +73,7 @@ rules:
   verbs: ["list"]
 - apiGroups: ["tekton.dev"]
   resources: ["pipelineruns", "taskruns"]
-  verbs: ["get", "list"]
+  verbs: ["list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -98,7 +98,7 @@ oc --kubeconfig "$HOME/.kube/aura-readonly" auth can-i list pipelineruns.tekton.
 oc --kubeconfig "$HOME/.kube/aura-readonly" auth can-i list taskruns.tekton.dev -A
 ```
 
-Every command must print `yes`.
+Every command must print `yes`. Write verbs such as `create`, `patch`, and `delete` must print `no`.
 
 ## Secret Redaction
 

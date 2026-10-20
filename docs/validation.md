@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-237 passed
+270 passed
 ```
 
 Run diff hygiene:
@@ -72,6 +72,8 @@ Check that output contains:
 - `status: active`.
 - `cluster_name: 0171d46a-scopedaws`.
 - Archived definitions with `status: archived`.
+- 26 definitions at the validated commit: 12 `cluster_definition`, 14 `cluster_definition_incomplete`, and no `cluster_definition_invalid`.
+- Every incomplete definition has a `cluster_name` equal to its directory name.
 
 ## Live OpenShift Validation
 
@@ -121,8 +123,11 @@ Latest validation observed:
 | --- | --- |
 | OpenShift cluster states | 13 |
 | PipelineRuns | 34 |
-| Combined inventory records | 16 |
-| Combined inventory evidence items | 89 |
+| Combined inventory records | 25 |
+| Combined inventory evidence items | 98 |
+| `missing-git` or `detected` drift | 0 |
+| `incomplete-definition` drift | 5 |
+| `incomplete-metadata` drift | 6 |
 | Workflow evidence items | 107 |
 | Workflow views | 34 |
 | Correlated workflow views | 34 |
@@ -146,14 +151,23 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura diagnose state \
   --command-dir ./local/commands
 ```
 
+Run the same command with these clusters and new idempotency keys to validate refusals:
+
+| Cluster | Expected result |
+| --- | --- |
+| `2dcb6934-thalescs` | Exit code `0`; summary names a succeeded PipelineRun |
+| `423d216c-vistergy` | Exit code `2`; refused with `Git cluster definition files` and `Tekton PipelineRun status` |
+| `1bd62dc5-hpezerto` | Exit code `2`; refused with `OpenShift actual state` and `Tekton PipelineRun status` |
+| `pchriste` | Exit code `2`; refused with `Conflicting Git cluster definitions` |
+
 Latest validation observed:
 
 | Check | Result |
 | --- | --- |
-| Fixture diagnosis | Exit code `0`; latest PipelineRun reported as `Succeeded` |
-| Evidence items | 1 definition, 1 actual state, 1 PipelineRun, 1 correlation |
+| Fixture diagnosis | Exit code `0`; summary names PipelineRun `post-provision-0171d46a-scopedaws-p4w4v` as succeeded with confidence `0.9` |
+| Evidence items | Snapshot holds 1 definition, 1 actual state, 1 PipelineRun, and 1 correlation; the response cites the first three |
 | Provenance | Evidence, CWA snapshot, CWA trace, diagnosis, and audit records linked by matching IDs and digests |
-| Non-provisioned cluster | `1bd62dc5-hpezerto` refused with `OpenShift actual state` and `Tekton PipelineRun status` missing; no diagnosis record was written |
+| Refusals | All three refusal clusters exited `2` with the expected missing evidence; no diagnosis record was written for them |
 
 ## Idempotency Validation
 
