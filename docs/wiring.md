@@ -24,7 +24,7 @@ The CLI owns the final terminal transition to `succeeded`, `failed`, or `refused
 
 ### Git
 
-`GitInventoryCollector` reads the committed tree at `HEAD`:
+`GitInventoryCollector` resolves `HEAD` once, then reads both the tree listing and file blobs from that pinned revision:
 
 | Directory | Emitted status |
 | --- | --- |
@@ -38,7 +38,7 @@ Required files for a complete definition:
 - `hive/patches/managedcluster.yaml`
 - `crossplane/kustomization.yaml`
 
-The source version is the `HEAD` commit from `git rev-parse HEAD`. Working-tree modifications and untracked files are not evidence.
+The source version is the pinned commit. Working-tree modifications, later commits, and untracked files are not evidence.
 
 ### OpenShift
 

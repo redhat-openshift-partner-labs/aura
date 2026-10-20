@@ -26,25 +26,29 @@ class _GitTree:
         *,
         root: Path,
         tracked_paths: frozenset[str],
+        revision: str,
     ) -> None:
         self.root = root
         self.tracked_paths = tracked_paths
+        self.revision = revision
 
     @classmethod
     def load(cls, root: Path) -> "_GitTree":
+        revision = cls._git(root, ["rev-parse", "HEAD"]).strip()
         output = cls._git(
             root,
-            ["ls-tree", "-r", "-z", "--name-only", "HEAD"],
+            ["ls-tree", "-r", "-z", "--name-only", revision],
         )
         return cls(
             root=root,
             tracked_paths=frozenset(
                 path for path in output.split("\0") if path
             ),
+            revision=revision,
         )
 
     def file(self, path: str) -> str:
-        return self._git(self.root, ["show", f"HEAD:{path}"])
+        return self._git(self.root, ["show", f"{self.revision}:{path}"])
 
     def cluster_directories(self) -> list[tuple[str, str]]:
         statuses = {
@@ -136,7 +140,7 @@ class GitInventoryCollector:
         resolved_snapshot_id = snapshot_id or uuid4()
         resolved_collected_at = collected_at or datetime.now(UTC)
         tree = _GitTree.load(self.root)
-        resolved_source_version = source_version or self._git_revision()
+        resolved_source_version = source_version or self._git_revision(tree)
         items = [
             self._read_cluster(
                 cluster_path,
@@ -245,11 +249,8 @@ class GitInventoryCollector:
                 return patch.get("value")
         raise ValueError(f"missing patch path: {json_path}")
 
-    def _git_revision(self) -> str:
-        return _GitTree._git(
-            self.root,
-            ["rev-parse", "HEAD"],
-        ).strip()
+    def _git_revision(self, tree: _GitTree) -> str:
+        return tree.revision
 
 
 __all__ = ["GitInventoryCollector", "GitInventoryError"]

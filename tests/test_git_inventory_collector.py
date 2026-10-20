@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
-from aura.collectors.git_inventory import GitInventoryCollector
+from aura.collectors.git_inventory import GitInventoryCollector, _GitTree
 
 
 def write_cluster(
@@ -240,6 +240,24 @@ def test_git_inventory_collector_reads_head_not_working_tree(
 
     assert snapshot.source_version == revision
     assert [item.data["cloud_provider"] for item in snapshot.items] == ["aws"]
+
+
+def test_git_tree_pins_head_for_tree_and_blob_reads(
+    tmp_path: Path,
+) -> None:
+    write_cluster(tmp_path)
+    first_revision = commit_repository(tmp_path)
+    tree = _GitTree.load(tmp_path)
+
+    metadata = tmp_path / "provision" / "example" / "metadata.yaml"
+    metadata.write_text("platform: gcp\n", encoding="utf-8")
+    second_revision = commit_repository(tmp_path)
+
+    assert second_revision != first_revision
+    assert tree.revision == first_revision
+    assert "platform: aws" in tree.file(
+        "provision/example/metadata.yaml"
+    )
 
 
 def test_git_inventory_collector_ignores_untracked_cluster_directories(

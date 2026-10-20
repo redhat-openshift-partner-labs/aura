@@ -746,7 +746,9 @@ def test_cli_inventory_list_matches_scoped_aws_fixture(
     monkeypatch.setattr(
         GitInventoryCollector,
         "_git_revision",
-        lambda self: "492bc8e07afddcd557441ddb7d72158de60ab8cb",
+        lambda self, tree: (
+            "492bc8e07afddcd557441ddb7d72158de60ab8cb"
+        ),
     )
 
     exit_code = main(

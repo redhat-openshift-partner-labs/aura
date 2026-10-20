@@ -8,7 +8,7 @@ Validation summary:
 
 | Check | Result |
 | --- | --- |
-| Automated tests | 229 passed |
+| Automated tests | 230 passed |
 | Scoped-AWS fixture | `provision/0171d46a-scopedaws` |
 | Fixture source commit | `492bc8e07afddcd557441ddb7d72158de60ab8cb` |
 | Live OpenShift cluster states | 13 |
@@ -26,6 +26,7 @@ Validation summary:
 | Area | Capability |
 | --- | --- |
 | Git inventory | Reads committed `HEAD` definitions in `provision/` and `archive/`, and marks them `active` or `archived` |
+| Git provenance | Resolves `HEAD` once and pins tree and blob reads to that revision |
 | Incomplete definitions | Reports missing required files without discarding definition status |
 | OpenShift inventory | Reads `ClusterDeployment` and `ManagedCluster` resources |
 | Tekton inventory | Reads `PipelineRun` and `TaskRun` resources and failed-task summaries |
