@@ -126,5 +126,8 @@ The command exits with code `2`. Evidence, CWA snapshot, CWA trace, and audit re
 | Model unavailable | Generic diagnosis service falls back deterministically |
 | Terminal idempotency key reused | CLI exits `2` before evidence collection and creates no new records |
 | Idempotency key reused for a different request | CLI exits `2` before evidence collection |
+| Record write failure | Command stored as `failed` when possible; CLI exits `2` with the operating-system error |
+| Unreadable idempotency-key record | CLI exits `2` before evidence collection |
+| Invalid Git definition | Emitted as `cluster_definition_invalid`; other definitions are still collected |
 
 Command records are written only in a terminal state. `succeeded`, `failed`, and `refused` records are immutable; a new attempt requires a new idempotency key.

@@ -17,6 +17,7 @@ from aura.command_store import (
     CommandAlreadyStored,
     CommandNotTerminal,
     CommandNotFound,
+    CommandRecordUnreadable,
     JsonCommandStore,
 )
 from aura.collectors.cluster_inventory import ClusterInventoryCollector
@@ -366,7 +367,7 @@ def _record_store_error(
 ) -> str | None:
     try:
         action()
-    except errors as error:
+    except (*errors, OSError) as error:
         return str(error)
     return None
 
@@ -379,6 +380,8 @@ def _duplicate_command_error(
         existing = store.load(command.idempotency_key)
     except CommandNotFound:
         return None
+    except CommandRecordUnreadable as error:
+        return str(error)
     if existing.request_digest != command.request_digest:
         return (
             "idempotency key belongs to a different request: "
@@ -406,12 +409,16 @@ def _execute_command(
     action: Callable[[], int],
 ) -> int:
     store = JsonCommandStore(args.command_dir)
-    with store.lock():
-        duplicate_error = _duplicate_command_error(store, command)
-        if duplicate_error is not None:
-            print(f"aura: {duplicate_error}", file=sys.stderr)
-            return 2
-        return action()
+    try:
+        with store.lock():
+            duplicate_error = _duplicate_command_error(store, command)
+            if duplicate_error is not None:
+                print(f"aura: {duplicate_error}", file=sys.stderr)
+                return 2
+            return action()
+    except OSError as error:
+        print(f"aura: {error}", file=sys.stderr)
+        return 2
 
 
 def _complete_command(
@@ -1052,7 +1059,7 @@ def _persist_evidence(
             JsonEvidenceSnapshotStore(args.snapshot_dir).save(
                 result.snapshot
             )
-        except EvidenceSnapshotAlreadyStored as error:
+        except (EvidenceSnapshotAlreadyStored, OSError) as error:
             return None, str(error)
 
     evidence_audit_event: AuditEvent | None = None
@@ -1166,6 +1173,7 @@ def _assemble_records(
         CWASnapshotAlreadyStored,
         CWATraceAlreadyStored,
         DiagnosisAlreadyStored,
+        OSError,
     ) as error:
         return str(error)
     return assembly, diagnosis_record, refusal_error

@@ -24,6 +24,10 @@ class CommandNotFound(Exception):
     """Raised when loading a command that does not exist."""
 
 
+class CommandRecordUnreadable(Exception):
+    """Raised when a stored command record cannot be read or validated."""
+
+
 @final
 class JsonCommandStore:
     """Stores terminal commands by idempotency key."""
@@ -74,6 +78,11 @@ class JsonCommandStore:
                 "idempotency key not found: "
                 f"{idempotency_key}"
             ) from error
+        except (OSError, ValueError) as error:
+            raise CommandRecordUnreadable(
+                "idempotency key record is unreadable: "
+                f"{idempotency_key}"
+            ) from error
         if command.idempotency_key != idempotency_key:
             raise CommandNotFound(
                 "idempotency key not found: "
@@ -96,5 +105,6 @@ __all__ = [
     "CommandAlreadyStored",
     "CommandNotTerminal",
     "CommandNotFound",
+    "CommandRecordUnreadable",
     "JsonCommandStore",
 ]

@@ -98,6 +98,8 @@ Process error contracts:
 | `oc` | Missing executable or permission failure | Exit `2`; concise resource-specific error |
 | `oc` | Invalid JSON | Exit `2`; no partial JSON emitted |
 | `oc` | Timeout after 30 seconds | Exit `2`; resource-specific timeout reported |
+| Stores | Operating-system write failure | Exit `2`; `failed` terminal record stored when the command store is writable |
+| Command store | Unreadable record or lock failure | Exit `2` before collection |
 
 ## Record Wiring
 

@@ -11,8 +11,12 @@ from uuid import UUID, uuid5
 import pytest
 
 import aura.collectors.git_inventory as git_inventory
+from aura.audit_store import JsonAuditEventStore
 from aura.cli import main
 from aura.command_store import JsonCommandStore
+from aura.cwa_store import JsonCWASnapshotStore, JsonCWATraceStore
+from aura.diagnosis_store import JsonDiagnosisStore
+from aura.evidence_store import JsonEvidenceSnapshotStore
 from aura.collectors.git_inventory import GitInventoryCollector
 from aura.contracts import CommandState, EvidenceSnapshot
 from test_git_inventory_collector import commit_repository
@@ -271,6 +275,99 @@ def test_cli_inventory_list_rejects_unusable_record_directories(
     assert captured.err == (
         f"aura: {flag} is not a usable directory: "
         f"{invalid_directory}\n"
+    )
+    assert captured.out == ""
+    assert collector.calls == 0
+
+
+def record_arguments(tmp_path: Path) -> list[str]:
+    return [
+        *inventory_arguments(tmp_path, snapshot_dir=tmp_path / "snapshots"),
+        "--audit-dir",
+        str(tmp_path / "audit"),
+        "--cwa-dir",
+        str(tmp_path / "cwa"),
+        "--diagnosis-dir",
+        str(tmp_path / "diagnoses"),
+    ]
+
+
+def raise_disk_full(*args, **kwargs):
+    raise OSError(28, "No space left on device")
+
+
+@pytest.mark.parametrize(
+    "store",
+    [
+        JsonEvidenceSnapshotStore,
+        JsonAuditEventStore,
+        JsonCWASnapshotStore,
+        JsonCWATraceStore,
+        JsonDiagnosisStore,
+    ],
+)
+def test_cli_inventory_list_fails_command_on_record_write_error(
+    tmp_path,
+    capsys,
+    monkeypatch,
+    store,
+) -> None:
+    monkeypatch.setattr(store, "save", raise_disk_full)
+
+    exit_code = main(
+        record_arguments(tmp_path),
+        collector=FakeCollector(),
+        command_id_factory=lambda: UUID(int=1),
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.err == "aura: [Errno 28] No space left on device\n"
+    assert captured.out == ""
+    command = JsonCommandStore(tmp_path / "commands").load("test-key")
+    assert command.status is CommandState.FAILED
+
+
+def test_cli_inventory_list_reports_command_store_error(
+    tmp_path,
+    capsys,
+    monkeypatch,
+) -> None:
+    collector = CountingCollector()
+    monkeypatch.setattr(JsonCommandStore, "lock", raise_disk_full)
+
+    exit_code = main(
+        inventory_arguments(tmp_path),
+        collector=collector,
+        command_id_factory=lambda: UUID(int=1),
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.err == "aura: [Errno 28] No space left on device\n"
+    assert captured.out == ""
+    assert collector.calls == 0
+
+
+def test_cli_inventory_list_rejects_unreadable_command_record(
+    tmp_path,
+    capsys,
+) -> None:
+    collector = CountingCollector()
+    store = JsonCommandStore(tmp_path / "commands")
+    store.root.mkdir()
+    store._path("test-key").write_text("{", encoding="utf-8")
+
+    exit_code = main(
+        inventory_arguments(tmp_path),
+        collector=collector,
+        command_id_factory=lambda: UUID(int=1),
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.err == (
+        "aura: idempotency key record is unreadable: test-key\n"
     )
     assert captured.out == ""
     assert collector.calls == 0
