@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented and validated, including closure hardening. Publication is the remaining operational step. Open `fleet-clusters` data issues are tracked in [Open Questions](08-open-questions.md#fleet-clusters-data).
+Implemented, validated, and published at `01f0f38`, including closure hardening. Open `fleet-clusters` data issues are tracked in [Open Questions](08-open-questions.md#fleet-clusters-data).
 
 ## Objective
 

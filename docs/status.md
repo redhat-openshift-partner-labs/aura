@@ -2,7 +2,7 @@
 
 ## Phase 1
 
-Phase 1 functional scope and closure hardening are implemented and validated. Publication to the public remote is the remaining operational step and is performed by the operator. Two `fleet-clusters` data issues remain open in [Open Questions](plans/08-open-questions.md#fleet-clusters-data); Aura reports them rather than working around them.
+Phase 1 functional scope and closure hardening are implemented and validated. Phase 1 is published: `main` was pushed to the public remote at `01f0f38`, and CI run `39474106779` passed. Two `fleet-clusters` data issues remain open in [Open Questions](plans/08-open-questions.md#fleet-clusters-data); Aura reports them rather than working around them.
 
 Validation summary, recorded at Aura commit `6dc0eb3`:
 
@@ -24,6 +24,7 @@ Validation summary, recorded at Aura commit `6dc0eb3`:
 | Refusals | Incomplete, archived non-provisioned, and conflicting definitions refused with structured missing evidence |
 | Duplicate idempotency key | Rejected before collection with no standard output |
 | Read-only RBAC | `list` allowed; `create`, `patch`, and `delete` denied |
+| Continuous integration | Run `39474106779` passed at `01f0f38`; run `39473619779` at `8c91797` failed on an order-dependent test fixed in `b841594` |
 | Record durability | No `.tmp` files remained after fixture and live validation |
 | Protected repository tracked changes | None |
 
@@ -80,6 +81,7 @@ The model protocol remains provider-independent. A future provider must consume 
 
 | Commit | Change |
 | --- | --- |
+| `b841594` | Selected the workflow audit event by type instead of glob order |
 | `6dc0eb3` | Folded metadata drift cases into the drift test |
 | `5c00ab0` | Collapsed command lookup failures |
 | `c162da8` | Shared test collection helpers and fakes |
@@ -115,7 +117,7 @@ The model protocol remains provider-independent. A future provider must consume 
 
 ## Next Work
 
-Do not begin Phase 2 until Phase 1 is published. The remaining sequence is:
+Phase 1 is published. Remaining work:
 
-1. The operator pushes `main` to the public remote.
-2. `fleet-clusters` owners backfill `metadata.yaml` and its `platform` key for the definitions listed in [Open Questions](plans/08-open-questions.md#fleet-clusters-data).
+1. `fleet-clusters` owners backfill `metadata.yaml` and its `platform` key for the definitions listed in [Open Questions](plans/08-open-questions.md#fleet-clusters-data).
+2. Phase 2 starts only after its draft plan is reviewed and approved.
