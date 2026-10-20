@@ -8,7 +8,6 @@ from aura.authorization import OperatorRole
 from aura.collectors.cluster_state import ClusterStateCollector
 from aura.contracts import (
     AuditEvent,
-    EvidenceItem,
     AuditEventType,
     CommandEnvelope,
     CommandState,
@@ -26,6 +25,7 @@ from aura.diagnosis import DiagnosisEvidenceUnavailable
 from aura.services.cluster_state import ClusterStateDiagnosisModel
 from test_cluster_state_collector import (
     ConflictingGitCollector,
+    collect_cluster_state,
     ConditionOpenShiftCollector,
     EmptyCollector,
     FakeGitCollector,
@@ -149,7 +149,7 @@ def test_cluster_state_diagnosis_model_reports_missing_evidence() -> None:
 
 
 def test_cluster_state_diagnosis_model_explains_not_provisioned() -> None:
-    collector = ClusterStateCollector(
+    evidence_snapshot = collect_cluster_state(
         git_collector=FakeGitCollector(),
         openshift_collector=ConditionOpenShiftCollector(
             {
@@ -159,12 +159,6 @@ def test_cluster_state_diagnosis_model_explains_not_provisioned() -> None:
             }
         ),
         tekton_collector=FakeTektonCollector(),
-        cluster_name="example",
-    )
-    evidence_snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
     snapshot = make_cwa_snapshot(evidence_snapshot)
 
@@ -192,43 +186,6 @@ def test_cluster_state_diagnosis_model_explains_not_provisioned() -> None:
         "Read-only inspect the failed TaskRun provision-task-abc and "
         "the OpenShift Provisioned condition."
     )
-
-
-@final
-class StatusTektonCollector:
-    def __init__(self, status: str) -> None:
-        self._status = status
-
-    def collect(
-        self,
-        *,
-        command_id: UUID,
-        snapshot_id: UUID | None = None,
-        collected_at: datetime | None = None,
-        source_version: str | None = None,
-    ) -> EvidenceSnapshot:
-        return EvidenceSnapshot(
-            snapshot_id=snapshot_id or UUID(int=30),
-            command_id=command_id,
-            collector="tekton_inventory",
-            collector_version="test",
-            collected_at=collected_at or datetime(2026, 1, 1, tzinfo=UTC),
-            source="tekton",
-            source_version=source_version or "tekton-version",
-            items=[
-                EvidenceItem(
-                    item_id=UUID(int=31),
-                    kind="pipeline_run",
-                    data={
-                        "namespace": "example-ns",
-                        "pipeline_run_name": "deploy-cluster-abc",
-                        "status": self._status,
-                        "failed_task": None,
-                    },
-                )
-            ],
-            redactions=[],
-        )
 
 
 INCOMPLETE_RUN_INFERENCE = {
@@ -300,7 +257,7 @@ def test_cluster_state_diagnosis_model_reports_pipeline_run_status(
     inspection,
     confidence,
 ) -> None:
-    collector = ClusterStateCollector(
+    evidence_snapshot = collect_cluster_state(
         git_collector=FakeGitCollector(),
         openshift_collector=ConditionOpenShiftCollector(
             {
@@ -309,13 +266,7 @@ def test_cluster_state_diagnosis_model_reports_pipeline_run_status(
                 "reason": "" if provisioned else "ProvisioningFailed",
             }
         ),
-        tekton_collector=StatusTektonCollector(status),
-        cluster_name="example",
-    )
-    evidence_snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+        tekton_collector=FakeTektonCollector(status),
     )
 
     response = ClusterStateDiagnosisModel().diagnose(
@@ -331,16 +282,10 @@ def test_cluster_state_diagnosis_model_reports_pipeline_run_status(
 
 
 def test_cluster_state_diagnosis_model_requires_provisioned_condition() -> None:
-    collector = ClusterStateCollector(
+    evidence_snapshot = collect_cluster_state(
         git_collector=FakeGitCollector(),
         openshift_collector=ConditionOpenShiftCollector(None),
         tekton_collector=FakeTektonCollector(),
-        cluster_name="example",
-    )
-    evidence_snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
     snapshot = make_cwa_snapshot(evidence_snapshot)
 
@@ -353,16 +298,10 @@ def test_cluster_state_diagnosis_model_requires_provisioned_condition() -> None:
 
 
 def test_cluster_state_diagnosis_model_refuses_definition_conflict() -> None:
-    collector = ClusterStateCollector(
+    evidence_snapshot = collect_cluster_state(
         git_collector=ConflictingGitCollector(),
         openshift_collector=FakeOpenShiftCollector(),
         tekton_collector=FakeTektonCollector(),
-        cluster_name="example",
-    )
-    evidence_snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
     snapshot = make_cwa_snapshot(evidence_snapshot)
 
@@ -375,16 +314,10 @@ def test_cluster_state_diagnosis_model_refuses_definition_conflict() -> None:
 
 
 def test_cluster_state_diagnosis_model_refuses_incomplete_definition() -> None:
-    collector = ClusterStateCollector(
+    evidence_snapshot = collect_cluster_state(
         git_collector=IncompleteGitCollector(),
         openshift_collector=FakeOpenShiftCollector(),
         tekton_collector=FakeTektonCollector(),
-        cluster_name="example",
-    )
-    evidence_snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
     snapshot = make_cwa_snapshot(evidence_snapshot)
 

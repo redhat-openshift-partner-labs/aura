@@ -156,6 +156,26 @@ def older_pipeline_run(cluster_name: str) -> EvidenceItem:
     )
 
 
+def collect_inventory(
+    collector: ClusterInventoryCollector,
+) -> EvidenceSnapshot:
+    return collector.collect(
+        command_id=UUID(int=1),
+        snapshot_id=UUID(int=40),
+        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+
+def inventories_by_cluster(
+    snapshot: EvidenceSnapshot,
+) -> dict[str, dict[str, object]]:
+    return {
+        item.data["cluster_name"]: item.data
+        for item in snapshot.items
+        if item.kind == "cluster_inventory"
+    }
+
+
 def test_cluster_inventory_collector_correlates_sources() -> None:
     collector = ClusterInventoryCollector(
         git_collector=git_collector(definition("example")),
@@ -168,11 +188,7 @@ def test_cluster_inventory_collector_correlates_sources() -> None:
         ),
     )
 
-    snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
+    snapshot = collect_inventory(collector)
 
     assert snapshot.collector == "cluster_inventory"
     assert snapshot.source == "git+openshift+tekton"
@@ -233,24 +249,16 @@ def test_cluster_inventory_collector_reports_drift_and_missing_sources() -> None
         ),
     )
 
-    snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
+    snapshot = collect_inventory(collector)
 
-    inventories = {
-        item.data["cluster_name"]: item
-        for item in snapshot.items
-        if item.kind == "cluster_inventory"
-    }
-    assert inventories["example"].data["drift_indicator"] == "detected"
-    assert inventories["git-only"].data["drift_indicator"] == (
+    inventories = inventories_by_cluster(snapshot)
+    assert inventories["example"]["drift_indicator"] == "detected"
+    assert inventories["git-only"]["drift_indicator"] == (
         "missing-openshift"
     )
-    assert inventories["git-only"].data["actual_state"] is None
-    assert inventories["orphan"].data["drift_indicator"] == "missing-git"
-    assert inventories["orphan"].data["desired_state"] is None
+    assert inventories["git-only"]["actual_state"] is None
+    assert inventories["orphan"]["drift_indicator"] == "missing-git"
+    assert inventories["orphan"]["desired_state"] is None
 
 
 def test_cluster_inventory_collector_reports_incomplete_metadata() -> None:
@@ -266,17 +274,9 @@ def test_cluster_inventory_collector_reports_incomplete_metadata() -> None:
         tekton_collector=tekton_collector(),
     )
 
-    snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
+    snapshot = collect_inventory(collector)
 
-    inventories = {
-        item.data["cluster_name"]: item.data
-        for item in snapshot.items
-        if item.kind == "cluster_inventory"
-    }
+    inventories = inventories_by_cluster(snapshot)
     assert inventories["legacy"]["drift_indicator"] == "incomplete-metadata"
     assert inventories["legacy"]["desired_state"]["cloud_provider"] is None
     assert inventories["legacy-drifted"]["drift_indicator"] == "detected"
@@ -294,17 +294,9 @@ def test_cluster_inventory_collector_distinguishes_archived_clusters() -> None:
         tekton_collector=tekton_collector(),
     )
 
-    snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
+    snapshot = collect_inventory(collector)
 
-    inventories = {
-        item.data["cluster_name"]: item.data
-        for item in snapshot.items
-        if item.kind == "cluster_inventory"
-    }
+    inventories = inventories_by_cluster(snapshot)
     assert inventories["archived-clean"][
         "definition_status"
     ] == "archived"
@@ -340,17 +332,9 @@ def test_cluster_inventory_collector_reports_incomplete_definitions(
         tekton_collector=tekton_collector(),
     )
 
-    snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
+    snapshot = collect_inventory(collector)
 
-    inventories = {
-        item.data["cluster_name"]: item.data
-        for item in snapshot.items
-        if item.kind == "cluster_inventory"
-    }
+    inventories = inventories_by_cluster(snapshot)
     assert sorted(inventories) == [
         "legacy",
         "legacy-archived",
@@ -400,11 +384,7 @@ def test_cluster_inventory_collector_reports_invalid_definition(
         tekton_collector=tekton_collector(),
     )
 
-    snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
+    snapshot = collect_inventory(collector)
 
     inventory = snapshot.items[-1]
     assert inventory.data["definition_kind"] == "cluster_definition_invalid"
@@ -424,11 +404,7 @@ def test_cluster_inventory_collector_reports_definition_conflict() -> None:
         tekton_collector=tekton_collector(),
     )
 
-    snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
+    snapshot = collect_inventory(collector)
 
     inventory = next(
         item

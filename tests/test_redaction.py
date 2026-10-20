@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from aura.redaction import RedactionPolicy, redact
 
 
@@ -78,32 +80,24 @@ def test_redaction_preserves_non_secret_scalars_and_containers() -> None:
 
 
 
-def test_redacts_secret_field_spelling_variants() -> None:
-    value = {
-        "pullSecret": "pull",
-        "Client-Secret": "client",
-        "aws_secret_access_key": "aws",
-        "accessToken": "access",
-        "ssh-private-key": "ssh",
-        "pullSecretRef": {"name": "pull-secret"},
-        "tokenTTL": "1h",
-    }
 
-    result = redact(value)
-
-    assert result.value == {
-        "pullSecret": "[REDACTED]",
-        "Client-Secret": "[REDACTED]",
-        "aws_secret_access_key": "[REDACTED]",
-        "accessToken": "[REDACTED]",
-        "ssh-private-key": "[REDACTED]",
-        "pullSecretRef": {"name": "pull-secret"},
-        "tokenTTL": "1h",
-    }
-    assert result.redacted_fields == [
-        "Client-Secret",
-        "accessToken",
-        "aws_secret_access_key",
+@pytest.mark.parametrize(
+    "field",
+    [
         "pullSecret",
+        "Client-Secret",
+        "aws_secret_access_key",
+        "accessToken",
         "ssh-private-key",
-    ]
+    ],
+)
+def test_redacts_secret_field_spelling_variants(field: str) -> None:
+    result = redact({field: "value"})
+
+    assert result.value == {field: "[REDACTED]"}
+    assert result.redacted_fields == [field]
+
+
+@pytest.mark.parametrize("field", ["pullSecretRef", "tokenTTL"])
+def test_keeps_fields_that_only_contain_secret_words(field: str) -> None:
+    assert redact({field: "value"}).redacted_fields == []

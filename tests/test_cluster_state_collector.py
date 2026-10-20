@@ -196,6 +196,9 @@ class ConditionOpenShiftCollector:
 
 @final
 class FakeTektonCollector:
+    def __init__(self, status: str = "Failed") -> None:
+        self._status = status
+
     def collect(
         self,
         *,
@@ -219,10 +222,12 @@ class FakeTektonCollector:
                     data={
                         "namespace": "example-ns",
                         "pipeline_run_name": "deploy-cluster-abc",
-                        "status": "Failed",
-                        "failed_task": {
-                            "name": "provision-task-abc",
-                        },
+                        "status": self._status,
+                        "failed_task": (
+                            {"name": "provision-task-abc"}
+                            if self._status == "Failed"
+                            else None
+                        ),
                     },
                 )
             ],
@@ -305,18 +310,31 @@ class EmptyCollector:
         )
 
 
-def test_cluster_state_collector_correlates_evidence() -> None:
-    collector = ClusterStateCollector(
-        git_collector=FakeGitCollector(),
-        openshift_collector=FakeOpenShiftCollector(),
-        tekton_collector=FakeTektonCollector(),
+def collect_cluster_state(
+    *,
+    git_collector: object,
+    openshift_collector: object,
+    tekton_collector: object,
+    pipeline_run: str | None = None,
+) -> EvidenceSnapshot:
+    return ClusterStateCollector(
+        git_collector=git_collector,
+        openshift_collector=openshift_collector,
+        tekton_collector=tekton_collector,
         cluster_name="example",
-    )
-
-    snapshot = collector.collect(
+        pipeline_run=pipeline_run,
+    ).collect(
         command_id=UUID(int=1),
         snapshot_id=UUID(int=40),
         collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+
+def test_cluster_state_collector_correlates_evidence() -> None:
+    snapshot = collect_cluster_state(
+        git_collector=FakeGitCollector(),
+        openshift_collector=FakeOpenShiftCollector(),
+        tekton_collector=FakeTektonCollector(),
     )
 
     assert snapshot.collector == "cluster_state"
@@ -341,17 +359,10 @@ def test_cluster_state_collector_correlates_evidence() -> None:
 
 
 def test_cluster_state_collector_reports_missing_sources() -> None:
-    collector = ClusterStateCollector(
+    snapshot = collect_cluster_state(
         git_collector=EmptyCollector(),
         openshift_collector=EmptyCollector(),
         tekton_collector=EmptyCollector(),
-        cluster_name="example",
-    )
-
-    snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
     correlation = snapshot.items[-1]
@@ -363,17 +374,10 @@ def test_cluster_state_collector_reports_missing_sources() -> None:
 
 
 def test_cluster_state_collector_reports_definition_conflict() -> None:
-    collector = ClusterStateCollector(
+    snapshot = collect_cluster_state(
         git_collector=ConflictingGitCollector(),
         openshift_collector=FakeOpenShiftCollector(),
         tekton_collector=FakeTektonCollector(),
-        cluster_name="example",
-    )
-
-    snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
     correlation = snapshot.items[-1]
@@ -390,17 +394,10 @@ def test_cluster_state_collector_reports_definition_conflict() -> None:
 
 
 def test_cluster_state_collector_reports_incomplete_definition() -> None:
-    collector = ClusterStateCollector(
+    snapshot = collect_cluster_state(
         git_collector=IncompleteGitCollector(),
         openshift_collector=FakeOpenShiftCollector(),
         tekton_collector=FakeTektonCollector(),
-        cluster_name="example",
-    )
-
-    snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
     correlation = snapshot.items[-1]
@@ -420,17 +417,10 @@ def test_cluster_state_collector_matches_git_definition_without_metadata(
     write_cluster(tmp_path)
     (tmp_path / "provision" / "example" / "metadata.yaml").unlink()
     commit_repository(tmp_path)
-    collector = ClusterStateCollector(
+    snapshot = collect_cluster_state(
         git_collector=GitInventoryCollector(tmp_path),
         openshift_collector=FakeOpenShiftCollector(),
         tekton_collector=FakeTektonCollector(),
-        cluster_name="example",
-    )
-
-    snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
     correlation = snapshot.items[-1]
@@ -451,17 +441,10 @@ def test_cluster_state_collector_refuses_invalid_git_definition(
         tmp_path / "provision" / "example" / "metadata.yaml"
     ).write_text("platform: [aws\n", encoding="utf-8")
     commit_repository(tmp_path)
-    collector = ClusterStateCollector(
+    snapshot = collect_cluster_state(
         git_collector=GitInventoryCollector(tmp_path),
         openshift_collector=FakeOpenShiftCollector(),
         tekton_collector=FakeTektonCollector(),
-        cluster_name="example",
-    )
-
-    snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
     assert snapshot.items[0].kind == "cluster_definition_invalid"
@@ -471,17 +454,10 @@ def test_cluster_state_collector_refuses_invalid_git_definition(
 
 
 def test_cluster_state_collector_selects_latest_pipeline_run() -> None:
-    collector = ClusterStateCollector(
+    snapshot = collect_cluster_state(
         git_collector=FakeGitCollector(),
         openshift_collector=FakeOpenShiftCollector(),
         tekton_collector=MultipleTektonCollector(),
-        cluster_name="example",
-    )
-
-    snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
     correlation = snapshot.items[-1]
@@ -495,18 +471,11 @@ def test_cluster_state_collector_selects_latest_pipeline_run() -> None:
 
 
 def test_cluster_state_collector_selects_pipeline_run_by_id() -> None:
-    collector = ClusterStateCollector(
+    snapshot = collect_cluster_state(
         git_collector=FakeGitCollector(),
         openshift_collector=FakeOpenShiftCollector(),
         tekton_collector=MultipleTektonCollector(),
-        cluster_name="example",
         pipeline_run="0171d46a-0000-0000-0000-000000000031",
-    )
-
-    snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
     correlation = snapshot.items[-1]
@@ -520,18 +489,11 @@ def test_cluster_state_collector_selects_pipeline_run_by_id() -> None:
 
 
 def test_cluster_state_collector_selects_pipeline_run_by_name() -> None:
-    collector = ClusterStateCollector(
+    snapshot = collect_cluster_state(
         git_collector=FakeGitCollector(),
         openshift_collector=FakeOpenShiftCollector(),
         tekton_collector=MultipleTektonCollector(),
-        cluster_name="example",
         pipeline_run="deploy-cluster-older",
-    )
-
-    snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
     correlation = snapshot.items[-1]
@@ -541,18 +503,11 @@ def test_cluster_state_collector_selects_pipeline_run_by_name() -> None:
 
 
 def test_cluster_state_collector_reports_missing_selected_run() -> None:
-    collector = ClusterStateCollector(
+    snapshot = collect_cluster_state(
         git_collector=FakeGitCollector(),
         openshift_collector=FakeOpenShiftCollector(),
         tekton_collector=MultipleTektonCollector(),
-        cluster_name="example",
         pipeline_run="missing-run",
-    )
-
-    snapshot = collector.collect(
-        command_id=UUID(int=1),
-        snapshot_id=UUID(int=40),
-        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
     correlation = snapshot.items[-1]

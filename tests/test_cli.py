@@ -296,6 +296,13 @@ def raise_disk_full(*args, **kwargs):
     raise OSError(28, "No space left on device")
 
 
+def assert_cli_error(capsys, exit_code: int, message: str) -> None:
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert captured.err == f"aura: {message}\n"
+    assert captured.out == ""
+
+
 @pytest.mark.parametrize(
     "store",
     [
@@ -319,11 +326,8 @@ def test_cli_inventory_list_fails_command_on_record_write_error(
         collector=FakeCollector(),
         command_id_factory=lambda: UUID(int=1),
     )
-    captured = capsys.readouterr()
 
-    assert exit_code == 2
-    assert captured.err == "aura: [Errno 28] No space left on device\n"
-    assert captured.out == ""
+    assert_cli_error(capsys, exit_code, "[Errno 28] No space left on device")
     command = JsonCommandStore(tmp_path / "commands").load("test-key")
     assert command.status is CommandState.FAILED
 
@@ -341,11 +345,8 @@ def test_cli_inventory_list_reports_command_store_error(
         collector=collector,
         command_id_factory=lambda: UUID(int=1),
     )
-    captured = capsys.readouterr()
 
-    assert exit_code == 2
-    assert captured.err == "aura: [Errno 28] No space left on device\n"
-    assert captured.out == ""
+    assert_cli_error(capsys, exit_code, "[Errno 28] No space left on device")
     assert collector.calls == 0
 
 
@@ -363,13 +364,12 @@ def test_cli_inventory_list_rejects_unreadable_command_record(
         collector=collector,
         command_id_factory=lambda: UUID(int=1),
     )
-    captured = capsys.readouterr()
 
-    assert exit_code == 2
-    assert captured.err == (
-        "aura: idempotency key record is unreadable: test-key\n"
+    assert_cli_error(
+        capsys,
+        exit_code,
+        "idempotency key record is unreadable: test-key",
     )
-    assert captured.out == ""
     assert collector.calls == 0
 
 
@@ -382,13 +382,12 @@ def test_cli_inventory_list_reports_missing_git_checkout(
     arguments[arguments.index("--fleet-clusters") + 1] = str(fleet_clusters)
 
     exit_code = main(arguments, command_id_factory=lambda: UUID(int=1))
-    captured = capsys.readouterr()
 
-    assert exit_code == 2
-    assert captured.err == (
-        f"aura: git checkout is not usable: {fleet_clusters}\n"
+    assert_cli_error(
+        capsys,
+        exit_code,
+        f"git checkout is not usable: {fleet_clusters}",
     )
-    assert captured.out == ""
     command = JsonCommandStore(tmp_path / "commands").load("test-key")
     assert command.status is CommandState.FAILED
 
