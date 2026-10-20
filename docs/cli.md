@@ -174,7 +174,7 @@ An `oc` failure is reported as a concise CLI error with exit code `2`; no partia
 Additional error contracts:
 
 - Blank `--operator` and `--idempotency-key` values are rejected before collection.
-- An existing non-directory `--command-dir` is rejected before collection.
+- Existing non-directory record paths are rejected before collection.
 - A missing Git checkout is reported as an unusable checkout.
 - Git subprocess failures report the exit code and final diagnostic line.
 - Missing or inaccessible `oc`, permission failures, invalid JSON, and command timeouts are converted to concise `OpenShiftCLIError` messages.

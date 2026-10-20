@@ -49,7 +49,7 @@ flowchart TB
 | Correlators | Combine source evidence into cluster, workflow, and diagnosis views |
 | CWA | Freeze model input into nine required slots and compute digests |
 | Diagnosis | Validate strict model output and link it to CWA provenance |
-| Stores | Persist immutable JSON records with exclusive-create semantics |
+| Stores | Persist immutable JSON records with atomic exclusive publication |
 | Audit | Record evidence collection, context assembly, and model results |
 
 ## Read-Only Boundary

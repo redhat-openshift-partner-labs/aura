@@ -8,7 +8,7 @@ Validation summary:
 
 | Check | Result |
 | --- | --- |
-| Automated tests | 230 passed |
+| Automated tests | 237 passed |
 | Scoped-AWS fixture | `provision/0171d46a-scopedaws` |
 | Fixture source commit | `492bc8e07afddcd557441ddb7d72158de60ab8cb` |
 | Live OpenShift cluster states | 13 |
@@ -39,7 +39,7 @@ Validation summary:
 | Non-provisioned diagnosis | Reports the OpenShift `Provisioned` condition without claiming the cluster is deployed |
 | CWA | Assembles all nine required slots and computes a snapshot digest |
 | Provenance | Links evidence, CWA snapshot, CWA trace, diagnosis, and audit events |
-| Stores | Uses append-only JSON stores for evidence, CWA, audit, and diagnosis records |
+| Stores | Uses atomically published, append-only JSON records for evidence, CWA, audit, and diagnosis data |
 | Idempotency | Binds keys to one request and suppresses concurrent or sequential terminal-key reuse |
 | Authorization | Allows Phase 1 commands for `viewer` and `admin` roles |
 | CLI | Provides `inventory list`, `workflow inspect`, and `diagnose state` |

@@ -129,7 +129,7 @@ Model output is never treated as authority. Authorization and any future executi
 
 ## Record Integrity
 
-All current stores use exclusive file creation:
+All current stores use exclusive, atomic publication:
 
 - Existing snapshots are not overwritten.
 - Existing audit events are not overwritten.
@@ -138,6 +138,7 @@ All current stores use exclusive file creation:
 - Existing diagnoses are not overwritten.
 
 Snapshots and responses include SHA-256 digests over canonical JSON.
+Records are serialized to a private temporary file, flushed with `fsync`, and linked into their final name only after the complete write. A failed write leaves no partial final record.
 
 ## Operational cautions
 

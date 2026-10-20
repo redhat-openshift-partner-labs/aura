@@ -186,7 +186,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --audit-dir "$validation/audit" \
   --cwa-dir "$validation/cwa" \
   --operator operator@example.com \
-  --idempotency-key records-001
+  --idempotency-key records-001 \
   --command-dir "$validation/commands"
 ```
 
@@ -196,7 +196,7 @@ Expected files:
 | --- | --- |
 | `commands/` | 1 |
 | `snapshots/` | 1 |
-| `audit/` | 2 |
+| `audit/` | 3 |
 | `cwa/snapshots/` | 1 |
 | `cwa/traces/` | 1 |
 
@@ -206,6 +206,7 @@ Check that:
 - CWA trace references the same evidence snapshot ID and digest.
 - CWA trace references the stored CWA snapshot ID and digest.
 - Audit events reference the command and records.
+- No `.tmp` files remain in any record directory.
 
 ## Protected Repository Validation
 

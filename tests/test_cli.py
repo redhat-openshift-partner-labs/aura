@@ -8,6 +8,8 @@ from subprocess import CalledProcessError
 from typing import final
 from uuid import UUID, uuid5
 
+import pytest
+
 import aura.collectors.git_inventory as git_inventory
 from aura.cli import main
 from aura.command_store import JsonCommandStore
@@ -235,6 +237,46 @@ def test_cli_inventory_list_rejects_unusable_command_store(
     assert exit_code == 2
     assert captured.err == (
         f"aura: --command-dir is not a usable directory: {command_dir}\n"
+    )
+    assert captured.out == ""
+    assert collector.calls == 0
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [
+        "--snapshot-dir",
+        "--audit-dir",
+        "--cwa-dir",
+        "--diagnosis-dir",
+    ],
+)
+def test_cli_inventory_list_rejects_unusable_record_directories(
+    tmp_path,
+    capsys,
+    flag,
+) -> None:
+    collector = CountingCollector()
+    invalid_directory = tmp_path / "not-a-directory"
+    invalid_directory.write_text("not a directory", encoding="utf-8")
+    arguments = inventory_arguments(tmp_path)
+    arguments.extend([flag, str(invalid_directory)])
+    if flag in {"--cwa-dir", "--diagnosis-dir"}:
+        arguments.extend(["--audit-dir", str(tmp_path / "audit")])
+    if flag == "--diagnosis-dir":
+        arguments.extend(["--cwa-dir", str(tmp_path / "cwa")])
+
+    exit_code = main(
+        arguments,
+        collector=collector,
+        command_id_factory=lambda: UUID(int=1),
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.err == (
+        f"aura: {flag} is not a usable directory: "
+        f"{invalid_directory}\n"
     )
     assert captured.out == ""
     assert collector.calls == 0

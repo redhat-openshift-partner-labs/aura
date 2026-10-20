@@ -315,16 +315,33 @@ def _diagnose_state_argument_error(args: argparse.Namespace) -> str | None:
     return None
 
 
+def _record_directory_argument_error(
+    args: argparse.Namespace,
+) -> str | None:
+    directory_arguments = (
+        ("command_dir", "--command-dir"),
+        ("snapshot_dir", "--snapshot-dir"),
+        ("audit_dir", "--audit-dir"),
+        ("cwa_dir", "--cwa-dir"),
+        ("diagnosis_dir", "--diagnosis-dir"),
+    )
+    for attribute, flag in directory_arguments:
+        directory = getattr(args, attribute, None)
+        if directory is None:
+            continue
+        if directory.exists() and not directory.is_dir():
+            return f"{flag} is not a usable directory: {directory}"
+    return None
+
+
 def _argument_error(args: argparse.Namespace) -> str | None:
     if not args.operator.strip():
         return "--operator must not be blank"
     if not args.idempotency_key.strip():
         return "--idempotency-key must not be blank"
-    if args.command_dir.exists() and not args.command_dir.is_dir():
-        return (
-            f"--command-dir is not a usable directory: "
-            f"{args.command_dir}"
-        )
+    directory_error = _record_directory_argument_error(args)
+    if directory_error is not None:
+        return directory_error
     if args.command == "inventory":
         return _inventory_argument_error(args)
     if args.command == "workflow":
