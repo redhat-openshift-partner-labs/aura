@@ -12,7 +12,7 @@ An `EvidenceSnapshot` is the frozen result of one collector invocation.
 | `collector_version` | Collector implementation version |
 | `collected_at` | UTC collection timestamp |
 | `source` | Human-readable source or joined sources |
-| `source_version` | Git `HEAD` commit, joined resource versions, or supplied version |
+| `source_version` | Pinned Git commit or joined resource versions |
 | `items` | Typed evidence items |
 | `redactions` | Fields removed before storage |
 | `snapshot_digest` | SHA-256 digest of canonical snapshot JSON |
@@ -183,6 +183,9 @@ Audit events are immutable and reference the previous event where applicable:
 
 | Type | Data |
 | --- | --- |
+| `command_received` | Command type and input |
 | `evidence_collected` | Snapshot ID, digest, collector, source, source version, persistence flag |
 | `context_assembled` | CWA snapshot and trace IDs, evidence digest, assembler version |
 | `model_called` | Diagnosis ID, response digest, provider, model, fallback flag, trace ID |
+| `command_failed` | Terminal failure reason |
+| `command_refused` | Terminal refusal reason |

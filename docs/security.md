@@ -28,6 +28,10 @@ The current runtime only reads `fleet-clusters`. The other protected repositorie
 
 Git evidence resolves `HEAD` once and reads the tree listing and blobs from that pinned commit. Uncommitted working-tree changes, later commits, and untracked files are not treated as desired state.
 
+## Operator Identity
+
+Phase 1 accepts a non-empty, self-asserted `--operator` value. That value is the audit actor and CWA user identifier; it is not authentication and must not be treated as proof that a person holds the supplied roles. Operator authentication can be added later without changing the evidence contracts.
+
 ## Service Account
 
 Use a dedicated service account such as:

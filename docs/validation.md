@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-201 passed
+237 passed
 ```
 
 Run diff hygiene:
@@ -23,10 +23,10 @@ git diff --check
 Run the structural quality gate:
 
 ```bash
-ripwire . --quality-delta
+ripwire . --quality-delta=adb2c2b..HEAD
 ```
 
-Without a committed baseline, this compares the working tree with `HEAD`; a clean tree therefore reports zero regressions but does not evaluate already-committed quality. A committed baseline is pending closure hardening.
+Expected current result: zero gating findings. The committed range is the quality baseline through the Phase 1 closure changes.
 
 The test suite covers:
 
@@ -122,6 +122,8 @@ Latest validation observed:
 | OpenShift cluster states | 13 |
 | PipelineRuns | 34 |
 | Combined inventory records | 16 |
+| Combined inventory evidence items | 89 |
+| Workflow evidence items | 107 |
 | Workflow views | 34 |
 | Correlated workflow views | 34 |
 | Uncorrelated workflow views | 0 |

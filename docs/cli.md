@@ -12,7 +12,7 @@ All successful commands print JSON to standard output.
 
 | Flag | Required | Default | Acceptable values | Purpose |
 | --- | --- | --- | --- | --- |
-| `--operator` | Yes | None | Any non-empty operator identifier | Recorded as the command actor |
+| `--operator` | Yes | None | Any non-empty operator identifier | Records the self-asserted command actor |
 | `--idempotency-key` | Yes | None | Any non-empty key unique to one operator request | Recorded in the command envelope |
 | `--command-dir` | Yes | None | Writable directory | Stores terminal idempotency-key records |
 | `--role` | No | `viewer` | `viewer`, `proposer`, `approver`, `executor`, `admin` | Roles used for authorization; may be repeated |

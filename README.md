@@ -1,6 +1,6 @@
 # Aura Control Plane
 
-Aura is a read-only operator control plane for OpenShift Partner Labs. It correlates committed `fleet-clusters` Git definitions, OpenShift actual state, and Tekton workflow state into typed, auditable evidence. Phase 1 functional scope is implemented; closure hardening is in progress.
+Aura is a read-only operator control plane for OpenShift Partner Labs. It correlates committed `fleet-clusters` Git definitions, OpenShift actual state, and Tekton workflow state into typed, auditable evidence. Phase 1 functional scope and closure hardening are implemented and validated.
 
 Aura is a sidecar to the existing lifecycle systems. It does not replace RabbitMQ, Tekton, Git, ACM/Hive, or Portal, and it does not write to those systems.
 
@@ -49,7 +49,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --source git \
   --fleet-clusters ../fleet-clusters \
   --operator operator@example.com \
-  --idempotency-key inventory-001
+  --idempotency-key inventory-001 \
   --command-dir ./local/commands
 ```
 
@@ -61,7 +61,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --fleet-clusters ../fleet-clusters \
   --openshift-kubeconfig "$HOME/.kube/aura-readonly" \
   --operator operator@example.com \
-  --idempotency-key inventory-002
+  --idempotency-key inventory-002 \
   --command-dir ./local/commands
 ```
 
@@ -72,7 +72,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura workflow inspect \
   --openshift-kubeconfig "$HOME/.kube/aura-readonly" \
   --fleet-clusters ../fleet-clusters \
   --operator operator@example.com \
-  --idempotency-key workflow-001
+  --idempotency-key workflow-001 \
   --command-dir ./local/commands
 ```
 

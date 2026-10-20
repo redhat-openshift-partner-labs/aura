@@ -2,7 +2,7 @@
 
 ## Phase 1
 
-Phase 1 functional scope is implemented. Closure hardening is in progress, so Phase 1 is not considered closed until the automation-grade gaps are resolved.
+Phase 1 functional scope and closure hardening are implemented and validated. Publication to the public remote is the remaining operational step.
 
 Validation summary:
 
@@ -14,11 +14,14 @@ Validation summary:
 | Live OpenShift cluster states | 13 |
 | Live Tekton PipelineRuns | 34 |
 | Combined inventory records | 16 |
+| Combined inventory evidence items | 89 |
+| Workflow evidence items | 107 |
 | Correlated workflow views | 34 of 34 |
 | Live cluster diagnosis | Fixture cluster diagnosed with four evidence items |
 | Non-provisioned refusal | Archived cluster refused with structured missing evidence |
 | Duplicate idempotency key | Request-bound and concurrency-safe rejection before collection |
-| Quality gate | Pending committed baseline during closure hardening |
+| Quality gate | `adb2c2b..HEAD` passed with zero gating findings |
+| Record durability | No `.tmp` files remained after fixture and live validation |
 | Protected repository tracked changes | None |
 
 ## Implemented
@@ -70,7 +73,16 @@ The model protocol remains provider-independent. A future provider must consume 
 
 | Commit | Change |
 | --- | --- |
+| `7e2ce61` | Removed digest and audit duplication |
+| `983f147` | Closed full-range quality regressions |
+| `8f8e069` | Inlined audit persistence |
+| `a3694b3` | Removed store-error duplication |
+| `6acb880` | Reduced command duplication |
 | `1c62c7a` | Added refused lifecycle digests |
+| `6848efd` | Published JSON records atomically |
+| `660227e` | Pinned Git evidence to resolved `HEAD` |
+| `8f73ad5` | Hardened CLI and collector error contracts |
+| `68108c4` | Enforced request-bound command lifecycle |
 | `97c6ece` | Suppressed reuse of completed idempotency keys |
 | `447f748` | Validated selectors and reported `oc` failures concisely |
 | `7debde5` | Hardened conflict, PipelineRun selection, and non-provisioned diagnosis |
@@ -85,10 +97,6 @@ The model protocol remains provider-independent. A future provider must consume 
 
 ## Next Work
 
-Do not begin Phase 2 until Phase 1 closure hardening is complete. The remaining closure-hardening sequence is:
+Do not begin Phase 2 until Phase 1 is published. The remaining sequence is:
 
-1. Enforce restricted store permissions and evidence redaction.
-2. Correct diagnosis lifecycle and failed-command provenance.
-3. Implement request-bound, concurrency-safe idempotency.
-4. Improve source provenance for OpenShift and Tekton.
-5. Establish the public remote, CI, and quality baseline.
+1. Push `main` to the public remote.
