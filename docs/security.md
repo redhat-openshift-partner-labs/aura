@@ -123,6 +123,13 @@ Every command must print `yes`. Write verbs such as `create`, `patch`, and `dele
 
 Matching ignores case and non-alphanumeric separators, so `pullSecret`, `pull-secret`, and `PULL_SECRET` all match `pull_secret`. The normalized name must match exactly, so references such as `pullSecretRef` are kept. Matching is recursive through mappings and lists. Removed field paths are recorded without their values.
 
+PipelineRun parameters carry values under generic `name` and `value` keys, so field-name matching cannot protect them. `redact_parameters` redacts any parameter whose normalized name contains `apikey`, `credential`, `kubeconfig`, `passwd`, `password`, `privatekey`, `secret`, or `token`. These fleet parameters are kept because they hold a Secret name or a file path, not secret material:
+
+- `keycloak-admin-secret`
+- `spoke-kubeconfig`
+
+Add a parameter to that allowlist only after confirming its value can never be secret material. Workspace bindings record Secret and ConfigMap names, never their contents.
+
 Redaction is a defense in depth. Collectors should still avoid reading secret values in the first place.
 
 ## Model Boundary

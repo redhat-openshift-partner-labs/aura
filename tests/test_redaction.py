@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from aura.redaction import RedactionPolicy, redact
+from aura.redaction import RedactionPolicy, redact, redact_parameters
 
 
 def test_redacts_default_secret_fields_recursively() -> None:
@@ -101,3 +101,30 @@ def test_redacts_secret_field_spelling_variants(field: str) -> None:
 @pytest.mark.parametrize("field", ["pullSecretRef", "tokenTTL"])
 def test_keeps_fields_that_only_contain_secret_words(field: str) -> None:
     assert redact({field: "value"}).redacted_fields == []
+
+
+def test_redacts_parameters_whose_names_suggest_secrets() -> None:
+    result = redact_parameters(
+        {
+            "cluster-name": "example",
+            "github-token": "token-value",
+            "db_password": "password-value",
+            "AWS-Credentials": {"key": "value"},
+            "keycloak-admin-secret": "keycloak-admin",
+            "spoke-kubeconfig": "/workspace/kubeconfig",
+        }
+    )
+
+    assert result.value == {
+        "cluster-name": "example",
+        "github-token": "[REDACTED]",
+        "db_password": "[REDACTED]",
+        "AWS-Credentials": "[REDACTED]",
+        "keycloak-admin-secret": "keycloak-admin",
+        "spoke-kubeconfig": "/workspace/kubeconfig",
+    }
+    assert result.redacted_fields == [
+        "AWS-Credentials",
+        "db_password",
+        "github-token",
+    ]

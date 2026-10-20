@@ -5,6 +5,7 @@ from typing import Any, Protocol, final
 from uuid import UUID, uuid4, uuid5
 
 from aura.contracts import EvidenceItem, EvidenceSnapshot
+from aura.redaction import redact_parameters
 
 
 class TektonInventoryClient(Protocol):
@@ -41,6 +42,7 @@ class TektonInventoryCollector:
         pipeline_runs = self.client.list_pipeline_runs()
         task_runs = self.client.list_task_runs()
         task_runs_by_pipeline = self._task_runs_by_pipeline(task_runs)
+        redactions: list[str] = []
 
         items = [
             self._read_pipeline_run(
@@ -54,6 +56,7 @@ class TektonInventoryCollector:
                     ),
                     [],
                 ),
+                redactions=redactions,
             )
             for resource in sorted(
                 pipeline_runs,
@@ -73,7 +76,7 @@ class TektonInventoryCollector:
             source="tekton",
             source_version=resolved_source_version,
             items=items,
-            redactions=[],
+            redactions=sorted(redactions),
         )
 
     def _read_pipeline_run(
@@ -83,6 +86,7 @@ class TektonInventoryCollector:
         command_id: UUID,
         source_version: str,
         task_runs: list[dict[str, Any]],
+        redactions: list[str],
     ) -> EvidenceItem:
         metadata = resource.get("metadata", {})
         spec = resource.get("spec", {})
@@ -96,6 +100,16 @@ class TektonInventoryCollector:
         task_run_summaries = sorted(
             (self._task_run_summary(task_run) for task_run in task_runs),
             key=lambda summary: summary["name"],
+        )
+        params = redact_parameters(
+            {
+                str(param.get("name", "")): param.get("value")
+                for param in spec.get("params", [])
+            }
+        )
+        redactions.extend(
+            f"{pipeline_run_redaction_prefix(namespace, name)}.params.{field}"
+            for field in params.redacted_fields
         )
         failed_task_run = next(
             (
@@ -118,6 +132,11 @@ class TektonInventoryCollector:
                     "cluster-name",
                 ),
                 "pipeline_name": spec.get("pipelineRef", {}).get("name", ""),
+                "params": params.value,
+                "workspaces": [
+                    _workspace_binding(workspace)
+                    for workspace in spec.get("workspaces", [])
+                ],
                 "status": self._status(resource),
                 "start_time": status.get("startTime", ""),
                 "completion_time": status.get("completionTime", ""),
@@ -214,3 +233,40 @@ class TektonInventoryCollector:
         if condition.get("status") == "False":
             return "Failed"
         return "Unknown"
+
+
+def pipeline_run_redaction_prefix(namespace: str, name: str) -> str:
+    """Return the position-independent redaction path for one PipelineRun."""
+
+    return f"pipeline_run[{namespace}/{name}]"
+
+
+_WORKSPACE_REFERENCES = {
+    "secret": "secretName",
+    "configMap": "name",
+    "persistentVolumeClaim": "claimName",
+    "volumeClaimTemplate": None,
+    "emptyDir": None,
+    "csi": None,
+    "projected": None,
+}
+
+
+def _workspace_binding(workspace: dict[str, Any]) -> dict[str, Any]:
+    """Summarize a workspace binding by source and referenced object name."""
+
+    source = next(
+        (name for name in _WORKSPACE_REFERENCES if name in workspace),
+        "unknown",
+    )
+    reference_key = _WORKSPACE_REFERENCES.get(source)
+    details = workspace.get(source) or {}
+    return {
+        "name": workspace.get("name", ""),
+        "source": source,
+        "reference": details.get(reference_key) if reference_key else None,
+        "sub_path": workspace.get("subPath"),
+        "claim_spec": (
+            details.get("spec") if source == "volumeClaimTemplate" else None
+        ),
+    }

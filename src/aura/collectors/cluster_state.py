@@ -8,6 +8,7 @@ from aura.collectors.deprovision import (
     DEPROVISION_REQUESTED,
     deprovision_status,
 )
+from aura.collectors.tekton_inventory import pipeline_run_redaction_prefix
 from aura.contracts import EvidenceItem, EvidenceSnapshot
 
 
@@ -175,7 +176,12 @@ class ClusterStateCollector:
                 )
             ),
             items=items,
-            redactions=[],
+            redactions=_included_redactions(
+                git_snapshot,
+                openshift_snapshot,
+                tekton_snapshot,
+                selected_pipeline_items,
+            ),
         )
 
     @staticmethod
@@ -284,3 +290,32 @@ class ClusterStateCollector:
                 return missing
             missing.append("Tekton PipelineRun status")
         return missing
+
+
+def _included_redactions(
+    git_snapshot: EvidenceSnapshot,
+    openshift_snapshot: EvidenceSnapshot,
+    tekton_snapshot: EvidenceSnapshot,
+    pipeline_items: list[EvidenceItem],
+) -> list[str]:
+    """Keep source redactions, limiting Tekton ones to selected runs."""
+
+    prefixes = tuple(
+        pipeline_run_redaction_prefix(
+            str(item.data.get("namespace", "")),
+            str(item.data.get("pipeline_run_name", "")),
+        )
+        + "."
+        for item in pipeline_items
+    )
+    return sorted(
+        {
+            *git_snapshot.redactions,
+            *openshift_snapshot.redactions,
+            *(
+                redaction
+                for redaction in tekton_snapshot.redactions
+                if redaction.startswith(prefixes)
+            ),
+        }
+    )

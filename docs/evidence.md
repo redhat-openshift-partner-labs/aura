@@ -14,7 +14,7 @@ An `EvidenceSnapshot` is the frozen result of one collector invocation.
 | `source` | Human-readable source or joined sources |
 | `source_version` | Pinned Git commit or joined resource versions |
 | `items` | Typed evidence items |
-| `redactions` | Fields removed before storage |
+| `redactions` | Fields removed before storage; PipelineRun parameters use `pipeline_run[NAMESPACE/NAME].params.PARAM`, and combined snapshots keep the redactions of the items they include |
 | `snapshot_digest` | SHA-256 digest of canonical snapshot JSON |
 
 ## Evidence Item Kinds
@@ -86,6 +86,8 @@ Deprovision status values:
 | `pipeline_run_id` | Tekton `metadata.uid` |
 | `namespace` | Tekton `metadata.namespace` |
 | `cluster_name` | Tekton `cluster-name` parameter |
+| `params` | Every `spec.params` entry as a name-to-value map, with secret-named values redacted |
+| `workspaces` | Workspace bindings as `name`, `source`, `reference`, `sub_path`, and `claim_spec`; Secrets and ConfigMaps appear by name only |
 | `status` | Tekton `Succeeded` condition: `Succeeded` when `True`, `Failed` when `False`, otherwise `Unknown` |
 | `start_time` and `completion_time` | Tekton status |
 | `conditions` | Tekton status conditions |

@@ -86,7 +86,13 @@ class WorkflowInventoryCollector:
                 )
             ),
             items=items,
-            redactions=[],
+            redactions=sorted(
+                {
+                    redaction
+                    for _, snapshot in source_snapshots
+                    for redaction in snapshot.redactions
+                }
+            ),
         )
 
     def _workflow_items(

@@ -32,6 +32,25 @@ DEFAULT_SECRET_FIELDS = frozenset(
 )
 
 
+PARAMETER_SECRET_TERMS = (
+    "apikey",
+    "credential",
+    "kubeconfig",
+    "passwd",
+    "password",
+    "privatekey",
+    "secret",
+    "token",
+)
+
+NON_SECRET_PARAMETERS = frozenset(
+    {
+        "keycloak-admin-secret",
+        "spoke-kubeconfig",
+    }
+)
+
+
 @dataclass(slots=True)
 class RedactionResult:
     """A redacted value and the fields that were removed."""
@@ -112,6 +131,31 @@ def redact(value: Any) -> RedactionResult:
     return RedactionPolicy().redact(value)
 
 
+def redact_parameters(parameters: Mapping[str, Any]) -> RedactionResult:
+    """Redact parameter values whose names contain a secret term.
+
+    Pipeline parameters carry values under generic names, so field-name
+    matching alone cannot protect them. Known fleet parameters that hold
+    a Secret name or a file path are listed in NON_SECRET_PARAMETERS.
+    """
+
+    redacted: dict[str, Any] = {}
+    redacted_fields: list[str] = []
+    for name, value in parameters.items():
+        normalized = _normalized_field(name)
+        if name not in NON_SECRET_PARAMETERS and any(
+            term in normalized for term in PARAMETER_SECRET_TERMS
+        ):
+            redacted[name] = "[REDACTED]"
+            redacted_fields.append(name)
+        else:
+            redacted[name] = value
+    return RedactionResult(
+        value=redacted,
+        redacted_fields=sorted(redacted_fields),
+    )
+
+
 def redact_snapshot(snapshot: EvidenceSnapshot) -> EvidenceSnapshot:
     """Return a snapshot with secrets removed and its digest recomputed."""
 
@@ -127,9 +171,12 @@ def redact_snapshot(snapshot: EvidenceSnapshot) -> EvidenceSnapshot:
 
 __all__ = [
     "DEFAULT_SECRET_FIELDS",
+    "NON_SECRET_PARAMETERS",
+    "PARAMETER_SECRET_TERMS",
     "RedactionPolicy",
     "RedactionResult",
     "redact",
+    "redact_parameters",
     "redact_snapshot",
 ]
 

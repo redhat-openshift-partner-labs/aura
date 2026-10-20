@@ -79,7 +79,13 @@ class ClusterInventoryCollector:
                 )
             ),
             items=items,
-            redactions=[],
+            redactions=sorted(
+                {
+                    *git_snapshot.redactions,
+                    *openshift_snapshot.redactions,
+                    *tekton_snapshot.redactions,
+                }
+            ),
         )
 
     def _inventory_items(
