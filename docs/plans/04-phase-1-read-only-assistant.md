@@ -2,7 +2,7 @@
 
 ## Status
 
-Complete and validated on 2026-10-19 through commit `f251607`.
+Complete and revalidated on 2026-10-19 through commit `7debde5`.
 
 ## Objective
 
@@ -111,7 +111,7 @@ No execution command is allowed in Phase 1.
 
 | Check | Result |
 | --- | --- |
-| Automated tests | `180 passed` with `uv run --no-sync pytest` |
+| Automated tests | `192 passed` with `uv run --no-sync pytest` |
 | Diff hygiene | `git diff --check` passed |
 | Scoped-AWS fixture | Validated `provision/0171d46a-scopedaws` at `fleet-clusters` commit `492bc8e07afddcd557441ddb7d72158de60ab8cb` |
 | Git inventory | Reported active and archived definitions, including incomplete definitions with status |
@@ -122,6 +122,7 @@ No execution command is allowed in Phase 1.
 | Immutable records | Stored one evidence snapshot, one CWA snapshot, one CWA trace, and linked audit events with matching digests |
 | Model contract | Automated tests validate strict JSON responses, deterministic fallback, and refusal when required evidence is missing |
 | Protected repositories | `fleet`, `fleet-cluster-scaffold`, `fleet-clusters`, and `portal` had no tracked modifications |
+| Post-audit fixes | Commit `7debde5` added conflict indicators, incomplete-definition handling, explicit PipelineRun selection, and structured non-provisioned diagnosis |
 
 ## Out of Scope
 

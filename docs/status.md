@@ -8,7 +8,7 @@ Validation summary:
 
 | Check | Result |
 | --- | --- |
-| Automated tests | 180 passed |
+| Automated tests | 192 passed |
 | Scoped-AWS fixture | `provision/0171d46a-scopedaws` |
 | Fixture source commit | `492bc8e07afddcd557441ddb7d72158de60ab8cb` |
 | Live OpenShift cluster states | 13 |
@@ -25,12 +25,13 @@ Validation summary:
 | Incomplete definitions | Reports missing required files without discarding definition status |
 | OpenShift inventory | Reads `ClusterDeployment` and `ManagedCluster` resources |
 | Tekton inventory | Reads `PipelineRun` and `TaskRun` resources and failed-task summaries |
-| Cluster correlation | Combines Git, OpenShift, and Tekton evidence by cluster name |
+| Cluster correlation | Combines Git, OpenShift, and Tekton evidence by cluster name and reports conflicting definitions |
 | Workflow correlation | Uses Tekton `spec.params` `cluster-name` and namespace fallback |
 | Cluster inventory | Emits desired state, actual state, provisioning status, latest run, and drift |
 | Workflow view | Emits run status, failed task, related cluster, and next diagnostic step |
-| Cluster-state diagnosis | Correlates evidence for one requested cluster |
-| Refusal | Refuses diagnosis when required evidence is missing |
+| Cluster-state diagnosis | Correlates evidence for one requested cluster and selects the latest PipelineRun by default |
+| Refusal | Refuses diagnosis when required evidence is missing, definitions conflict, or a selected PipelineRun is absent |
+| Non-provisioned diagnosis | Reports the OpenShift `Provisioned` condition without claiming the cluster is deployed |
 | CWA | Assembles all nine required slots and computes a snapshot digest |
 | Provenance | Links evidence, CWA snapshot, CWA trace, diagnosis, and audit events |
 | Stores | Uses append-only JSON stores for evidence, CWA, audit, and diagnosis records |
@@ -64,6 +65,8 @@ The model protocol remains provider-independent. A future provider must consume 
 
 | Commit | Change |
 | --- | --- |
+| `7debde5` | Hardened conflict, PipelineRun selection, and non-provisioned diagnosis |
+| `9ebfd9b` | Reported active and archived definition conflicts |
 | `786ab17` | Recorded Phase 1 validation |
 | `f251607` | Read Tekton `cluster-name` parameter |
 | `db8f213` | Classified active and archived clusters |

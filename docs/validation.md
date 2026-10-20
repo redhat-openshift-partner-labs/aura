@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-180 passed
+192 passed
 ```
 
 Run diff hygiene:
