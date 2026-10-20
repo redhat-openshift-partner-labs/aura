@@ -12,6 +12,7 @@ from aura.audit_store import (
     JsonAuditEventStore,
 )
 from aura.authorization import OperatorRole
+from aura.collectors.cluster_inventory import ClusterInventoryCollector
 from aura.collectors.cluster_state import ClusterStateCollector
 from aura.collectors.git_inventory import GitInventoryCollector
 from aura.collectors.openshift_cli_client import OpenShiftCLIInventoryClient
@@ -114,7 +115,7 @@ def _add_inventory_list_arguments(
 ) -> None:
     parser.add_argument(
         "--source",
-        choices=["git", "openshift"],
+        choices=["git", "openshift", "combined"],
         default="git",
         help="Inventory source to query",
     )
@@ -249,6 +250,14 @@ def _inventory_argument_error(args: argparse.Namespace) -> str | None:
         return "--fleet-clusters is required for --source git"
     if args.source == "openshift" and args.openshift_kubeconfig is None:
         return "--openshift-kubeconfig is required for --source openshift"
+    if args.source == "combined":
+        if args.fleet_clusters is None:
+            return "--fleet-clusters is required for --source combined"
+        if args.openshift_kubeconfig is None:
+            return (
+                "--openshift-kubeconfig is required for "
+                "--source combined"
+            )
     if args.cwa_dir is not None and args.audit_dir is None:
         return "--audit-dir is required with --cwa-dir"
     if args.diagnosis_dir is not None and args.cwa_dir is None:
@@ -288,6 +297,20 @@ def _selected_collector(
 ) -> EvidenceCollector:
     if collector is not None:
         return collector
+    if args.source == "combined":
+        return ClusterInventoryCollector(
+            git_collector=GitInventoryCollector(args.fleet_clusters),
+            openshift_collector=OpenShiftInventoryCollector(
+                client=OpenShiftCLIInventoryClient(
+                    kubeconfig_path=args.openshift_kubeconfig
+                )
+            ),
+            tekton_collector=TektonInventoryCollector(
+                client=OpenShiftCLITektonClient(
+                    kubeconfig_path=args.openshift_kubeconfig,
+                )
+            ),
+        )
     if args.source == "openshift":
         return OpenShiftInventoryCollector(
             client=OpenShiftCLIInventoryClient(
