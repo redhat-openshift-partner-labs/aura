@@ -47,6 +47,18 @@ class CommandState(StrEnum):
     FAILED = "failed"
 
 
+def _resolve_digest(
+    digest: str,
+    computed_digest: str,
+    mismatch_message: str,
+) -> str:
+    if not digest:
+        return computed_digest
+    if digest != computed_digest:
+        raise ValueError(mismatch_message)
+    return digest
+
+
 class CommandEnvelope(BaseModel):
     """Envelope for an operator-issued Aura command."""
 
@@ -79,17 +91,16 @@ class CommandEnvelope(BaseModel):
 
     @model_validator(mode="after")
     def validate_command_digests(self) -> "CommandEnvelope":
-        computed_request_digest = compute_command_request_digest(self)
-        if not self.request_digest:
-            self.request_digest = computed_request_digest
-        elif self.request_digest != computed_request_digest:
-            raise ValueError("command request digest does not match request")
-
-        computed_record_digest = compute_command_record_digest(self)
-        if not self.record_digest:
-            self.record_digest = computed_record_digest
-        elif self.record_digest != computed_record_digest:
-            raise ValueError("command record digest does not match record")
+        self.request_digest = _resolve_digest(
+            self.request_digest,
+            compute_command_request_digest(self),
+            "command request digest does not match request",
+        )
+        self.record_digest = _resolve_digest(
+            self.record_digest,
+            compute_command_record_digest(self),
+            "command record digest does not match record",
+        )
         return self
 
 
@@ -166,11 +177,11 @@ class EvidenceSnapshot(BaseModel):
 
     @model_validator(mode="after")
     def validate_snapshot_digest(self) -> "EvidenceSnapshot":
-        computed_digest = compute_snapshot_digest(self)
-        if not self.snapshot_digest:
-            self.snapshot_digest = computed_digest
-        elif self.snapshot_digest != computed_digest:
-            raise ValueError("snapshot digest does not match snapshot content")
+        self.snapshot_digest = _resolve_digest(
+            self.snapshot_digest,
+            compute_snapshot_digest(self),
+            "snapshot digest does not match snapshot content",
+        )
         return self
 
 
@@ -220,11 +231,11 @@ class AuditEvent(BaseModel):
 
     @model_validator(mode="after")
     def validate_event_digest(self) -> "AuditEvent":
-        computed_digest = compute_audit_event_digest(self)
-        if not self.event_digest:
-            self.event_digest = computed_digest
-        elif self.event_digest != computed_digest:
-            raise ValueError("audit event digest does not match event")
+        self.event_digest = _resolve_digest(
+            self.event_digest,
+            compute_audit_event_digest(self),
+            "audit event digest does not match event",
+        )
         return self
 
 

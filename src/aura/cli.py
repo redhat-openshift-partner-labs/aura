@@ -936,12 +936,11 @@ def _diagnose_and_trace(
 def _command_received_audit_event(
     command: CommandEnvelope,
 ) -> AuditEvent:
-    return AuditEvent(
+    return _audit_event(
+        command,
         event_id=uuid5(command.command_id, "command_received"),
-        command_id=command.command_id,
         event_type=AuditEventType.COMMAND_RECEIVED,
         occurred_at=command.created_at,
-        actor=command.operator_id,
         data={
             "command_type": command.command_type.value,
             "request_digest": command.request_digest,
@@ -957,12 +956,11 @@ def _command_terminal_audit_event(
     previous_event_id: UUID | None,
     occurred_at: datetime,
 ) -> AuditEvent:
-    return AuditEvent(
+    return _audit_event(
+        command,
         event_id=uuid5(command.command_id, event_type.value),
-        command_id=command.command_id,
         event_type=event_type,
         occurred_at=occurred_at,
-        actor=command.operator_id,
         data={
             "command_type": command.command_type.value,
             "request_digest": command.request_digest,
@@ -995,15 +993,14 @@ def _evidence_audit_event(
     persisted: bool,
     previous_event_id: UUID | None = None,
 ) -> AuditEvent:
-    return AuditEvent(
+    return _audit_event(
+        command,
         event_id=uuid5(
             command.command_id,
             f"evidence_collected:{snapshot.snapshot_id}",
         ),
-        command_id=command.command_id,
         event_type=AuditEventType.EVIDENCE_COLLECTED,
         occurred_at=snapshot.collected_at,
-        actor=command.operator_id,
         data={
             "snapshot_id": str(snapshot.snapshot_id),
             "snapshot_digest": snapshot.snapshot_digest,
@@ -1022,15 +1019,14 @@ def _context_audit_event(
     evidence_snapshot: EvidenceSnapshot,
     previous_event_id: UUID,
 ) -> AuditEvent:
-    return AuditEvent(
+    return _audit_event(
+        command,
         event_id=uuid5(
             command.command_id,
             f"context_assembled:{assembly.snapshot.snapshot_id}",
         ),
-        command_id=command.command_id,
         event_type=AuditEventType.CONTEXT_ASSEMBLED,
         occurred_at=assembly.snapshot.assembled_at,
-        actor=command.operator_id,
         data={
             "cwa_snapshot_id": str(assembly.snapshot.snapshot_id),
             "cwa_snapshot_digest": (
@@ -1046,6 +1042,26 @@ def _context_audit_event(
             "assembler_version": assembly.trace.assembler_version,
             "persisted": True,
         },
+        previous_event_id=previous_event_id,
+    )
+
+
+def _audit_event(
+    command: CommandEnvelope,
+    *,
+    event_id: UUID,
+    event_type: AuditEventType,
+    occurred_at: datetime,
+    data: dict[str, object],
+    previous_event_id: UUID | None = None,
+) -> AuditEvent:
+    return AuditEvent(
+        event_id=event_id,
+        command_id=command.command_id,
+        event_type=event_type,
+        occurred_at=occurred_at,
+        actor=command.operator_id,
+        data=data,
         previous_event_id=previous_event_id,
     )
 
@@ -1135,6 +1151,94 @@ def _assembled_command(
     )
 
 
+def _assemble_records(
+    args: argparse.Namespace,
+    result: EvidenceCommandResult,
+    assembly_request: CWAAssemblyRequest,
+    diagnosis_model: DiagnosisModel | None,
+    always_diagnose: bool,
+    clock: Callable[[], datetime],
+) -> tuple[CWAAssemblyResult, DiagnosisRecord | None, str | None] | str:
+    try:
+        assembly = CWAAssembler().assemble(assembly_request)
+        JsonCWASnapshotStore(args.cwa_dir / "snapshots").save(
+            assembly.snapshot
+        )
+        diagnosis_record, refusal_error, trace = _diagnose_and_trace(
+            args,
+            result.command.command_id,
+            assembly,
+            diagnosis_model,
+            always_diagnose,
+            clock,
+        )
+        JsonCWATraceStore(args.cwa_dir / "traces").save(trace)
+    except (
+        InvalidCWAAssembly,
+        CWASnapshotAlreadyStored,
+        CWATraceAlreadyStored,
+        DiagnosisAlreadyStored,
+    ) as error:
+        return str(error)
+    return assembly, diagnosis_record, refusal_error
+
+
+def _persist_assembly_events(
+    args: argparse.Namespace,
+    result: EvidenceCommandResult,
+    assembly: CWAAssemblyResult,
+    diagnosis_record: DiagnosisRecord | None,
+    refusal_error: str | None,
+    evidence_event_id: UUID,
+    clock: Callable[[], datetime],
+) -> tuple[AuditEvent, AuditEvent | None, AuditEvent | None] | str:
+    context_event = _context_audit_event(
+        result.command,
+        assembly,
+        result.snapshot,
+        evidence_event_id,
+    )
+    error = _record_store_error(
+        lambda: JsonAuditEventStore(args.audit_dir).save(context_event),
+        (AuditEventAlreadyStored,),
+    )
+    if error is not None:
+        return error
+
+    model_event = None
+    if diagnosis_record is not None:
+        model_event = _model_audit_event(
+            result.command,
+            diagnosis_record,
+            assembly.trace.trace_id,
+            context_event.event_id,
+            args.diagnosis_dir is not None,
+        )
+        error = _record_store_error(
+            lambda: JsonAuditEventStore(args.audit_dir).save(model_event),
+            (AuditEventAlreadyStored,),
+        )
+        if error is not None:
+            return error
+
+    refusal_event = None
+    if refusal_error is not None:
+        refusal_event = _command_terminal_audit_event(
+            result.command,
+            AuditEventType.COMMAND_REFUSED,
+            refusal_error,
+            previous_event_id=context_event.event_id,
+            occurred_at=clock(),
+        )
+        error = _record_store_error(
+            lambda: JsonAuditEventStore(args.audit_dir).save(refusal_event),
+            (AuditEventAlreadyStored,),
+        )
+        if error is not None:
+            return error
+    return context_event, model_event, refusal_event
+
+
 def _assemble_and_diagnose(
     args: argparse.Namespace,
     result: EvidenceCommandResult,
@@ -1156,71 +1260,30 @@ def _assemble_and_diagnose(
         clock,
     )
 
-    try:
-        assembly = CWAAssembler().assemble(assembly_request)
-        JsonCWASnapshotStore(args.cwa_dir / "snapshots").save(
-            assembly.snapshot
-        )
-        diagnosis_record, refusal_error, trace = _diagnose_and_trace(
-            args,
-            result.command.command_id,
-            assembly,
-            diagnosis_model,
-            always_diagnose,
-            clock,
-        )
-        JsonCWATraceStore(args.cwa_dir / "traces").save(trace)
-    except (
-        InvalidCWAAssembly,
-        CWASnapshotAlreadyStored,
-        CWATraceAlreadyStored,
-        DiagnosisAlreadyStored,
-    ) as error:
-        return None, str(error)
+    records = _assemble_records(
+        args,
+        result,
+        assembly_request,
+        diagnosis_model,
+        always_diagnose,
+        clock,
+    )
+    if isinstance(records, str):
+        return None, records
+    assembly, diagnosis_record, refusal_error = records
 
-    context_event = _context_audit_event(
-        result.command,
+    events = _persist_assembly_events(
+        args,
+        result,
         assembly,
-        result.snapshot,
+        diagnosis_record,
+        refusal_error,
         evidence_audit_event.event_id,
+        clock,
     )
-    error = _record_store_error(
-        lambda: JsonAuditEventStore(args.audit_dir).save(context_event),
-        (AuditEventAlreadyStored,),
-    )
-    if error is not None:
-        return None, error
-
-    if diagnosis_record is not None:
-        model_event = _model_audit_event(
-            result.command,
-            diagnosis_record,
-            assembly.trace.trace_id,
-            context_event.event_id,
-            args.diagnosis_dir is not None,
-        )
-        error = _record_store_error(
-            lambda: JsonAuditEventStore(args.audit_dir).save(model_event),
-            (AuditEventAlreadyStored,),
-        )
-        if error is not None:
-            return None, error
-
-    refusal_event: AuditEvent | None = None
-    if refusal_error is not None:
-        refusal_event = _command_terminal_audit_event(
-            result.command,
-            AuditEventType.COMMAND_REFUSED,
-            refusal_error,
-            previous_event_id=context_event.event_id,
-            occurred_at=clock(),
-        )
-        error = _record_store_error(
-            lambda: JsonAuditEventStore(args.audit_dir).save(refusal_event),
-            (AuditEventAlreadyStored,),
-        )
-        if error is not None:
-            return None, error
+    if isinstance(events, str):
+        return None, events
+    context_event, model_event, refusal_event = events
 
     diagnosis_answer = (
         _diagnosis_answer(
@@ -1242,7 +1305,7 @@ def _assemble_and_diagnose(
             command=final_command,
             answer=diagnosis_answer,
             refusal_error=refusal_error,
-            last_event=refusal_event or context_event,
+            last_event=refusal_event or model_event or context_event,
         ),
         None,
     )

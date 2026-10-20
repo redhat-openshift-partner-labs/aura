@@ -51,37 +51,10 @@ class _GitTree:
         return self._git(self.root, ["show", f"{self.revision}:{path}"])
 
     def cluster_directories(self) -> list[tuple[str, str]]:
-        statuses = {
-            "provision": "active",
-            "archive": "archived",
-        }
-        directories = {
-            f"{parts[0]}/{parts[1]}": statuses[parts[0]]
-            for tracked_path in self.tracked_paths
-            if len(parts := tracked_path.split("/", maxsplit=2)) >= 3
-            and parts[0] in statuses
-        }
-        directory_order = {"provision": 0, "archive": 1}
-        return sorted(
-            directories.items(),
-            key=lambda item: (
-                directory_order[item[0].split("/", maxsplit=1)[0]],
-                item[0],
-            ),
-        )
+        return _cluster_directories(self.tracked_paths)
 
     def kustomizations(self, cluster_path: str) -> list[str]:
-        prefix = f"{cluster_path}/"
-        names = {
-            remainder.split("/", maxsplit=1)[0]
-            for tracked_path in self.tracked_paths
-            if tracked_path.startswith(prefix)
-            and (
-                remainder := tracked_path[len(prefix) :]
-            ).count("/") == 1
-            and remainder.endswith("/kustomization.yaml")
-        }
-        return sorted(names)
+        return _kustomizations(self.tracked_paths, cluster_path)
 
     @staticmethod
     def _git(root: Path, arguments: list[str]) -> str:
@@ -109,6 +82,46 @@ def _run_git(root: Path, arguments: list[str]) -> str:
         text=True,
     )
     return result.stdout
+
+
+def _cluster_directories(
+    tracked_paths: frozenset[str],
+) -> list[tuple[str, str]]:
+    statuses = {
+        "provision": "active",
+        "archive": "archived",
+    }
+    directories = {
+        f"{parts[0]}/{parts[1]}": statuses[parts[0]]
+        for tracked_path in tracked_paths
+        if len(parts := tracked_path.split("/", maxsplit=2)) >= 3
+        and parts[0] in statuses
+    }
+    directory_order = {"provision": 0, "archive": 1}
+    return sorted(
+        directories.items(),
+        key=lambda item: (
+            directory_order[item[0].split("/", maxsplit=1)[0]],
+            item[0],
+        ),
+    )
+
+
+def _kustomizations(
+    tracked_paths: frozenset[str],
+    cluster_path: str,
+) -> list[str]:
+    prefix = f"{cluster_path}/"
+    names = {
+        remainder.split("/", maxsplit=1)[0]
+        for tracked_path in tracked_paths
+        if tracked_path.startswith(prefix)
+        and (
+            remainder := tracked_path[len(prefix) :]
+        ).count("/") == 1
+        and remainder.endswith("/kustomization.yaml")
+    }
+    return sorted(names)
 
 
 @final
