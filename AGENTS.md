@@ -78,7 +78,7 @@ docs(phase-1): record validation
 
 ## Documentation Rules
 
-- New documentation filenames must be lowercase and use `.md`.
+- Use lowercase filenames under `docs/`; retain the conventional uppercase root filenames `README.md`, `AGENTS.md`, and `CLAUDE.md`.
 - Update `docs/cli.md` when CLI flags or defaults change.
 - Update `docs/evidence.md` when evidence, CWA, audit, or diagnosis contracts change.
 - Update `docs/wiring.md` when command wiring changes.

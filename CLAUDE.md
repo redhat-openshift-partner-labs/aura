@@ -1,6 +1,6 @@
 # Claude Instructions
 
-Follow [`agents.md`](agents.md) as the authoritative repository guide.
+Follow [`AGENTS.md`](AGENTS.md) as the authoritative repository guide.
 
 Additional Claude-specific requirements:
 

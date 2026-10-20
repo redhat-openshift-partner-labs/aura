@@ -88,7 +88,7 @@ See [`docs/cli.md`](docs/cli.md) for every flag, default, and required value.
 | [`docs/validation.md`](docs/validation.md) | Test, fixture, and live validation procedures |
 | [`docs/plans/readme.md`](docs/plans/readme.md) | Original planning documents |
 
-Agent guidance is in [`agents.md`](agents.md). Claude-specific guidance is in [`claude.md`](claude.md).
+Agent guidance is in [`AGENTS.md`](AGENTS.md). Claude-specific guidance is in [`CLAUDE.md`](CLAUDE.md).
 
 ## Repository Layout
 
