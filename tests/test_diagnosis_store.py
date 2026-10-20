@@ -12,7 +12,6 @@ from aura.diagnosis import (
     compute_diagnosis_response_digest,
 )
 from aura.diagnosis_store import (
-    DiagnosisAlreadyStored,
     DiagnosisNotFound,
     JsonDiagnosisStore,
 )
@@ -63,15 +62,6 @@ def test_json_diagnosis_store_saves_and_loads(tmp_path) -> None:
     assert path.read_text(encoding="utf-8") == record.model_dump_json(
         indent=2
     )
-
-
-def test_json_diagnosis_store_rejects_duplicate(tmp_path) -> None:
-    store = JsonDiagnosisStore(root=tmp_path)
-    record = make_record()
-    store.save(record)
-
-    with pytest.raises(DiagnosisAlreadyStored):
-        store.save(record)
 
 
 def test_json_diagnosis_store_rejects_missing(tmp_path) -> None:

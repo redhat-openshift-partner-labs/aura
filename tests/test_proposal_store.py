@@ -4,7 +4,6 @@ import pytest
 
 from aura.proposal_store import (
     JsonProposalStore,
-    ProposalAlreadyStored,
     ProposalNotFound,
 )
 from test_proposals import make_proposal
@@ -18,15 +17,6 @@ def test_json_proposal_store_saves_and_loads(tmp_path) -> None:
 
     assert path == tmp_path / "proposals" / f"{proposal.proposal_id}.json"
     assert store.load(proposal.proposal_id) == proposal
-
-
-def test_json_proposal_store_rejects_duplicate(tmp_path) -> None:
-    store = JsonProposalStore(root=tmp_path)
-    proposal = make_proposal()
-    store.save(proposal)
-
-    with pytest.raises(ProposalAlreadyStored):
-        store.save(proposal)
 
 
 def test_json_proposal_store_rejects_missing(tmp_path) -> None:

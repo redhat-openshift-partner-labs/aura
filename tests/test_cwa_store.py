@@ -7,9 +7,7 @@ import pytest
 
 from aura.cwa import CWASlot, CWASlotName, CWASnapshot, CWATrace
 from aura.cwa_store import (
-    CWASnapshotAlreadyStored,
     CWASnapshotNotFound,
-    CWATraceAlreadyStored,
     CWATraceNotFound,
     JsonCWASnapshotStore,
     JsonCWATraceStore,
@@ -64,15 +62,6 @@ def test_json_cwa_snapshot_store_saves_and_loads(tmp_path) -> None:
     )
 
 
-def test_json_cwa_snapshot_store_rejects_duplicate(tmp_path) -> None:
-    store = JsonCWASnapshotStore(root=tmp_path)
-    snapshot = make_snapshot()
-    store.save(snapshot)
-
-    with pytest.raises(CWASnapshotAlreadyStored):
-        store.save(snapshot)
-
-
 def test_json_cwa_snapshot_store_rejects_missing(tmp_path) -> None:
     store = JsonCWASnapshotStore(root=tmp_path)
 
@@ -96,15 +85,6 @@ def test_json_cwa_trace_store_saves_and_loads(tmp_path) -> None:
     assert path.read_text(encoding="utf-8") == trace.model_dump_json(
         indent=2
     )
-
-
-def test_json_cwa_trace_store_rejects_duplicate(tmp_path) -> None:
-    store = JsonCWATraceStore(root=tmp_path)
-    trace = make_trace()
-    store.save(trace)
-
-    with pytest.raises(CWATraceAlreadyStored):
-        store.save(trace)
 
 
 def test_json_cwa_trace_store_rejects_missing(tmp_path) -> None:

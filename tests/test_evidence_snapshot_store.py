@@ -7,7 +7,6 @@ import pytest
 
 from aura.contracts import EvidenceSnapshot
 from aura.evidence_store import (
-    EvidenceSnapshotAlreadyStored,
     EvidenceSnapshotNotFound,
     JsonEvidenceSnapshotStore,
 )
@@ -43,15 +42,6 @@ def test_json_evidence_snapshot_store_saves_and_loads(tmp_path) -> None:
     assert path.read_text(encoding="utf-8") == snapshot.model_dump_json(
         indent=2
     )
-
-
-def test_json_evidence_snapshot_store_rejects_duplicate(tmp_path) -> None:
-    store = JsonEvidenceSnapshotStore(root=tmp_path)
-    snapshot = make_snapshot()
-    store.save(snapshot)
-
-    with pytest.raises(EvidenceSnapshotAlreadyStored):
-        store.save(snapshot)
 
 
 def test_json_evidence_snapshot_store_rejects_missing(tmp_path) -> None:

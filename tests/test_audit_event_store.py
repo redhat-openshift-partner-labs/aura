@@ -6,7 +6,6 @@ from uuid import UUID
 import pytest
 
 from aura.audit_store import (
-    AuditEventAlreadyStored,
     AuditEventNotFound,
     JsonAuditEventStore,
 )
@@ -36,15 +35,6 @@ def test_json_audit_event_store_saves_and_loads(tmp_path) -> None:
     )
     assert loaded == event
     assert path.read_text(encoding="utf-8") == event.model_dump_json(indent=2)
-
-
-def test_json_audit_event_store_rejects_duplicate(tmp_path) -> None:
-    store = JsonAuditEventStore(root=tmp_path)
-    event = make_audit_event()
-    store.save(event)
-
-    with pytest.raises(AuditEventAlreadyStored):
-        store.save(event)
 
 
 def test_json_audit_event_store_rejects_missing(tmp_path) -> None:

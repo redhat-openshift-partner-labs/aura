@@ -21,17 +21,19 @@ from test_evidence_snapshot_store import make_snapshot
 from test_proposals import make_proposal
 
 
+RECORD_STORES = [
+    (JsonEvidenceSnapshotStore, make_snapshot()),
+    (JsonAuditEventStore, make_audit_event()),
+    (JsonCWASnapshotStore, make_cwa_snapshot()),
+    (JsonCWATraceStore, make_cwa_trace()),
+    (JsonDiagnosisStore, make_diagnosis()),
+    (JsonProposalStore, make_proposal()),
+]
+
+
 @pytest.mark.parametrize(
     ("store_factory", "record"),
-    [
-        (JsonCommandStore, make_command("permission-test")),
-        (JsonEvidenceSnapshotStore, make_snapshot()),
-        (JsonAuditEventStore, make_audit_event()),
-        (JsonCWASnapshotStore, make_cwa_snapshot()),
-        (JsonCWATraceStore, make_cwa_trace()),
-        (JsonDiagnosisStore, make_diagnosis()),
-        (JsonProposalStore, make_proposal()),
-    ],
+    [(JsonCommandStore, make_command("permission-test")), *RECORD_STORES],
 )
 def test_json_store_restricts_directory_and_record_permissions(
     tmp_path: Path,
@@ -51,6 +53,20 @@ def test_json_store_restricts_directory_and_record_permissions(
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
+@pytest.mark.parametrize(("store_factory", "record"), RECORD_STORES)
+def test_json_record_store_rejects_duplicate_records(
+    tmp_path: Path,
+    store_factory,
+    record,
+) -> None:
+    store = store_factory(tmp_path)
+    store.save(record)
+
+    with pytest.raises(store_factory.already_stored):
+        store.save(record)
+
+
 __all__ = [
+    "test_json_record_store_rejects_duplicate_records",
     "test_json_store_restricts_directory_and_record_permissions",
 ]
