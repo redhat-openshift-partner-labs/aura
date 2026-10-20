@@ -92,6 +92,8 @@ def test_cli_inventory_list_uses_openshift_collector(
             "operator@example.com",
             "--idempotency-key",
             "test-key",
+            "--command-dir",
+            str(tmp_path / "commands"),
         ],
         command_id_factory=lambda: UUID(
             "00000000-0000-0000-0000-000000000001"

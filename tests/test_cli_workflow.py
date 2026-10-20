@@ -123,6 +123,8 @@ def run_workflow_inspect(
             "operator@example.com",
             "--idempotency-key",
             "test-key",
+            "--command-dir",
+            str(tmp_path / "commands"),
         ]
     )
     exit_code = main(
@@ -186,6 +188,8 @@ def test_cli_workflow_inspect_reports_oc_failure(
             "operator@example.com",
             "--idempotency-key",
             "test-key",
+            "--command-dir",
+            str(tmp_path / "commands"),
         ],
         command_id_factory=lambda: UUID(int=1),
     )
@@ -256,6 +260,8 @@ def test_cli_workflow_inspect_persists_snapshot_and_audit(
             "operator@example.com",
             "--idempotency-key",
             "test-key",
+            "--command-dir",
+            str(tmp_path / "commands"),
             "--snapshot-dir",
             str(snapshot_dir),
             "--audit-dir",

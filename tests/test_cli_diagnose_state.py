@@ -75,6 +75,8 @@ def run_diagnose_state(
             "operator@example.com",
             "--idempotency-key",
             "test-key",
+            "--command-dir",
+            str(tmp_path / "commands"),
             "--snapshot-dir",
             str(snapshot_dir),
             "--audit-dir",
@@ -108,6 +110,8 @@ def test_cli_diagnose_state_parses_pipeline_run() -> None:
             "operator@example.com",
             "--idempotency-key",
             "test-key",
+            "--command-dir",
+            "/tmp/commands",
             "--pipeline-run",
             "deploy-cluster-abc",
         ]
@@ -137,6 +141,8 @@ def test_cli_diagnose_state_rejects_blank_pipeline_run(
             "operator@example.com",
             "--idempotency-key",
             "test-key",
+            "--command-dir",
+            ".",
             "--pipeline-run",
             " ",
         ],
@@ -212,3 +218,29 @@ def test_cli_diagnose_state_refuses_missing_evidence(
     assert len(list((cwa_dir / "snapshots").glob("*.json"))) == 1
     assert len(list((cwa_dir / "traces").glob("*.json"))) == 1
     assert list(diagnosis_dir.glob("*.json")) == []
+
+
+def test_cli_diagnose_state_suppresses_duplicate_idempotency_key(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    collector = FakeClusterStateCollector()
+
+    first_exit_code, _, _, _, _ = run_diagnose_state(
+        tmp_path,
+        collector,
+    )
+    first_captured = capsys.readouterr()
+    second_exit_code, _, _, _, _ = run_diagnose_state(
+        tmp_path,
+        collector,
+    )
+    second_captured = capsys.readouterr()
+
+    assert first_exit_code == 0
+    assert first_captured.err == ""
+    assert second_exit_code == 2
+    assert second_captured.err == (
+        "aura: idempotency key already succeeded: test-key\n"
+    )
+    assert second_captured.out == ""

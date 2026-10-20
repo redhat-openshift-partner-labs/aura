@@ -14,6 +14,7 @@ All successful commands print JSON to standard output.
 | --- | --- | --- | --- | --- |
 | `--operator` | Yes | None | Any non-empty operator identifier | Recorded as the command actor |
 | `--idempotency-key` | Yes | None | Any non-empty unique key | Recorded in the command envelope |
+| `--command-dir` | Yes | None | Writable directory | Stores completed idempotency-key records |
 | `--role` | No | `viewer` | `viewer`, `proposer`, `approver`, `executor`, `admin` | Roles used for authorization; may be repeated |
 | `--query` | No | Command-specific | Any string | Recorded in command input and CWA interaction slot |
 | `--snapshot-dir` | No | None | Writable directory | Store the evidence snapshot |
@@ -21,7 +22,7 @@ All successful commands print JSON to standard output.
 
 Phase 1 commands are authorized for `viewer` or `admin`. Other roles are rejected.
 
-The idempotency key is recorded but duplicate-key suppression is not implemented. Use a new key for each command until that behavior is added.
+Completed commands store their idempotency key in `--command-dir`. Reusing a key that has already completed exits with code `2` before evidence collection; failed commands may be retried with the same key.
 
 ## `inventory list`
 
@@ -52,6 +53,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --fleet-clusters ../fleet-clusters \
   --operator operator@example.com \
   --idempotency-key git-inventory-001
+  --command-dir ./local/commands
 ```
 
 Emitted item kinds:
@@ -67,6 +69,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --openshift-kubeconfig "$HOME/.kube/aura-readonly" \
   --operator operator@example.com \
   --idempotency-key openshift-inventory-001
+  --command-dir ./local/commands
 ```
 
 Emitted item kinds:
@@ -83,6 +86,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --openshift-kubeconfig "$HOME/.kube/aura-readonly" \
   --operator operator@example.com \
   --idempotency-key combined-inventory-001
+  --command-dir ./local/commands
 ```
 
 The combined snapshot includes all source items and one `cluster_inventory` item per cluster.
@@ -104,6 +108,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura workflow inspect \
   --fleet-clusters ../fleet-clusters \
   --operator operator@example.com \
   --idempotency-key workflow-001
+  --command-dir ./local/commands
 ```
 
 Without `--fleet-clusters`, the source is `openshift+tekton`. With it, the source is `git+openshift+tekton`.
@@ -143,6 +148,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura diagnose state \
   --diagnosis-dir ./local/diagnoses \
   --operator operator@example.com \
   --idempotency-key diagnosis-001
+  --command-dir ./local/commands
 ```
 
 The command returns a `DiagnosisAnswer` containing:

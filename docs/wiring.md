@@ -80,13 +80,16 @@ PipelineRun selection defaults to the latest matching run by `start_time`. The `
 
 | Flag | Store | Path pattern |
 | --- | --- | --- |
+| `--command-dir DIR` | `JsonCommandStore` | `DIR/SHA256_OF_KEY.json` |
 | `--snapshot-dir DIR` | `JsonEvidenceSnapshotStore` | `DIR/SNAPSHOT_ID.json` |
 | `--audit-dir DIR` | `JsonAuditEventStore` | `DIR/EVENT_ID.json` |
 | `--cwa-dir DIR` | `JsonCWASnapshotStore` | `DIR/snapshots/SNAPSHOT_ID.json` |
 | `--cwa-dir DIR` | `JsonCWATraceStore` | `DIR/traces/TRACE_ID.json` |
 | `--diagnosis-dir DIR` | `JsonDiagnosisStore` | `DIR/CWA_SNAPSHOT_ID.json` |
 
-Stores create parent directories and open files with exclusive-create mode. Existing IDs are treated as errors rather than overwrites.
+Stores create parent directories and open files with exclusive-create mode. Existing IDs or completed keys are treated as errors rather than overwrites.
+
+Before dispatch, the CLI checks `--command-dir` for the requested idempotency key. A completed key exits with code `2` before collection. A command key is stored only after all requested evidence, CWA, diagnosis, and persistence work succeeds.
 
 ## Audit Chain
 

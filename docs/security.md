@@ -131,6 +131,7 @@ All current stores use exclusive file creation:
 
 - Existing snapshots are not overwritten.
 - Existing audit events are not overwritten.
+- Existing completed-command records are not overwritten.
 - Existing CWA records are not overwritten.
 - Existing diagnoses are not overwritten.
 
@@ -138,7 +139,7 @@ Snapshots and responses include SHA-256 digests over canonical JSON.
 
 ## Operational cautions
 
-- Use unique idempotency keys; duplicate suppression is not implemented.
+- Use one idempotency key per intended command; completed keys are suppressed through `--command-dir`.
 - Treat `oc` failures as connectivity, RBAC, or cluster-availability errors.
 - Do not reuse output directories for commands that may produce the same deterministic UUIDs unless duplicate-record errors are expected.
 - Do not add an external model provider without an explicit data-flow and approval review.

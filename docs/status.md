@@ -35,6 +35,7 @@ Validation summary:
 | CWA | Assembles all nine required slots and computes a snapshot digest |
 | Provenance | Links evidence, CWA snapshot, CWA trace, diagnosis, and audit events |
 | Stores | Uses append-only JSON stores for evidence, CWA, audit, and diagnosis records |
+| Idempotency | Suppresses reuse of keys belonging to completed commands |
 | Authorization | Allows Phase 1 commands for `viewer` and `admin` roles |
 | CLI | Provides `inventory list`, `workflow inspect`, and `diagnose state` |
 
@@ -57,7 +58,6 @@ The model protocol remains provider-independent. A future provider must consume 
 - Pipeline or Git execution.
 - Portal integration.
 - RabbitMQ integration or replacement.
-- Duplicate idempotency-key suppression.
 - Long-running daemon, scheduler, or web UI.
 - Database-backed stores; current stores are append-only JSON files.
 

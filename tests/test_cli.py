@@ -38,21 +38,87 @@ class FakeCollector:
         )
 
 
+@final
+class CountingCollector:
+    def __init__(self) -> None:
+        self._collector = FakeCollector()
+        self.calls = 0
+
+    def collect(
+        self,
+        *,
+        command_id: UUID,
+        snapshot_id: UUID | None = None,
+        collected_at: datetime | None = None,
+        source_version: str | None = None,
+    ) -> EvidenceSnapshot:
+        self.calls += 1
+        return self._collector.collect(
+            command_id=command_id,
+            snapshot_id=snapshot_id,
+            collected_at=collected_at,
+            source_version=source_version,
+        )
+
+
+def inventory_arguments(
+    tmp_path: Path,
+    *,
+    snapshot_dir: Path | None = None,
+) -> list[str]:
+    arguments = [
+        "inventory",
+        "list",
+        "--fleet-clusters",
+        str(tmp_path),
+        "--operator",
+        "operator@example.com",
+        "--idempotency-key",
+        "test-key",
+        "--command-dir",
+        str(tmp_path / "commands"),
+    ]
+    if snapshot_dir is not None:
+        arguments.extend(["--snapshot-dir", str(snapshot_dir)])
+    return arguments
+
+
+def test_cli_inventory_list_suppresses_duplicate_idempotency_key(
+    tmp_path,
+    capsys,
+) -> None:
+    collector = CountingCollector()
+    arguments = inventory_arguments(tmp_path)
+
+    first_exit_code = main(
+        arguments,
+        collector=collector,
+        command_id_factory=lambda: UUID(int=1),
+    )
+    first_captured = capsys.readouterr()
+    second_exit_code = main(
+        arguments,
+        collector=collector,
+        command_id_factory=lambda: UUID(int=2),
+    )
+    second_captured = capsys.readouterr()
+
+    assert first_exit_code == 0
+    assert first_captured.err == ""
+    assert second_exit_code == 2
+    assert second_captured.err == (
+        "aura: idempotency key already succeeded: test-key\n"
+    )
+    assert second_captured.out == ""
+    assert collector.calls == 1
+
+
 def test_cli_inventory_list_writes_snapshot_json(
     tmp_path,
     capsys,
 ) -> None:
     exit_code = main(
-        [
-            "inventory",
-            "list",
-            "--fleet-clusters",
-            str(tmp_path),
-            "--operator",
-            "operator@example.com",
-            "--idempotency-key",
-            "test-key",
-        ],
+        inventory_arguments(tmp_path),
         collector=FakeCollector(),
         command_id_factory=lambda: UUID(int=1),
     )
@@ -72,18 +138,7 @@ def test_cli_inventory_list_persists_snapshot(
     snapshot_dir = tmp_path / "snapshots"
 
     exit_code = main(
-        [
-            "inventory",
-            "list",
-            "--fleet-clusters",
-            str(tmp_path),
-            "--operator",
-            "operator@example.com",
-            "--idempotency-key",
-            "test-key",
-            "--snapshot-dir",
-            str(snapshot_dir),
-        ],
+        inventory_arguments(tmp_path, snapshot_dir=snapshot_dir),
         collector=FakeCollector(),
         command_id_factory=lambda: UUID(int=1),
     )
@@ -119,6 +174,8 @@ def test_cli_inventory_list_records_audit_event(
             "operator@example.com",
             "--idempotency-key",
             "test-key",
+            "--command-dir",
+            str(tmp_path / "commands"),
             "--snapshot-dir",
             str(snapshot_dir),
             "--audit-dir",
@@ -173,6 +230,8 @@ def test_cli_inventory_list_assembles_and_persists_cwa(
             "operator@example.com",
             "--idempotency-key",
             "test-key",
+            "--command-dir",
+            str(tmp_path / "commands"),
             "--query",
             "list clusters",
             "--snapshot-dir",
@@ -269,6 +328,8 @@ def test_cli_inventory_list_persists_diagnosis_and_model_audit(
             "operator@example.com",
             "--idempotency-key",
             "test-key",
+            "--command-dir",
+            str(tmp_path / "commands"),
             "--query",
             "list clusters",
             "--audit-dir",
@@ -374,6 +435,8 @@ def test_cli_rejects_diagnosis_dir_without_cwa_dir(
             "operator@example.com",
             "--idempotency-key",
             "test-key",
+            "--command-dir",
+            str(tmp_path / "commands"),
             "--audit-dir",
             str(tmp_path / "audit"),
             "--diagnosis-dir",
@@ -498,6 +561,8 @@ def test_cli_inventory_list_matches_scoped_aws_fixture(
             "operator@example.com",
             "--idempotency-key",
             "test-key",
+            "--command-dir",
+            str(tmp_path / "commands"),
         ],
         command_id_factory=lambda: UUID(
             "00000000-0000-0000-0000-000000000001"

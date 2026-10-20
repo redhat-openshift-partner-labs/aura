@@ -50,6 +50,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --fleet-clusters ../fleet-clusters \
   --operator operator@example.com \
   --idempotency-key inventory-001
+  --command-dir ./local/commands
 ```
 
 List combined live inventory:
@@ -61,6 +62,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --openshift-kubeconfig "$HOME/.kube/aura-readonly" \
   --operator operator@example.com \
   --idempotency-key inventory-002
+  --command-dir ./local/commands
 ```
 
 Inspect workflows:
@@ -71,6 +73,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura workflow inspect \
   --fleet-clusters ../fleet-clusters \
   --operator operator@example.com \
   --idempotency-key workflow-001
+  --command-dir ./local/commands
 ```
 
 See [`docs/cli.md`](docs/cli.md) for every flag, default, and required value.

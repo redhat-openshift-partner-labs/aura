@@ -355,6 +355,8 @@ def test_cli_inventory_list_combined_returns_view(
             "operator@example.com",
             "--idempotency-key",
             "test-key",
+            "--command-dir",
+            str(tmp_path / "commands"),
         ],
         collector=collector,
         command_id_factory=lambda: UUID(int=1),
@@ -379,6 +381,8 @@ def test_cli_inventory_list_combined_requires_both_sources(
             "operator@example.com",
             "--idempotency-key",
             "test-key",
+            "--command-dir",
+            ".",
         ]
     )
 

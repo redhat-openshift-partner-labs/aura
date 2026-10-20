@@ -55,6 +55,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --fleet-clusters ../fleet-clusters \
   --operator operator@example.com \
   --idempotency-key fixture-git-001
+  --command-dir ./local/commands
 ```
 
 Check that output contains:
@@ -80,6 +81,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --openshift-kubeconfig "$AURA_KUBECONFIG" \
   --operator operator@example.com \
   --idempotency-key live-openshift-001
+  --command-dir ./local/commands
 ```
 
 Validate combined inventory:
@@ -91,6 +93,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --openshift-kubeconfig "$AURA_KUBECONFIG" \
   --operator operator@example.com \
   --idempotency-key live-combined-001
+  --command-dir ./local/commands
 ```
 
 Validate workflow correlation:
@@ -101,6 +104,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura workflow inspect \
   --fleet-clusters ../fleet-clusters \
   --operator operator@example.com \
   --idempotency-key live-workflow-001
+  --command-dir ./local/commands
 ```
 
 Latest validation observed:
@@ -135,12 +139,14 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --cwa-dir "$validation/cwa" \
   --operator operator@example.com \
   --idempotency-key records-001
+  --command-dir "$validation/commands"
 ```
 
 Expected files:
 
 | Directory | Count |
 | --- | --- |
+| `commands/` | 1 |
 | `snapshots/` | 1 |
 | `audit/` | 2 |
 | `cwa/snapshots/` | 1 |

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4, uuid5
@@ -12,6 +13,11 @@ from aura.audit_store import (
     JsonAuditEventStore,
 )
 from aura.authorization import OperatorRole
+from aura.command_store import (
+    CommandAlreadyStored,
+    CommandNotFound,
+    JsonCommandStore,
+)
 from aura.collectors.cluster_inventory import ClusterInventoryCollector
 from aura.collectors.cluster_state import ClusterStateCollector
 from aura.collectors.git_inventory import GitInventoryCollector
@@ -60,7 +66,10 @@ from aura.services.cwa import (
     InvalidCWAAssembly,
 )
 from aura.services.diagnosis import DiagnosisService
-from aura.services.evidence import EvidenceCommandResult
+from aura.services.evidence import (
+    EvidenceCommandResult,
+    EvidenceCommandService,
+)
 from aura.services.cluster_state import (
     ClusterStateDiagnosisModel,
     ClusterStateService,
@@ -101,6 +110,12 @@ def _add_evidence_output_arguments(
 def _add_operator_arguments(
     parser: argparse.ArgumentParser,
 ) -> None:
+    parser.add_argument(
+        "--command-dir",
+        type=Path,
+        required=True,
+        help="Directory for completed idempotency-key records",
+    )
     parser.add_argument("--operator", required=True)
     parser.add_argument("--idempotency-key", required=True)
     parser.add_argument(
@@ -308,6 +323,150 @@ def _argument_error(args: argparse.Namespace) -> str | None:
     return None
 
 
+def _duplicate_command_exists(
+    args: argparse.Namespace,
+) -> bool:
+    try:
+        JsonCommandStore(args.command_dir).load(args.idempotency_key)
+    except CommandNotFound:
+        return False
+    return True
+
+
+def _store_completed_command(
+    args: argparse.Namespace,
+    command: CommandEnvelope,
+) -> str | None:
+    try:
+        JsonCommandStore(args.command_dir).save(command)
+    except CommandAlreadyStored as error:
+        return str(error)
+    return None
+
+
+def _complete_command(
+    args: argparse.Namespace,
+    result: EvidenceCommandResult,
+    output: str,
+) -> int:
+    command_store_error = _store_completed_command(
+        args,
+        result.command,
+    )
+    if command_store_error is not None:
+        print(f"aura: {command_store_error}", file=sys.stderr)
+        return 2
+    print(output)
+    return 0
+
+
+def _make_command(
+    args: argparse.Namespace,
+    command_type: CommandType,
+    command_input: dict[str, object],
+    command_id_factory: Callable[[], UUID],
+    clock: Callable[[], datetime],
+) -> CommandEnvelope:
+    return CommandEnvelope(
+        command_id=command_id_factory(),
+        command_type=command_type,
+        operator_id=args.operator,
+        created_at=clock(),
+        input=command_input,
+        idempotency_key=args.idempotency_key,
+        status=CommandState.RECEIVED,
+    )
+
+
+def _run_evidence_command(
+    action: Callable[[], EvidenceCommandResult],
+    errors: tuple[type[Exception], ...],
+) -> EvidenceCommandResult | int:
+    try:
+        return action()
+    except errors as error:
+        print(f"aura: {error}", file=sys.stderr)
+        return 2
+
+
+def _persist_command_evidence(
+    args: argparse.Namespace,
+    command: CommandEnvelope,
+    result: EvidenceCommandResult,
+) -> int | None:
+    _, persistence_error = _persist_evidence(args, command, result)
+    if persistence_error is not None:
+        print(f"aura: {persistence_error}", file=sys.stderr)
+        return 2
+    return None
+
+
+@dataclass(frozen=True)
+class EvidenceCommandRoute:
+    command_type: CommandType
+    command_input: Callable[[argparse.Namespace], dict[str, object]]
+    service_factory: Callable[
+        [EvidenceCollector],
+        EvidenceCommandService,
+    ]
+    errors: tuple[type[Exception], ...]
+
+
+def _run_simple_evidence_command(
+    args: argparse.Namespace,
+    route: EvidenceCommandRoute,
+    selected_collector: EvidenceCollector,
+    command_id_factory: Callable[[], UUID],
+    clock: Callable[[], datetime],
+    *,
+    assemble: bool,
+) -> int:
+    command = _make_command(
+        args,
+        route.command_type,
+        route.command_input(args),
+        command_id_factory,
+        clock,
+    )
+    service = route.service_factory(selected_collector)
+    roles = {OperatorRole(role) for role in args.role}
+    result = _run_evidence_command(
+        lambda: service.run(command, roles),
+        route.errors,
+    )
+    if isinstance(result, int):
+        return result
+
+    persistence_error = _persist_command_evidence(
+        args,
+        command,
+        result,
+    )
+    if persistence_error is not None:
+        return persistence_error
+
+    if assemble and args.cwa_dir is not None:
+        _, assembly_error = _assemble_and_diagnose(
+            args,
+            command,
+            result,
+            roles,
+            output_schema="inventory_list",
+            diagnosis_model=None,
+            always_diagnose=False,
+            clock=clock,
+        )
+        if assembly_error is not None:
+            print(f"aura: {assembly_error}", file=sys.stderr)
+            return 2
+
+    return _complete_command(
+        args,
+        result,
+        result.snapshot.model_dump_json(indent=2),
+    )
+
+
 def _selected_collector(
     args: argparse.Namespace,
     collector: EvidenceCollector | None,
@@ -383,6 +542,45 @@ def _selected_cluster_state_collector(
         ),
         cluster_name=args.cluster,
         pipeline_run=args.pipeline_run,
+    )
+
+
+def _workflow_route() -> EvidenceCommandRoute:
+    return EvidenceCommandRoute(
+        command_type=CommandType.WORKFLOW_INSPECT,
+        command_input=lambda args: {
+            "query": args.query,
+            "namespace": args.namespace,
+            "history": [],
+        },
+        service_factory=lambda collector: WorkflowService(
+            collector=collector
+        ),
+        errors=(
+            UnauthorizedWorkflowCommand,
+            InvalidWorkflowCommand,
+            InvalidCommandTransition,
+            OpenShiftCLIError,
+        ),
+    )
+
+
+def _inventory_route() -> EvidenceCommandRoute:
+    return EvidenceCommandRoute(
+        command_type=CommandType.INVENTORY_LIST,
+        command_input=lambda args: {
+            "query": args.query,
+            "history": [],
+        },
+        service_factory=lambda collector: InventoryService(
+            collector=collector
+        ),
+        errors=(
+            UnauthorizedCommand,
+            InvalidCommandType,
+            InvalidCommandTransition,
+            OpenShiftCLIError,
+        ),
     )
 
 
@@ -687,51 +885,6 @@ def _assemble_and_diagnose(
     return diagnosis_answer, refusal_error
 
 
-def _run_workflow_inspect(
-    args: argparse.Namespace,
-    *,
-    collector: EvidenceCollector | None,
-    command_id_factory: Callable[[], UUID],
-    clock: Callable[[], datetime],
-) -> int:
-    stderr = sys.stderr
-    command = CommandEnvelope(
-        command_id=command_id_factory(),
-        command_type=CommandType.WORKFLOW_INSPECT,
-        operator_id=args.operator,
-        created_at=clock(),
-        input={
-            "query": args.query,
-            "namespace": args.namespace,
-            "history": [],
-        },
-        idempotency_key=args.idempotency_key,
-        status=CommandState.RECEIVED,
-    )
-    selected_collector = _selected_workflow_collector(args, collector)
-    service = WorkflowService(collector=selected_collector)
-    roles = {OperatorRole(role) for role in args.role}
-
-    try:
-        result = service.inspect_workflows(command, roles)
-    except (
-        UnauthorizedWorkflowCommand,
-        InvalidWorkflowCommand,
-        InvalidCommandTransition,
-        OpenShiftCLIError,
-    ) as error:
-        print(f"aura: {error}", file=stderr)
-        return 2
-
-    _, persistence_error = _persist_evidence(args, command, result)
-    if persistence_error is not None:
-        print(f"aura: {persistence_error}", file=stderr)
-        return 2
-
-    print(result.snapshot.model_dump_json(indent=2))
-    return 0
-
-
 def _run_diagnose_state(
     args: argparse.Namespace,
     *,
@@ -739,41 +892,42 @@ def _run_diagnose_state(
     command_id_factory: Callable[[], UUID],
     clock: Callable[[], datetime],
 ) -> int:
-    stderr = sys.stderr
-    command = CommandEnvelope(
-        command_id=command_id_factory(),
-        command_type=CommandType.DIAGNOSE_STATE,
-        operator_id=args.operator,
-        created_at=clock(),
-        input={
+    command = _make_command(
+        args,
+        CommandType.DIAGNOSE_STATE,
+        command_input={
             "query": args.query,
             "cluster_name": args.cluster,
             "pipeline_run": args.pipeline_run,
             "history": [],
         },
-        idempotency_key=args.idempotency_key,
-        status=CommandState.RECEIVED,
+        command_id_factory=command_id_factory,
+        clock=clock,
     )
     selected_collector = _selected_cluster_state_collector(args, collector)
     service = ClusterStateService(collector=selected_collector)
     roles = {OperatorRole(role) for role in args.role}
 
-    try:
-        result = service.diagnose_state(command, roles)
-    except (
-        UnauthorizedClusterStateCommand,
-        InvalidClusterStateCommand,
-        InvalidCommandTransition,
-        OpenShiftCLIError,
-    ) as error:
-        print(f"aura: {error}", file=stderr)
-        return 2
+    result = _run_evidence_command(
+        lambda: service.diagnose_state(command, roles),
+        (
+            UnauthorizedClusterStateCommand,
+            InvalidClusterStateCommand,
+            InvalidCommandTransition,
+            OpenShiftCLIError,
+        ),
+    )
+    if isinstance(result, int):
+        return result
 
     diagnosis_answer: DiagnosisAnswer | None = None
-    _, persistence_error = _persist_evidence(args, command, result)
+    persistence_error = _persist_command_evidence(
+        args,
+        command,
+        result,
+    )
     if persistence_error is not None:
-        print(f"aura: {persistence_error}", file=stderr)
-        return 2
+        return persistence_error
 
     if args.cwa_dir is not None:
         diagnosis_answer, assembly_error = _assemble_and_diagnose(
@@ -787,18 +941,62 @@ def _run_diagnose_state(
             clock=clock,
         )
         if assembly_error is not None:
-            print(f"aura: {assembly_error}", file=stderr)
+            print(f"aura: {assembly_error}", file=sys.stderr)
             return 2
 
     if diagnosis_answer is None:
         print(
             "aura: --cwa-dir is required for diagnose state",
-            file=stderr,
+            file=sys.stderr,
         )
         return 2
 
-    print(diagnosis_answer.model_dump_json(indent=2))
-    return 0
+    return _complete_command(
+        args,
+        result,
+        diagnosis_answer.model_dump_json(indent=2),
+    )
+
+
+def _dispatch_command(
+    args: argparse.Namespace,
+    *,
+    collector: EvidenceCollector | None,
+    command_id_factory: Callable[[], UUID],
+    clock: Callable[[], datetime],
+) -> int:
+    if _duplicate_command_exists(args):
+        print(
+            "aura: idempotency key already succeeded: "
+            f"{args.idempotency_key}",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.command == "workflow":
+        return _run_simple_evidence_command(
+            args,
+            _workflow_route(),
+            _selected_workflow_collector(args, collector),
+            command_id_factory,
+            clock,
+            assemble=False,
+        )
+    if args.command == "diagnose":
+        return _run_diagnose_state(
+            args,
+            collector=collector,
+            command_id_factory=command_id_factory,
+            clock=clock,
+        )
+    return _run_simple_evidence_command(
+        args,
+        _inventory_route(),
+        _selected_collector(args, collector),
+        command_id_factory,
+        clock,
+        assemble=True,
+    )
 
 
 def main(
@@ -809,79 +1007,19 @@ def main(
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> int:
     args = build_parser().parse_args(argv)
-    stderr = sys.stderr
     argument_error = _argument_error(args)
     if argument_error is not None:
         print(
             f"aura: {argument_error}",
-            file=stderr,
+            file=sys.stderr,
         )
         return 2
-
-    if args.command == "workflow":
-        return _run_workflow_inspect(
-            args,
-            collector=collector,
-            command_id_factory=command_id_factory,
-            clock=clock,
-        )
-
-    if args.command == "diagnose":
-        return _run_diagnose_state(
-            args,
-            collector=collector,
-            command_id_factory=command_id_factory,
-            clock=clock,
-        )
-
-    command_id = command_id_factory()
-    command = CommandEnvelope(
-        command_id=command_id,
-        command_type=CommandType.INVENTORY_LIST,
-        operator_id=args.operator,
-        created_at=clock(),
-        input={"query": args.query, "history": []},
-        idempotency_key=args.idempotency_key,
-        status=CommandState.RECEIVED,
+    return _dispatch_command(
+        args,
+        collector=collector,
+        command_id_factory=command_id_factory,
+        clock=clock,
     )
-    selected_collector = _selected_collector(args, collector)
-
-    service = InventoryService(collector=selected_collector)
-    roles = {OperatorRole(role) for role in args.role}
-
-    try:
-        result = service.list_inventory(command, roles)
-    except (
-        UnauthorizedCommand,
-        InvalidCommandType,
-        InvalidCommandTransition,
-        OpenShiftCLIError,
-    ) as error:
-        print(f"aura: {error}", file=stderr)
-        return 2
-
-    _, persistence_error = _persist_evidence(args, command, result)
-    if persistence_error is not None:
-        print(f"aura: {persistence_error}", file=stderr)
-        return 2
-
-    if args.cwa_dir is not None:
-        _, assembly_error = _assemble_and_diagnose(
-            args,
-            command,
-            result,
-            roles,
-            output_schema="inventory_list",
-            diagnosis_model=None,
-            always_diagnose=False,
-            clock=clock,
-        )
-        if assembly_error is not None:
-            print(f"aura: {assembly_error}", file=stderr)
-            return 2
-
-    print(result.snapshot.model_dump_json(indent=2))
-    return 0
 
 
 __all__ = ["build_parser", "main"]
