@@ -12,6 +12,7 @@ from aura.contracts import (
     CommandType,
     EvidenceSnapshot,
 )
+from aura.redaction import redact_snapshot
 from aura.state import CommandStateMachine
 
 
@@ -97,7 +98,9 @@ class EvidenceCommandService:
                 )
             }
         )
-        snapshot = self._collector.collect(command_id=command.command_id)
+        snapshot = redact_snapshot(
+            self._collector.collect(command_id=command.command_id)
+        )
         succeeded = collecting.model_copy(
             update={
                 "status": self._state_machine.transition(

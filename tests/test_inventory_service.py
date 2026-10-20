@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import final
 from uuid import UUID
 
@@ -11,7 +12,9 @@ from aura.contracts import (
     CommandEnvelope,
     CommandState,
     CommandType,
+    EvidenceItem,
     EvidenceSnapshot,
+    compute_snapshot_digest,
 )
 from aura.services.inventory import (
     InventoryService,
@@ -66,6 +69,45 @@ def test_inventory_service_collects_evidence_and_succeeds() -> None:
     assert result.command.status is CommandState.SUCCEEDED
     assert result.snapshot.command_id == command.command_id
     assert result.snapshot.collector == "git_inventory"
+
+
+def test_inventory_service_redacts_collected_evidence() -> None:
+    secret_item = EvidenceItem(
+        item_id=UUID(int=51),
+        kind="inventory",
+        data={
+            "password": "collector-secret",
+            "credentials": {"token": "collector-token"},
+            "existing": {"field": "visible"},
+        },
+    )
+    collector = SimpleNamespace(
+        collect=lambda **kwargs: FakeCollector().collect(
+            **kwargs
+        ).model_copy(
+            update={
+                "items": [secret_item],
+                "redactions": ["existing.field"],
+            }
+        )
+    )
+    service = InventoryService(collector=collector)
+    command = make_command()
+
+    result = service.list_inventory(command, {OperatorRole.VIEWER})
+
+    item = result.snapshot.items[0]
+    assert item.data["password"] == "[REDACTED]"
+    assert item.data["credentials"]["token"] == "[REDACTED]"
+    assert item.data["existing"]["field"] == "visible"
+    assert result.snapshot.redactions == [
+        "existing.field",
+        "items[0].data.credentials.token",
+        "items[0].data.password",
+    ]
+    assert result.snapshot.snapshot_digest == (
+        compute_snapshot_digest(result.snapshot)
+    )
 
 
 def test_inventory_service_rejects_unauthorized_operator() -> None:

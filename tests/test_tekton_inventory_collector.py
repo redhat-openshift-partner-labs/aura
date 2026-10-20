@@ -96,7 +96,6 @@ def test_tekton_collector_returns_pipeline_run_with_failed_task() -> None:
                 "type": "Succeeded",
                 "status": "False",
                 "reason": "Failed",
-                "message": "PipelineRun failed",
             }
         ],
         "task_runs": [
@@ -111,7 +110,6 @@ def test_tekton_collector_returns_pipeline_run_with_failed_task() -> None:
             "pipeline_task": "provision",
             "status": "Failed",
             "reason": "TaskRunFailed",
-            "message": "provision failed",
         },
     }
 

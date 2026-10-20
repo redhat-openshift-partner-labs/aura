@@ -121,7 +121,9 @@ class TektonInventoryCollector:
                 "status": self._status(resource),
                 "start_time": status.get("startTime", ""),
                 "completion_time": status.get("completionTime", ""),
-                "conditions": status.get("conditions", []),
+                "conditions": self._condition_summaries(
+                    status.get("conditions", [])
+                ),
                 "task_runs": task_run_summaries,
                 "failed_task": (
                     self._failed_task(failed_task_run)
@@ -152,6 +154,19 @@ class TektonInventoryCollector:
             )
             grouped.setdefault(key, []).append(task_run)
         return grouped
+
+    @staticmethod
+    def _condition_summaries(
+        conditions: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "type": condition.get("type", ""),
+                "status": condition.get("status", ""),
+                "reason": condition.get("reason", ""),
+            }
+            for condition in conditions
+        ]
 
     @staticmethod
     def _task_run_summary(task_run: dict[str, Any]) -> dict[str, Any]:
@@ -185,7 +200,6 @@ class TektonInventoryCollector:
         return {
             **summary,
             "reason": condition.get("reason", ""),
-            "message": condition.get("message", ""),
         }
 
     @staticmethod

@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from aura.contracts import EvidenceSnapshot
+
 
 DEFAULT_SECRET_FIELDS = frozenset(
     {
@@ -98,10 +100,24 @@ def redact(value: Any) -> RedactionResult:
     return RedactionPolicy().redact(value)
 
 
+def redact_snapshot(snapshot: EvidenceSnapshot) -> EvidenceSnapshot:
+    """Return a snapshot with secrets removed and its digest recomputed."""
+
+    payload = snapshot.model_dump(mode="json")
+    result = redact(payload)
+    payload = result.value
+    payload["redactions"] = sorted(
+        {*snapshot.redactions, *result.redacted_fields}
+    )
+    payload["snapshot_digest"] = ""
+    return EvidenceSnapshot.model_validate(payload)
+
+
 __all__ = [
     "DEFAULT_SECRET_FIELDS",
     "RedactionPolicy",
     "RedactionResult",
     "redact",
+    "redact_snapshot",
 ]
 
