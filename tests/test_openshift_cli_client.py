@@ -103,13 +103,15 @@ def test_openshift_cli_client_reads_inventory(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("make_error", "expected"),
+    ("make_result", "expected"),
     [
         (
-            lambda args: CalledProcessError(
-                returncode=1,
-                cmd=args,
-                stderr="Error from server (Forbidden): denied\n",
+            lambda args: (
+                CalledProcessError(
+                    returncode=1,
+                    cmd=args,
+                    stderr="Error from server (Forbidden): denied\n",
+                )
             ),
             "oc command failed for clusterdeployments "
             "(exit 1): Error from server (Forbidden): denied",
@@ -123,18 +125,25 @@ def test_openshift_cli_client_reads_inventory(tmp_path: Path) -> None:
             lambda args: TimeoutExpired(cmd=args, timeout=30),
             "oc command timed out for clusterdeployments",
         ),
+        (
+            lambda args: "{",
+            "oc returned invalid JSON for clusterdeployments",
+        ),
     ],
 )
-def test_openshift_cli_client_converts_oc_process_errors(
+def test_openshift_cli_client_converts_oc_failures(
     tmp_path: Path,
-    make_error,
+    make_result,
     expected: str,
 ) -> None:
     kubeconfig = tmp_path / "aura-readonly"
     kubeconfig.write_text("{}", encoding="utf-8")
 
     def failing_runner(args: list[str]) -> str:
-        raise make_error(args)
+        result = make_result(args)
+        if isinstance(result, Exception):
+            raise result
+        return result
 
     client = OpenShiftCLIInventoryClient(
         kubeconfig_path=kubeconfig,
@@ -145,23 +154,3 @@ def test_openshift_cli_client_converts_oc_process_errors(
         client.list_cluster_deployments()
 
     assert str(error.value) == expected
-
-
-def test_openshift_cli_client_reports_invalid_oc_json(
-    tmp_path: Path,
-) -> None:
-    kubeconfig = tmp_path / "aura-readonly"
-    kubeconfig.write_text("{}", encoding="utf-8")
-
-    def invalid_json_runner(args: list[str]) -> str:
-        return "{"
-
-    client = OpenShiftCLIInventoryClient(
-        kubeconfig_path=kubeconfig,
-        command_runner=invalid_json_runner,
-    )
-
-    with pytest.raises(OpenShiftCLIError) as error:
-        client.list_cluster_deployments()
-
-    assert str(error.value) == "oc returned invalid JSON for clusterdeployments"

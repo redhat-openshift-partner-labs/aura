@@ -158,9 +158,14 @@ def test_cli_inventory_list_suppresses_concurrent_duplicate_key(
             "",
             "aura: --idempotency-key must not be blank\n",
         ),
+        (
+            "--command-dir",
+            None,
+            None,
+        ),
     ],
 )
-def test_cli_inventory_list_rejects_blank_identity(
+def test_cli_inventory_list_rejects_invalid_command_arguments(
     tmp_path,
     capsys,
     flag,
@@ -169,7 +174,15 @@ def test_cli_inventory_list_rejects_blank_identity(
 ) -> None:
     collector = CountingCollector()
     arguments = inventory_arguments(tmp_path)
-    arguments[arguments.index(flag) + 1] = value
+    if flag == "--command-dir":
+        command_dir = tmp_path / "commands"
+        command_dir.write_text("not a directory", encoding="utf-8")
+        expected_error = (
+            f"aura: --command-dir is not a usable directory: "
+            f"{command_dir}\n"
+        )
+    else:
+        arguments[arguments.index(flag) + 1] = value
 
     exit_code = main(
         arguments,
@@ -180,30 +193,6 @@ def test_cli_inventory_list_rejects_blank_identity(
 
     assert exit_code == 2
     assert captured.err == expected_error
-    assert captured.out == ""
-    assert collector.calls == 0
-
-
-def test_cli_inventory_list_rejects_unusable_command_store(
-    tmp_path,
-    capsys,
-) -> None:
-    collector = CountingCollector()
-    command_dir = tmp_path / "commands"
-    command_dir.write_text("not a directory", encoding="utf-8")
-    arguments = inventory_arguments(tmp_path)
-
-    exit_code = main(
-        arguments,
-        collector=collector,
-        command_id_factory=lambda: UUID(int=1),
-    )
-    captured = capsys.readouterr()
-
-    assert exit_code == 2
-    assert captured.err == (
-        f"aura: --command-dir is not a usable directory: {command_dir}\n"
-    )
     assert captured.out == ""
     assert collector.calls == 0
 

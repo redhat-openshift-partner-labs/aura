@@ -355,11 +355,19 @@ def _store_terminal_command(
     args: argparse.Namespace,
     command: CommandEnvelope,
 ) -> str | None:
+    return _record_store_error(
+        lambda: JsonCommandStore(args.command_dir).save(command),
+        (CommandAlreadyStored, CommandNotTerminal),
+    )
+
+
+def _record_store_error(
+    action: Callable[[], Path],
+    errors: tuple[type[Exception], ...],
+) -> str | None:
     try:
-        JsonCommandStore(args.command_dir).save(command)
-    except CommandAlreadyStored as error:
-        return str(error)
-    except CommandNotTerminal as error:
+        action()
+    except errors as error:
         return str(error)
     return None
 
@@ -1069,11 +1077,10 @@ def _save_audit_event(
     args: argparse.Namespace,
     event: AuditEvent,
 ) -> str | None:
-    try:
-        JsonAuditEventStore(args.audit_dir).save(event)
-    except AuditEventAlreadyStored as error:
-        return str(error)
-    return None
+    return _record_store_error(
+        lambda: JsonAuditEventStore(args.audit_dir).save(event),
+        (AuditEventAlreadyStored,),
+    )
 
 
 def _assembly_request(
