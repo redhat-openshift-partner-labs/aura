@@ -5,6 +5,7 @@ from typing import final
 from uuid import UUID
 
 from aura.diagnosis import DiagnosisRecord
+from aura.json_store import save_private_json
 
 
 class DiagnosisAlreadyStored(Exception):
@@ -23,16 +24,13 @@ class JsonDiagnosisStore:
         self.root = root
 
     def save(self, record: DiagnosisRecord) -> Path:
-        self.root.mkdir(parents=True, exist_ok=True)
-        path = self._path(record.cwa_snapshot_id)
-        try:
-            with path.open("x", encoding="utf-8") as stream:
-                stream.write(record.model_dump_json(indent=2))
-        except FileExistsError as error:
-            raise DiagnosisAlreadyStored(
-                f"diagnosis already stored: {record.cwa_snapshot_id}"
-            ) from error
-        return path
+        return save_private_json(
+            self.root,
+            self._path(record.cwa_snapshot_id),
+            record,
+            lambda message: DiagnosisAlreadyStored(message),
+            f"diagnosis already stored: {record.cwa_snapshot_id}"
+        )
 
     def load(self, cwa_snapshot_id: UUID) -> DiagnosisRecord:
         path = self._path(cwa_snapshot_id)

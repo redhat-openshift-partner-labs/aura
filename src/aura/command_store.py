@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import final
 
 from aura.contracts import CommandEnvelope
+from aura.json_store import save_private_json
 
 
 class CommandAlreadyStored(Exception):
@@ -23,16 +24,14 @@ class JsonCommandStore:
         self.root = root
 
     def save(self, command: CommandEnvelope) -> Path:
-        self.root.mkdir(parents=True, exist_ok=True)
         path = self._path(command.idempotency_key)
-        try:
-            _write_exclusive(path, command)
-        except FileExistsError as error:
-            raise CommandAlreadyStored(
-                "idempotency key already succeeded: "
-                f"{command.idempotency_key}"
-            ) from error
-        return path
+        return save_private_json(
+            self.root,
+            path,
+            command,
+            lambda message: CommandAlreadyStored(message),
+            f"idempotency key already succeeded: {command.idempotency_key}"
+        )
 
     def load(self, idempotency_key: str) -> CommandEnvelope:
         path = self._path(idempotency_key)
@@ -53,11 +52,6 @@ class JsonCommandStore:
     def _path(self, idempotency_key: str) -> Path:
         digest = sha256(idempotency_key.encode("utf-8")).hexdigest()
         return self.root / f"{digest}.json"
-
-
-def _write_exclusive(path: Path, command: CommandEnvelope) -> None:
-    with path.open("x", encoding="utf-8") as stream:
-        stream.write(command.model_dump_json(indent=2))
 
 
 def _read_command(path: Path) -> CommandEnvelope:

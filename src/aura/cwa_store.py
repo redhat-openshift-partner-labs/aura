@@ -5,6 +5,7 @@ from typing import final
 from uuid import UUID
 
 from aura.cwa import CWASnapshot, CWATrace
+from aura.json_store import save_private_json
 
 
 class CWASnapshotAlreadyStored(Exception):
@@ -31,16 +32,13 @@ class JsonCWASnapshotStore:
         self.root = root
 
     def save(self, snapshot: CWASnapshot) -> Path:
-        self.root.mkdir(parents=True, exist_ok=True)
-        path = self._path(snapshot.snapshot_id)
-        try:
-            with path.open("x", encoding="utf-8") as stream:
-                stream.write(snapshot.model_dump_json(indent=2))
-        except FileExistsError as error:
-            raise CWASnapshotAlreadyStored(
-                f"CWA snapshot already stored: {snapshot.snapshot_id}"
-            ) from error
-        return path
+        return save_private_json(
+            self.root,
+            self._path(snapshot.snapshot_id),
+            snapshot,
+            lambda message: CWASnapshotAlreadyStored(message),
+            f"CWA snapshot already stored: {snapshot.snapshot_id}"
+        )
 
     def load(self, snapshot_id: UUID) -> CWASnapshot:
         path = self._path(snapshot_id)
@@ -64,16 +62,13 @@ class JsonCWATraceStore:
         self.root = root
 
     def save(self, trace: CWATrace) -> Path:
-        self.root.mkdir(parents=True, exist_ok=True)
-        path = self._path(trace.trace_id)
-        try:
-            with path.open("x", encoding="utf-8") as stream:
-                stream.write(trace.model_dump_json(indent=2))
-        except FileExistsError as error:
-            raise CWATraceAlreadyStored(
-                f"CWA trace already stored: {trace.trace_id}"
-            ) from error
-        return path
+        return save_private_json(
+            self.root,
+            self._path(trace.trace_id),
+            trace,
+            lambda message: CWATraceAlreadyStored(message),
+            f"CWA trace already stored: {trace.trace_id}"
+        )
 
     def load(self, trace_id: UUID) -> CWATrace:
         path = self._path(trace_id)

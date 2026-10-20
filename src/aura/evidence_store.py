@@ -5,6 +5,7 @@ from typing import final
 from uuid import UUID
 
 from aura.contracts import EvidenceSnapshot
+from aura.json_store import save_private_json
 
 
 class EvidenceSnapshotAlreadyStored(Exception):
@@ -23,16 +24,13 @@ class JsonEvidenceSnapshotStore:
         self.root = root
 
     def save(self, snapshot: EvidenceSnapshot) -> Path:
-        self.root.mkdir(parents=True, exist_ok=True)
-        path = self._path(snapshot.snapshot_id)
-        try:
-            with path.open("x", encoding="utf-8") as stream:
-                stream.write(snapshot.model_dump_json(indent=2))
-        except FileExistsError as error:
-            raise EvidenceSnapshotAlreadyStored(
-                f"evidence snapshot already stored: {snapshot.snapshot_id}"
-            ) from error
-        return path
+        return save_private_json(
+            self.root,
+            self._path(snapshot.snapshot_id),
+            snapshot,
+            lambda message: EvidenceSnapshotAlreadyStored(message),
+            f"evidence snapshot already stored: {snapshot.snapshot_id}"
+        )
 
     def load(self, snapshot_id: UUID) -> EvidenceSnapshot:
         path = self._path(snapshot_id)

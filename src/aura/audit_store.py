@@ -5,6 +5,7 @@ from typing import final
 from uuid import UUID
 
 from aura.contracts import AuditEvent
+from aura.json_store import save_private_json
 
 
 class AuditEventAlreadyStored(Exception):
@@ -23,16 +24,13 @@ class JsonAuditEventStore:
         self.root = root
 
     def save(self, event: AuditEvent) -> Path:
-        self.root.mkdir(parents=True, exist_ok=True)
-        path = self._path(event.event_id)
-        try:
-            with path.open("x", encoding="utf-8") as stream:
-                stream.write(event.model_dump_json(indent=2))
-        except FileExistsError as error:
-            raise AuditEventAlreadyStored(
-                f"audit event already stored: {event.event_id}"
-            ) from error
-        return path
+        return save_private_json(
+            self.root,
+            self._path(event.event_id),
+            event,
+            lambda message: AuditEventAlreadyStored(message),
+            f"audit event already stored: {event.event_id}"
+        )
 
     def load(self, event_id: UUID) -> AuditEvent:
         path = self._path(event_id)
