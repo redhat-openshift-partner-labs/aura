@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft for review. No implementation work has started.
+Phase 1 is implemented and validated. Later phases remain draft for review.
 
 ## Objective
 

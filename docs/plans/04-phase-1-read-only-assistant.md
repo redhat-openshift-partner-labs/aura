@@ -1,5 +1,9 @@
 # Phase 1: Read-Only Assistant
 
+## Status
+
+Complete and validated on 2026-10-19 through commit `f251607`.
+
 ## Objective
 
 Deliver the first useful Aura capability: explain current partner-labs state without side effects.
@@ -94,14 +98,30 @@ No execution command is allowed in Phase 1.
 
 ## Acceptance Criteria
 
-- Aura lists cluster definitions without writing to Git.
-- Aura lists OpenShift resources without write permissions.
-- Aura correlates Git, OpenShift, and Tekton data by cluster name.
-- Aura stores the frozen evidence snapshot.
-- Aura stores the CWA trace and snapshot digest.
-- Aura refuses to answer when required evidence is missing.
-- Aura returns schema-valid JSON from every model call.
-- Aura provides a deterministic fallback answer when the model is unavailable.
+- [x] Aura lists cluster definitions without writing to Git.
+- [x] Aura lists OpenShift resources without write permissions.
+- [x] Aura correlates Git, OpenShift, and Tekton data by cluster name.
+- [x] Aura stores the frozen evidence snapshot.
+- [x] Aura stores the CWA trace and snapshot digest.
+- [x] Aura refuses to answer when required evidence is missing.
+- [x] Aura returns schema-valid JSON from every model call.
+- [x] Aura provides a deterministic fallback answer when the model is unavailable.
+
+## Validation Record
+
+| Check | Result |
+| --- | --- |
+| Automated tests | `180 passed` with `uv run --no-sync pytest` |
+| Diff hygiene | `git diff --check` passed |
+| Scoped-AWS fixture | Validated `provision/0171d46a-scopedaws` at `fleet-clusters` commit `492bc8e07afddcd557441ddb7d72158de60ab8cb` |
+| Git inventory | Reported active and archived definitions, including incomplete definitions with status |
+| Live OpenShift | Read-only service account listed 13 cluster states |
+| Live Tekton | Read-only service account listed 34 PipelineRuns |
+| Combined inventory | Correlated 16 cluster inventory records across Git, OpenShift, and Tekton |
+| Workflow view | Correlated all 34 PipelineRuns to their `cluster-name` parameter |
+| Immutable records | Stored one evidence snapshot, one CWA snapshot, one CWA trace, and linked audit events with matching digests |
+| Model contract | Automated tests validate strict JSON responses, deterministic fallback, and refusal when required evidence is missing |
+| Protected repositories | `fleet`, `fleet-cluster-scaffold`, `fleet-clusters`, and `portal` had no tracked modifications |
 
 ## Out of Scope
 
