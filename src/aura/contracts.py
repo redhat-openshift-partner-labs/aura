@@ -51,6 +51,14 @@ class CommandState(StrEnum):
     FAILED = "failed"
 
 
+def reject_blank_entries(values: list[str], label: str) -> list[str]:
+    """Return values unchanged, rejecting any blank entry."""
+
+    if any(not entry.strip() for entry in values):
+        raise ValueError(f"{label} must not be blank")
+    return values
+
+
 def _resolve_digest(
     digest: str,
     computed_digest: str,
@@ -194,9 +202,7 @@ class EvidenceSnapshot(BaseModel):
     @field_validator("redactions")
     @classmethod
     def reject_blank_redactions(cls, value: list[str]) -> list[str]:
-        if any(not entry.strip() for entry in value):
-            raise ValueError("redaction entries must not be blank")
-        return value
+        return reject_blank_entries(value, "redaction entries")
 
     @model_validator(mode="after")
     def validate_snapshot_digest(self) -> "EvidenceSnapshot":
@@ -285,5 +291,6 @@ __all__ = [
     "compute_command_record_digest",
     "compute_command_request_digest",
     "compute_snapshot_digest",
+    "reject_blank_entries",
 ]
 

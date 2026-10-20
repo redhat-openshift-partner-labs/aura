@@ -13,6 +13,7 @@ from pydantic import (
 )
 
 from aura.canonical import canonical_digest
+from aura.contracts import reject_blank_entries
 from aura.cwa import CWASnapshot
 
 
@@ -89,9 +90,7 @@ class DiagnosisResponse(BaseModel):
         cls,
         value: list[str],
     ) -> list[str]:
-        if any(not entry.strip() for entry in value):
-            raise ValueError("missing evidence entries must not be blank")
-        return value
+        return reject_blank_entries(value, "missing evidence entries")
 
     @model_validator(mode="after")
     def validate_evidence_references(self) -> DiagnosisResponse:

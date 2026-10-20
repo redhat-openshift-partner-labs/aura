@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import final
-from uuid import UUID
 
-from aura.json_store import save_private_json
+from aura.json_store import JsonRecordStore
 from aura.proposals import Proposal
 
 
@@ -17,33 +15,14 @@ class ProposalNotFound(Exception):
 
 
 @final
-class JsonProposalStore:
+class JsonProposalStore(JsonRecordStore[Proposal]):
     """Stores immutable proposals as JSON files keyed by proposal ID."""
 
-    def __init__(self, root: Path) -> None:
-        self.root = root
-
-    def save(self, proposal: Proposal) -> Path:
-        return save_private_json(
-            self.root,
-            self._path(proposal.proposal_id),
-            proposal,
-            lambda message: ProposalAlreadyStored(message),
-            f"proposal already stored: {proposal.proposal_id}"
-        )
-
-    def load(self, proposal_id: UUID) -> Proposal:
-        path = self._path(proposal_id)
-        try:
-            value = path.read_text(encoding="utf-8")
-        except FileNotFoundError as error:
-            raise ProposalNotFound(
-                f"proposal not found: {proposal_id}"
-            ) from error
-        return Proposal.model_validate_json(value)
-
-    def _path(self, proposal_id: UUID) -> Path:
-        return self.root / f"{proposal_id}.json"
+    record_type = Proposal
+    record_label = "proposal"
+    id_field = "proposal_id"
+    already_stored = ProposalAlreadyStored
+    not_found = ProposalNotFound
 
 
 __all__ = [

@@ -3,9 +3,13 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from pathlib import Path
-from uuid import uuid4
+from typing import ClassVar, Generic, TypeVar, cast
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel
+
+
+R = TypeVar("R", bound=BaseModel)
 
 
 def save_private_json(
@@ -58,6 +62,42 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
+class JsonRecordStore(Generic[R]):
+    """Immutable JSON records keyed by one identifier field."""
+
+    record_type: ClassVar[type[BaseModel]]
+    record_label: ClassVar[str]
+    id_field: ClassVar[str]
+    already_stored: ClassVar[type[Exception]]
+    not_found: ClassVar[type[Exception]]
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def save(self, record: R) -> Path:
+        record_id = getattr(record, self.id_field)
+        return save_private_json(
+            self.root,
+            self._path(record_id),
+            record,
+            self.already_stored,
+            f"{self.record_label} already stored: {record_id}",
+        )
+
+    def load(self, record_id: UUID) -> R:
+        try:
+            value = self._path(record_id).read_text(encoding="utf-8")
+        except FileNotFoundError as error:
+            raise self.not_found(
+                f"{self.record_label} not found: {record_id}"
+            ) from error
+        return cast(R, self.record_type.model_validate_json(value))
+
+    def _path(self, record_id: UUID) -> Path:
+        return self.root / f"{record_id}.json"
+
+
 __all__ = [
+    "JsonRecordStore",
     "save_private_json",
 ]

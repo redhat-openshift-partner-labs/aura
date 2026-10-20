@@ -17,7 +17,7 @@ from pydantic import (
 )
 
 from aura.canonical import canonical_digest
-from aura.contracts import ARCHIVE_SUFFIX
+from aura.contracts import ARCHIVE_SUFFIX, reject_blank_entries
 from aura.redaction import redact, redact_parameters
 
 
@@ -140,9 +140,7 @@ class Proposal(BaseModel):
     @field_validator("risks")
     @classmethod
     def reject_blank_risks(cls, value: list[str]) -> list[str]:
-        if any(not risk.strip() for risk in value):
-            raise ValueError("risks must not be blank")
-        return value
+        return reject_blank_entries(value, "risks")
 
     @model_validator(mode="after")
     def validate_proposal(self) -> "Proposal":
