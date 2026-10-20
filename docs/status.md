@@ -8,7 +8,7 @@ Validation summary:
 
 | Check | Result |
 | --- | --- |
-| Automated tests | 221 passed |
+| Automated tests | 229 passed |
 | Scoped-AWS fixture | `provision/0171d46a-scopedaws` |
 | Fixture source commit | `492bc8e07afddcd557441ddb7d72158de60ab8cb` |
 | Live OpenShift cluster states | 13 |
@@ -89,6 +89,5 @@ Do not begin Phase 2 until Phase 1 closure hardening is complete. The remaining 
 1. Enforce restricted store permissions and evidence redaction.
 2. Correct diagnosis lifecycle and failed-command provenance.
 3. Implement request-bound, concurrency-safe idempotency.
-4. Add concise CLI and collector error contracts.
-5. Improve source provenance for OpenShift and Tekton.
-6. Establish the public remote, CI, and quality baseline.
+4. Improve source provenance for OpenShift and Tekton.
+5. Establish the public remote, CI, and quality baseline.

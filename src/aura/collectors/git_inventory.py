@@ -13,6 +13,10 @@ import yaml
 from aura.contracts import EvidenceItem, EvidenceSnapshot
 
 
+class GitInventoryError(RuntimeError):
+    """Raised when committed Git evidence cannot be read."""
+
+
 @final
 class _GitTree:
     """Read-only access to the committed tree at HEAD."""
@@ -77,6 +81,24 @@ class _GitTree:
 
     @staticmethod
     def _git(root: Path, arguments: list[str]) -> str:
+        try:
+            return _GitTree._run_git(root, arguments)
+        except subprocess.CalledProcessError as error:
+            output = str(error.stderr or error.stdout or "").strip()
+            detail = output.splitlines()[-1] if output else "no output"
+            raise GitInventoryError(
+                f"git command failed for fleet-clusters "
+                f"(exit {error.returncode}): {detail}"
+            ) from error
+        except OSError as error:
+            raise GitInventoryError(
+                f"git checkout is not usable: {root}"
+            ) from error
+
+    @staticmethod
+    def _run_git(root: Path, arguments: list[str]) -> str:
+        if not root.is_dir():
+            raise GitInventoryError(f"git checkout is not usable: {root}")
         result = subprocess.run(
             ["git", "-C", str(root), *arguments],
             check=True,
@@ -230,5 +252,5 @@ class GitInventoryCollector:
         ).strip()
 
 
-__all__ = ["GitInventoryCollector"]
+__all__ = ["GitInventoryCollector", "GitInventoryError"]
 

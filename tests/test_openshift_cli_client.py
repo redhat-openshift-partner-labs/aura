@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-from subprocess import CalledProcessError
 from pathlib import Path
+from subprocess import CalledProcessError, TimeoutExpired
 from typing import final
 
 import pytest
@@ -127,3 +127,63 @@ def test_openshift_cli_client_converts_oc_failure(
         "oc command failed for clusterdeployments "
         "(exit 1): Error from server (Forbidden): denied"
     )
+
+
+def test_openshift_cli_client_reports_missing_oc_executable(
+    tmp_path: Path,
+) -> None:
+    kubeconfig = tmp_path / "aura-readonly"
+    kubeconfig.write_text("{}", encoding="utf-8")
+
+    def missing_runner(args: list[str]) -> str:
+        raise FileNotFoundError("oc executable not found")
+
+    client = OpenShiftCLIInventoryClient(
+        kubeconfig_path=kubeconfig,
+        command_runner=missing_runner,
+    )
+
+    with pytest.raises(OpenShiftCLIError) as error:
+        client.list_cluster_deployments()
+
+    assert str(error.value) == (
+        "oc command failed for clusterdeployments: oc executable not found"
+    )
+
+
+def test_openshift_cli_client_reports_oc_timeout(tmp_path: Path) -> None:
+    kubeconfig = tmp_path / "aura-readonly"
+    kubeconfig.write_text("{}", encoding="utf-8")
+
+    def timing_out_runner(args: list[str]) -> str:
+        raise TimeoutExpired(cmd=args, timeout=30)
+
+    client = OpenShiftCLIInventoryClient(
+        kubeconfig_path=kubeconfig,
+        command_runner=timing_out_runner,
+    )
+
+    with pytest.raises(OpenShiftCLIError) as error:
+        client.list_cluster_deployments()
+
+    assert str(error.value) == "oc command timed out for clusterdeployments"
+
+
+def test_openshift_cli_client_reports_invalid_oc_json(
+    tmp_path: Path,
+) -> None:
+    kubeconfig = tmp_path / "aura-readonly"
+    kubeconfig.write_text("{}", encoding="utf-8")
+
+    def invalid_json_runner(args: list[str]) -> str:
+        return "{"
+
+    client = OpenShiftCLIInventoryClient(
+        kubeconfig_path=kubeconfig,
+        command_runner=invalid_json_runner,
+    )
+
+    with pytest.raises(OpenShiftCLIError) as error:
+        client.list_cluster_deployments()
+
+    assert str(error.value) == "oc returned invalid JSON for clusterdeployments"

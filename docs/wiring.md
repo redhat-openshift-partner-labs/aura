@@ -78,6 +78,18 @@ PipelineRun selection defaults to the latest matching run by `start_time`. The `
 
 `oc` process failures are converted to `OpenShiftCLIError` before they reach command services. The CLI reports the resource, exit code, and final `oc` error line without printing partial JSON.
 
+Git checkout and subprocess failures are converted to `GitInventoryError`. The CLI reports an unusable checkout, the Git exit code, and the final Git diagnostic line without printing partial JSON.
+
+Process error contracts:
+
+| Source | Failure | CLI behavior |
+| --- | --- | --- |
+| Git | Missing checkout | Exit `2`; no evidence collected |
+| Git | Subprocess failure | Exit `2`; final diagnostic line reported |
+| `oc` | Missing executable or permission failure | Exit `2`; concise resource-specific error |
+| `oc` | Invalid JSON | Exit `2`; no partial JSON emitted |
+| `oc` | Timeout after 30 seconds | Exit `2`; resource-specific timeout reported |
+
 ## Record Wiring
 
 | Flag | Store | Path pattern |

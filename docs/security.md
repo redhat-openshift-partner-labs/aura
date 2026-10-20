@@ -53,7 +53,7 @@ Kubeconfig rules:
 
 ## Minimum RBAC
 
-The service account needs only `get` and `list` on four resources:
+The service account needs only `list` on four resources. Aura always lists resources and does not request individual objects by name:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -63,10 +63,10 @@ metadata:
 rules:
 - apiGroups: ["hive.openshift.io"]
   resources: ["clusterdeployments"]
-  verbs: ["get", "list"]
+  verbs: ["list"]
 - apiGroups: ["cluster.open-cluster-management.io"]
   resources: ["managedclusters"]
-  verbs: ["get", "list"]
+  verbs: ["list"]
 - apiGroups: ["tekton.dev"]
   resources: ["pipelineruns", "taskruns"]
   verbs: ["get", "list"]

@@ -20,6 +20,7 @@ def _run_command(args: Sequence[str]) -> str:
         check=True,
         capture_output=True,
         text=True,
+        timeout=30,
     )
     return result.stdout
 
@@ -75,12 +76,26 @@ class OpenShiftResource:
         try:
             output = self._command_runner(args)
         except subprocess.CalledProcessError as error:
+            output_text = str(error.stderr or error.stdout or "").strip()
+            detail = output_text.splitlines()[-1] if output_text else "no output"
             raise OpenShiftCLIError(
                 f"oc command failed for {self._resource} "
-                f"(exit {error.returncode}): "
-                f"{str(error.stderr or '').strip()}"
+                f"(exit {error.returncode}): {detail}"
             ) from error
-        return json.loads(output)
+        except subprocess.TimeoutExpired as error:
+            raise OpenShiftCLIError(
+                f"oc command timed out for {self._resource}"
+            ) from error
+        except OSError as error:
+            raise OpenShiftCLIError(
+                f"oc command failed for {self._resource}: {error}"
+            ) from error
+        try:
+            return json.loads(output)
+        except json.JSONDecodeError as error:
+            raise OpenShiftCLIError(
+                f"oc returned invalid JSON for {self._resource}"
+            ) from error
 
 
 @final

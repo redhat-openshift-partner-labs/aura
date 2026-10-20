@@ -4,6 +4,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+from subprocess import CalledProcessError
 from typing import final
 from uuid import UUID, uuid5
 
@@ -171,6 +172,123 @@ def test_cli_inventory_list_suppresses_concurrent_duplicate_key(
 
     assert sorted(exit_codes) == [0, 2]
     assert collector.calls == 1
+
+
+def test_cli_inventory_list_rejects_blank_operator(
+    tmp_path,
+    capsys,
+) -> None:
+    collector = CountingCollector()
+    arguments = inventory_arguments(tmp_path)
+    arguments[arguments.index("--operator") + 1] = " "
+
+    exit_code = main(
+        arguments,
+        collector=collector,
+        command_id_factory=lambda: UUID(int=1),
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.err == "aura: --operator must not be blank\n"
+    assert captured.out == ""
+    assert collector.calls == 0
+
+
+def test_cli_inventory_list_rejects_blank_idempotency_key(
+    tmp_path,
+    capsys,
+) -> None:
+    collector = CountingCollector()
+    arguments = inventory_arguments(tmp_path)
+    arguments[arguments.index("--idempotency-key") + 1] = ""
+
+    exit_code = main(
+        arguments,
+        collector=collector,
+        command_id_factory=lambda: UUID(int=1),
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.err == "aura: --idempotency-key must not be blank\n"
+    assert captured.out == ""
+    assert collector.calls == 0
+
+
+def test_cli_inventory_list_rejects_unusable_command_store(
+    tmp_path,
+    capsys,
+) -> None:
+    collector = CountingCollector()
+    command_dir = tmp_path / "commands"
+    command_dir.write_text("not a directory", encoding="utf-8")
+    arguments = inventory_arguments(tmp_path)
+
+    exit_code = main(
+        arguments,
+        collector=collector,
+        command_id_factory=lambda: UUID(int=1),
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.err == (
+        f"aura: --command-dir is not a usable directory: {command_dir}\n"
+    )
+    assert captured.out == ""
+    assert collector.calls == 0
+
+
+def test_cli_inventory_list_reports_missing_git_checkout(
+    tmp_path,
+    capsys,
+) -> None:
+    fleet_clusters = tmp_path / "missing-checkout"
+    arguments = inventory_arguments(tmp_path)
+    arguments[arguments.index("--fleet-clusters") + 1] = str(fleet_clusters)
+
+    exit_code = main(arguments, command_id_factory=lambda: UUID(int=1))
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.err == (
+        f"aura: git checkout is not usable: {fleet_clusters}\n"
+    )
+    assert captured.out == ""
+    command = JsonCommandStore(tmp_path / "commands").load("test-key")
+    assert command.status is CommandState.FAILED
+
+
+def test_cli_inventory_list_reports_git_command_failure(
+    tmp_path,
+    capsys,
+    monkeypatch,
+) -> None:
+    arguments = inventory_arguments(tmp_path)
+
+    def failing_git(root, arguments):
+        raise CalledProcessError(
+            returncode=128,
+            cmd=["git", *arguments],
+            stderr="fatal: not a git repository\n",
+        )
+
+    monkeypatch.setattr(
+        git_inventory._GitTree,
+        "_run_git",
+        staticmethod(failing_git),
+    )
+
+    exit_code = main(arguments, command_id_factory=lambda: UUID(int=1))
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.err == (
+        "aura: git command failed for fleet-clusters "
+        "(exit 128): fatal: not a git repository\n"
+    )
+    assert captured.out == ""
 
 
 def test_cli_inventory_list_writes_snapshot_json(

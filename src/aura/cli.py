@@ -22,6 +22,7 @@ from aura.command_store import (
 from aura.collectors.cluster_inventory import ClusterInventoryCollector
 from aura.collectors.cluster_state import ClusterStateCollector
 from aura.collectors.git_inventory import GitInventoryCollector
+from aura.collectors.git_inventory import GitInventoryError
 from aura.collectors.oc_cli import OpenShiftCLIError
 from aura.collectors.openshift_cli_client import OpenShiftCLIInventoryClient
 from aura.collectors.openshift_cli_tekton_client import (
@@ -315,6 +316,15 @@ def _diagnose_state_argument_error(args: argparse.Namespace) -> str | None:
 
 
 def _argument_error(args: argparse.Namespace) -> str | None:
+    if not args.operator.strip():
+        return "--operator must not be blank"
+    if not args.idempotency_key.strip():
+        return "--idempotency-key must not be blank"
+    if args.command_dir.exists() and not args.command_dir.is_dir():
+        return (
+            f"--command-dir is not a usable directory: "
+            f"{args.command_dir}"
+        )
     if args.command == "inventory":
         return _inventory_argument_error(args)
     if args.command == "workflow":
@@ -708,6 +718,7 @@ def _workflow_route() -> EvidenceCommandRoute:
             InvalidWorkflowCommand,
             InvalidCommandTransition,
             OpenShiftCLIError,
+            GitInventoryError,
         ),
     )
 
@@ -727,6 +738,7 @@ def _inventory_route() -> EvidenceCommandRoute:
             InvalidCommandType,
             InvalidCommandTransition,
             OpenShiftCLIError,
+            GitInventoryError,
         ),
     )
 
@@ -1199,6 +1211,7 @@ def _run_diagnosis(
             InvalidClusterStateCommand,
             InvalidCommandTransition,
             OpenShiftCLIError,
+            GitInventoryError,
         ),
     )
     if isinstance(result, str):

@@ -170,3 +170,11 @@ PipelineRun selection uses the latest matching run by `start_time` by default. P
 | Other non-zero | Unhandled collector or process failure |
 
 An `oc` failure is reported as a concise CLI error with exit code `2`; no partial JSON is printed.
+
+Additional error contracts:
+
+- Blank `--operator` and `--idempotency-key` values are rejected before collection.
+- An existing non-directory `--command-dir` is rejected before collection.
+- A missing Git checkout is reported as an unusable checkout.
+- Git subprocess failures report the exit code and final diagnostic line.
+- Missing or inaccessible `oc`, permission failures, invalid JSON, and command timeouts are converted to concise `OpenShiftCLIError` messages.
