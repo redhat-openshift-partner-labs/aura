@@ -72,7 +72,7 @@ Drift values:
 | `pipeline_run_id` | Tekton `metadata.uid` |
 | `namespace` | Tekton `metadata.namespace` |
 | `cluster_name` | Tekton `cluster-name` parameter |
-| `status` | Tekton `Succeeded` condition |
+| `status` | Tekton `Succeeded` condition: `Succeeded` when `True`, `Failed` when `False`, otherwise `Unknown` |
 | `start_time` and `completion_time` | Tekton status |
 | `conditions` | Tekton status conditions |
 | `task_runs` and `failed_task` | Summarized TaskRuns |
@@ -83,8 +83,8 @@ Drift values:
 | --- | --- |
 | `cluster_name` | Requested cluster name |
 | `namespace` | OpenShift namespace |
-| `git_evidence_id` | Single definition item, or `null` during a conflict |
-| `git_evidence_ids` | Every matching Git definition item |
+| `git_evidence_id` | Single matching Git item, complete, incomplete, or invalid, or `null` during a conflict |
+| `git_evidence_ids` | Every matching Git item |
 | `definition_conflict` | Whether more than one Git definition matched |
 | `openshift_evidence_id` | Actual-state item |
 | `pipeline_run_evidence_ids` | Selected PipelineRun item or items |

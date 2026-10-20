@@ -97,6 +97,7 @@ Leave these untracked local artifacts alone unless the user explicitly asks othe
 ## Test Guidance
 
 - Collector tests use fake clients and local temporary Git trees.
+- Correlation tests that depend on Git item shapes use the real `GitInventoryCollector` over a temporary Git tree, not hand-built items.
 - CLI tests cover argument validation and JSON output.
 - Contract tests use Pydantic validation.
 - Store tests assert exclusive-create behavior.

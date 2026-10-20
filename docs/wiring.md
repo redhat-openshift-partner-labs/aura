@@ -73,7 +73,7 @@ PipelineRun correlation first reads `spec.params` where `name` is `cluster-name`
 
 ### Combined cluster inventory
 
-`ClusterInventoryCollector` runs Git, OpenShift, and Tekton collectors, preserves their source items, and appends one `cluster_inventory` item per correlated cluster.
+`ClusterInventoryCollector` runs Git, OpenShift, and Tekton collectors, preserves their source items, and appends one `cluster_inventory` item per correlated cluster. Complete, incomplete, and invalid Git definitions all participate in correlation by `cluster_name`; `definition_kind` records which one matched.
 
 ### Workflow inventory
 
@@ -81,7 +81,7 @@ PipelineRun correlation first reads `spec.params` where `name` is `cluster-name`
 
 ### Cluster state
 
-`ClusterStateCollector` runs Git, OpenShift, and Tekton collectors for one cluster. It emits all matching Git definitions, the matching OpenShift item, the selected PipelineRun, and a `cluster_state_correlation` item.
+`ClusterStateCollector` runs Git, OpenShift, and Tekton collectors for one cluster. It emits all matching Git items, whether complete, incomplete, or invalid, the matching OpenShift item, the selected PipelineRun, and a `cluster_state_correlation` item.
 
 PipelineRun selection defaults to the latest matching run by `start_time`. The `diagnose state --pipeline-run` flag selects by PipelineRun name or UID. If multiple Git definitions match, the correlation records the conflict and diagnosis refuses to proceed.
 
@@ -95,6 +95,7 @@ Process error contracts:
 | --- | --- | --- |
 | Git | Missing checkout | Exit `2`; no evidence collected |
 | Git | Subprocess failure | Exit `2`; final diagnostic line reported |
+| Git | Invalid definition | Collection continues with a `cluster_definition_invalid` item; `diagnose state` for that cluster is refused with `Valid Git cluster definition` |
 | `oc` | Missing executable or permission failure | Exit `2`; concise resource-specific error |
 | `oc` | Invalid JSON | Exit `2`; no partial JSON emitted |
 | `oc` | Timeout after 30 seconds | Exit `2`; resource-specific timeout reported |

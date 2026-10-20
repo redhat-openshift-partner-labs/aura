@@ -30,7 +30,7 @@ Git evidence resolves `HEAD` once and reads the tree listing and blobs from that
 
 ## Operator Identity
 
-Phase 1 accepts a non-empty, self-asserted `--operator` value. That value is the audit actor and CWA user identifier; it is not authentication and must not be treated as proof that a person holds the supplied roles. Operator authentication can be added later without changing the evidence contracts.
+Phase 1 accepts a non-empty, self-asserted `--operator` value. That value is the audit actor and CWA user identifier; it is not authentication and must not be treated as proof that a person holds the supplied roles. `--role` values are equally self-asserted: authorization evaluates only the supplied roles, defaulting to `viewer` when none are given, but does not verify them. Operator authentication can be added later without changing the evidence contracts.
 
 ## Service Account
 
@@ -147,7 +147,7 @@ All current stores use exclusive, atomic publication:
 - Existing diagnoses are not overwritten.
 
 Snapshots and responses include SHA-256 digests over canonical JSON.
-Records are serialized to a private temporary file, flushed with `fsync`, and linked into their final name only after the complete write. A failed write leaves no partial final record.
+Records are serialized to a private temporary file, flushed with `fsync`, and linked into their final name only after the complete write. A failed write leaves no partial final record. When a record write fails with an operating-system error, the command is stored as `failed` if the command store is writable, and the CLI exits `2`.
 
 ## Operational cautions
 

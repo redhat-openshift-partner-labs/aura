@@ -6,15 +6,16 @@ Aura is a sidecar to the existing lifecycle systems. It does not replace RabbitM
 
 ## Current Capabilities
 
-- List active and archived cluster definitions from `fleet-clusters`.
+- List active and archived cluster definitions from `fleet-clusters`, reporting incomplete and invalid definitions without aborting collection.
 - Read OpenShift `ClusterDeployment` and `ManagedCluster` state.
 - Read Tekton `PipelineRun` and `TaskRun` status.
 - Correlate Git, OpenShift, and Tekton evidence by cluster name.
-- Derive cluster inventory and workflow views.
+- Derive cluster inventory and workflow views, including drift indicators that separate real drift from incomplete definitions and legacy metadata.
 - Diagnose one cluster's state with deterministic, schema-valid output.
-- Refuse diagnosis when required evidence is missing.
+- Refuse diagnosis when required evidence is missing or a Git definition is incomplete, invalid, or conflicting.
 - Freeze evidence and CWA snapshots with SHA-256 digests.
-- Store immutable JSON evidence, CWA, audit, and diagnosis records.
+- Store immutable JSON evidence, CWA, audit, and diagnosis records, and record a `failed` command when a write fails.
+- Redact secret fields across case and separator spellings before storage.
 
 ## Non-Goals
 

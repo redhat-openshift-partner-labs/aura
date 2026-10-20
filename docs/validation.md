@@ -32,14 +32,14 @@ The test suite covers:
 
 - Command and state contracts.
 - Authorization.
-- Git, OpenShift, and Tekton collectors.
+- Git, OpenShift, and Tekton collectors, including incomplete and invalid Git definitions.
 - Cluster and workflow correlation.
-- Cluster-state diagnosis.
+- Cluster-state diagnosis, including failed, succeeded, and not-completed PipelineRuns.
 - Refusal when evidence is missing.
 - CWA assembly and digests.
-- Immutable JSON stores.
+- Immutable JSON stores, record write failures, and unreadable command records.
 - CLI argument combinations and output.
-- Fixture validity and secret redaction.
+- Fixture validity and secret redaction, including field spelling variants.
 
 ## Local Fixture
 
