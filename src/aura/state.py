@@ -14,20 +14,31 @@ class CommandStateMachine:
 
     _transitions: dict[CommandState, frozenset[CommandState]] = {
         CommandState.RECEIVED: frozenset(
-            {CommandState.COLLECTING_EVIDENCE}
+            {CommandState.COLLECTING_EVIDENCE, CommandState.FAILED}
         ),
         CommandState.COLLECTING_EVIDENCE: frozenset(
             {
                 CommandState.ASSEMBLING_CONTEXT,
                 CommandState.SUCCEEDED,
                 CommandState.FAILED,
+                CommandState.REFUSED,
             }
         ),
         CommandState.ASSEMBLING_CONTEXT: frozenset(
-            {CommandState.MODEL_CALLED, CommandState.FAILED}
+            {
+                CommandState.SUCCEEDED,
+                CommandState.MODEL_CALLED,
+                CommandState.FAILED,
+                CommandState.REFUSED,
+            }
         ),
         CommandState.MODEL_CALLED: frozenset(
-            {CommandState.PROPOSAL_READY, CommandState.FAILED}
+            {
+                CommandState.SUCCEEDED,
+                CommandState.PROPOSAL_READY,
+                CommandState.FAILED,
+                CommandState.REFUSED,
+            }
         ),
         CommandState.PROPOSAL_READY: frozenset(
             {CommandState.AWAITING_APPROVAL, CommandState.FAILED}
@@ -43,6 +54,7 @@ class CommandStateMachine:
         CommandState.AWAITING_RETRY: frozenset({CommandState.EXECUTING}),
         CommandState.SUCCEEDED: frozenset(),
         CommandState.REJECTED: frozenset(),
+        CommandState.REFUSED: frozenset(),
     }
 
     def can_transition(

@@ -13,10 +13,15 @@ from aura.state import CommandStateMachine, InvalidCommandTransition
         (CommandState.COLLECTING_EVIDENCE, CommandState.ASSEMBLING_CONTEXT),
         (CommandState.COLLECTING_EVIDENCE, CommandState.SUCCEEDED),
         (CommandState.COLLECTING_EVIDENCE, CommandState.FAILED),
+        (CommandState.COLLECTING_EVIDENCE, CommandState.REFUSED),
+        (CommandState.ASSEMBLING_CONTEXT, CommandState.SUCCEEDED),
         (CommandState.ASSEMBLING_CONTEXT, CommandState.MODEL_CALLED),
         (CommandState.ASSEMBLING_CONTEXT, CommandState.FAILED),
+        (CommandState.ASSEMBLING_CONTEXT, CommandState.REFUSED),
+        (CommandState.MODEL_CALLED, CommandState.SUCCEEDED),
         (CommandState.MODEL_CALLED, CommandState.PROPOSAL_READY),
         (CommandState.MODEL_CALLED, CommandState.FAILED),
+        (CommandState.MODEL_CALLED, CommandState.REFUSED),
         (CommandState.PROPOSAL_READY, CommandState.AWAITING_APPROVAL),
         (CommandState.PROPOSAL_READY, CommandState.FAILED),
         (CommandState.AWAITING_APPROVAL, CommandState.APPROVED),
@@ -65,7 +70,11 @@ def test_invalid_command_transitions_are_rejected(
 def test_terminal_states_have_no_outgoing_transitions() -> None:
     machine = CommandStateMachine()
 
-    for terminal in (CommandState.SUCCEEDED, CommandState.REJECTED):
+    for terminal in (
+        CommandState.SUCCEEDED,
+        CommandState.REJECTED,
+        CommandState.REFUSED,
+    ):
         assert not any(
             machine.can_transition(terminal, candidate)
             for candidate in CommandState

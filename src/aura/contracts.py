@@ -42,6 +42,7 @@ class CommandState(StrEnum):
     AWAITING_APPROVAL = "awaiting_approval"
     APPROVED = "approved"
     REJECTED = "rejected"
+    REFUSED = "refused"
     EXECUTING = "executing"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
@@ -60,6 +61,8 @@ class CommandEnvelope(BaseModel):
     input: dict[str, Any]
     idempotency_key: str = Field(min_length=1)
     status: CommandState = CommandState.RECEIVED
+    request_digest: str = Field(default="")
+    record_digest: str = Field(default="")
 
     @field_validator("operator_id", "idempotency_key")
     @classmethod
@@ -67,6 +70,59 @@ class CommandEnvelope(BaseModel):
         if not value.strip():
             raise ValueError("must not be blank")
         return value
+
+    def with_status(self, status: CommandState) -> "CommandEnvelope":
+        """Return a validated copy with a new lifecycle status."""
+
+        values = self.model_dump(mode="json")
+        values["status"] = status.value
+        values["record_digest"] = ""
+        return CommandEnvelope.model_validate(values)
+
+    @model_validator(mode="after")
+    def validate_command_digests(self) -> "CommandEnvelope":
+        computed_request_digest = compute_command_request_digest(self)
+        if not self.request_digest:
+            self.request_digest = computed_request_digest
+        elif self.request_digest != computed_request_digest:
+            raise ValueError("command request digest does not match request")
+
+        computed_record_digest = compute_command_record_digest(self)
+        if not self.record_digest:
+            self.record_digest = computed_record_digest
+        elif self.record_digest != computed_record_digest:
+            raise ValueError("command record digest does not match record")
+        return self
+
+
+def _canonical_digest(payload: dict[str, Any]) -> str:
+    canonical_json = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
+def compute_command_request_digest(command: CommandEnvelope) -> str:
+    """Return a digest identifying the operator request, not its execution."""
+
+    return _canonical_digest(
+        {
+            "command_type": command.command_type.value,
+            "operator_id": command.operator_id,
+            "input": command.input,
+        }
+    )
+
+
+def compute_command_record_digest(command: CommandEnvelope) -> str:
+    """Return a canonical SHA-256 digest for a command record."""
+
+    return _canonical_digest(
+        command.model_dump(mode="json", exclude={"record_digest"})
+    )
 
 
 class EvidenceItem(BaseModel):
@@ -151,6 +207,8 @@ class AuditEventType(StrEnum):
     EXECUTION_STARTED = "execution_started"
     EXECUTION_FINISHED = "execution_finished"
     COMMAND_REJECTED = "command_rejected"
+    COMMAND_FAILED = "command_failed"
+    COMMAND_REFUSED = "command_refused"
 
 
 class AuditEvent(BaseModel):
@@ -165,6 +223,7 @@ class AuditEvent(BaseModel):
     actor: str = Field(min_length=1)
     data: dict[str, Any]
     previous_event_id: UUID | None = None
+    event_digest: str = Field(default="")
 
     @field_validator("actor")
     @classmethod
@@ -172,6 +231,23 @@ class AuditEvent(BaseModel):
         if not value.strip():
             raise ValueError("must not be blank")
         return value
+
+    @model_validator(mode="after")
+    def validate_event_digest(self) -> "AuditEvent":
+        computed_digest = compute_audit_event_digest(self)
+        if not self.event_digest:
+            self.event_digest = computed_digest
+        elif self.event_digest != computed_digest:
+            raise ValueError("audit event digest does not match event")
+        return self
+
+
+def compute_audit_event_digest(event: AuditEvent) -> str:
+    """Return a canonical SHA-256 digest for an audit event."""
+
+    return _canonical_digest(
+        event.model_dump(mode="json", exclude={"event_digest"})
+    )
 
 
 __all__ = [
@@ -182,6 +258,9 @@ __all__ = [
     "CommandType",
     "EvidenceItem",
     "EvidenceSnapshot",
+    "compute_audit_event_digest",
+    "compute_command_record_digest",
+    "compute_command_request_digest",
     "compute_snapshot_digest",
 ]
 

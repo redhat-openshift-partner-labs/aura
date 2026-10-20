@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from aura.contracts import AuditEvent, AuditEventType
+from aura.contracts import compute_audit_event_digest
 
 
 def make_audit_event(**overrides: object) -> AuditEvent:
@@ -58,4 +59,14 @@ def test_audit_event_rejects_invalid_fields(field: str, value: object) -> None:
 def test_audit_event_rejects_unknown_fields() -> None:
     with pytest.raises(ValidationError):
         make_audit_event(unexpected="value")
+
+
+def test_audit_event_digest_validates_content() -> None:
+    event = make_audit_event()
+
+    assert event.event_digest == compute_audit_event_digest(event)
+    with pytest.raises(ValidationError):
+        AuditEvent.model_validate(
+            {**event.model_dump(), "event_digest": "0" * 64}
+        )
 

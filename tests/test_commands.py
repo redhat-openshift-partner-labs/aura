@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from aura.contracts import CommandEnvelope, CommandState, CommandType
+from aura.contracts import compute_command_record_digest
 
 
 def make_command(**overrides: object) -> CommandEnvelope:
@@ -59,4 +60,39 @@ def test_command_envelope_rejects_invalid_fields(field: str, value: object) -> N
 def test_command_envelope_rejects_unknown_status() -> None:
     with pytest.raises(ValidationError):
         make_command(status="not-a-status")
+
+
+def test_command_request_digest_is_stable_for_the_same_request() -> None:
+    command = make_command()
+    retry = make_command(
+        command_id=UUID(int=2),
+        created_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+
+    assert command.request_digest == retry.request_digest
+    assert command.request_digest != make_command(
+        input={"cluster_name": "other"}
+    ).request_digest
+    assert command.request_digest != make_command(
+        operator_id="other@example.com"
+    ).request_digest
+
+
+def test_command_record_digest_validates_content() -> None:
+    command = make_command()
+
+    assert command.record_digest == compute_command_record_digest(command)
+    with pytest.raises(ValidationError):
+        CommandEnvelope.model_validate(
+            {**command.model_dump(), "record_digest": "0" * 64}
+        )
+
+
+def test_command_status_transition_recomputes_record_digest() -> None:
+    command = make_command()
+
+    succeeded = command.with_status(CommandState.SUCCEEDED)
+
+    assert succeeded.status is CommandState.SUCCEEDED
+    assert succeeded.record_digest == compute_command_record_digest(succeeded)
 

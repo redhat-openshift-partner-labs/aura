@@ -90,24 +90,20 @@ class EvidenceCommandService:
                 f"{command.command_type.value}"
             )
 
-        collecting = command.model_copy(
-            update={
-                "status": self._state_machine.transition(
-                    command.status,
-                    CommandState.COLLECTING_EVIDENCE,
-                )
-            }
+        collecting = command.with_status(
+            self._state_machine.transition(
+                command.status,
+                CommandState.COLLECTING_EVIDENCE,
+            )
         )
         snapshot = redact_snapshot(
             self._collector.collect(command_id=command.command_id)
         )
-        succeeded = collecting.model_copy(
-            update={
-                "status": self._state_machine.transition(
-                    collecting.status,
-                    CommandState.SUCCEEDED,
-                )
-            }
+        succeeded = collecting.with_status(
+            self._state_machine.transition(
+                collecting.status,
+                CommandState.SUCCEEDED,
+            )
         )
 
         return EvidenceCommandResult(
