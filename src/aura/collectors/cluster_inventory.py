@@ -86,7 +86,7 @@ class ClusterInventoryCollector:
         tekton_snapshot: EvidenceSnapshot,
         command_id: UUID,
     ) -> list[EvidenceItem]:
-        git_items = self._items_by_cluster(
+        git_items = self._grouped_items_by_cluster(
             git_snapshot,
             kinds={"cluster_definition"},
         )
@@ -108,7 +108,7 @@ class ClusterInventoryCollector:
         return [
             self._inventory_item(
                 cluster_name=cluster_name,
-                git_item=git_items.get(cluster_name),
+                git_items=git_items.get(cluster_name, []),
                 openshift_item=openshift_items.get(cluster_name),
                 pipeline_items=pipeline_items.get(cluster_name, []),
                 command_id=command_id,
@@ -120,11 +120,19 @@ class ClusterInventoryCollector:
         self,
         *,
         cluster_name: str,
-        git_item: EvidenceItem | None,
+        git_items: list[EvidenceItem],
         openshift_item: EvidenceItem | None,
         pipeline_items: list[EvidenceItem],
         command_id: UUID,
     ) -> EvidenceItem:
+        definition_conflict = len(git_items) > 1
+        definition_statuses = sorted(
+            {
+                str(item.data.get("status"))
+                for item in git_items
+            }
+        )
+        git_item = git_items[0] if len(git_items) == 1 else None
         desired_state = self._desired_state(git_item)
         actual_state = self._actual_state(openshift_item)
         display_state = desired_state or actual_state or {}
@@ -137,8 +145,14 @@ class ClusterInventoryCollector:
             data={
                 "cluster_name": cluster_name,
                 "definition_status": (
-                    git_item.data.get("status") if git_item else None
+                    "conflict"
+                    if definition_conflict
+                    else (
+                        git_item.data.get("status") if git_item else None
+                    )
                 ),
+                "definition_statuses": definition_statuses,
+                "definition_conflict": definition_conflict,
                 "tier": display_state.get("tier"),
                 "cloud_provider": display_state.get("cloud_provider"),
                 "region": display_state.get("region"),
@@ -155,9 +169,25 @@ class ClusterInventoryCollector:
                     openshift_item=openshift_item,
                     desired_state=desired_state,
                     actual_state=actual_state,
+                    definition_conflict=definition_conflict,
                 ),
             },
         )
+
+    @staticmethod
+    def _grouped_items_by_cluster(
+        snapshot: EvidenceSnapshot,
+        *,
+        kinds: set[str],
+    ) -> dict[str, list[EvidenceItem]]:
+        result: dict[str, list[EvidenceItem]] = {}
+        for item in snapshot.items:
+            if item.kind in kinds:
+                result.setdefault(
+                    item.data["cluster_name"],
+                    [],
+                ).append(item)
+        return result
 
     @staticmethod
     def _items_by_cluster(
@@ -283,7 +313,10 @@ class ClusterInventoryCollector:
         openshift_item: EvidenceItem | None,
         desired_state: dict[str, object] | None,
         actual_state: dict[str, object] | None,
+        definition_conflict: bool,
     ) -> str:
+        if definition_conflict:
+            return "definition-conflict"
         if git_item is None:
             return "missing-git"
         if git_item.data.get("status") == "archived":

@@ -199,6 +199,8 @@ def test_cluster_inventory_collector_correlates_sources() -> None:
     assert inventory.data == {
         "cluster_name": "example",
         "definition_status": "active",
+        "definition_statuses": ["active"],
+        "definition_conflict": False,
         "tier": "base",
         "cloud_provider": "aws",
         "region": "us-east-2",
@@ -280,6 +282,46 @@ def test_cluster_inventory_collector_distinguishes_archived_clusters() -> None:
     assert inventories["archived-with-resources"]["drift_indicator"] == (
         "archived-with-openshift-resources"
     )
+
+
+def test_cluster_inventory_collector_reports_definition_conflict() -> None:
+    collector = ClusterInventoryCollector(
+        git_collector=git_collector(
+            definition("pchriste"),
+            definition("pchriste", status="archived"),
+        ),
+        openshift_collector=openshift_collector(
+            actual_state("pchriste")
+        ),
+        tekton_collector=tekton_collector(),
+    )
+
+    snapshot = collector.collect(
+        command_id=UUID(int=1),
+        snapshot_id=UUID(int=40),
+        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    inventory = next(
+        item
+        for item in snapshot.items
+        if item.kind == "cluster_inventory"
+    )
+    assert inventory.data["definition_status"] == "conflict"
+    assert inventory.data["definition_statuses"] == [
+        "active",
+        "archived",
+    ]
+    assert inventory.data["definition_conflict"] is True
+    assert inventory.data["desired_state"] is None
+    assert inventory.data["drift_indicator"] == "definition-conflict"
+    assert len(
+        [
+            item
+            for item in snapshot.items
+            if item.kind == "cluster_definition"
+        ]
+    ) == 2
 
 
 def test_cli_inventory_list_combined_returns_view(
