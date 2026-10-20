@@ -11,12 +11,14 @@ from aura.command_store import JsonCommandStore
 from aura.cwa_store import JsonCWASnapshotStore, JsonCWATraceStore
 from aura.diagnosis_store import JsonDiagnosisStore
 from aura.evidence_store import JsonEvidenceSnapshotStore
+from aura.proposal_store import JsonProposalStore
 from test_audit_event_store import make_audit_event
 from test_command_store import make_command
 from test_cwa_store import make_snapshot as make_cwa_snapshot
 from test_cwa_store import make_trace as make_cwa_trace
 from test_diagnosis_store import make_record as make_diagnosis
 from test_evidence_snapshot_store import make_snapshot
+from test_proposals import make_proposal
 
 
 @pytest.mark.parametrize(
@@ -28,6 +30,7 @@ from test_evidence_snapshot_store import make_snapshot
         (JsonCWASnapshotStore, make_cwa_snapshot()),
         (JsonCWATraceStore, make_cwa_trace()),
         (JsonDiagnosisStore, make_diagnosis()),
+        (JsonProposalStore, make_proposal()),
     ],
 )
 def test_json_store_restricts_directory_and_record_permissions(

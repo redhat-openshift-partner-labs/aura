@@ -114,6 +114,7 @@ Process error contracts:
 | `--cwa-dir DIR` | `JsonCWASnapshotStore` | `DIR/snapshots/SNAPSHOT_ID.json` |
 | `--cwa-dir DIR` | `JsonCWATraceStore` | `DIR/traces/TRACE_ID.json` |
 | `--diagnosis-dir DIR` | `JsonDiagnosisStore` | `DIR/CWA_SNAPSHOT_ID.json` |
+| Not yet wired | `JsonProposalStore` | `DIR/PROPOSAL_ID.json` |
 
 Stores create restricted parent directories, write and `fsync` private temporary files, and atomically link them into final names. Existing IDs or terminal command keys are treated as errors rather than overwrites, and failed writes leave no partial final records.
 

@@ -153,6 +153,7 @@ All current stores use exclusive, atomic publication:
 - Existing terminal command records are not overwritten.
 - Existing CWA records are not overwritten.
 - Existing diagnoses are not overwritten.
+- Existing proposals are not overwritten, and a proposal whose content no longer matches its digest fails to load.
 
 Snapshots and responses include SHA-256 digests over canonical JSON.
 Records are serialized to a private temporary file, flushed with `fsync`, and linked into their final name only after the complete write. A failed write leaves no partial final record. When a record write fails with an operating-system error, the command is stored as `failed` if the command store is writable, and the CLI exits `2`.
