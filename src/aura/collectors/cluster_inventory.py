@@ -6,6 +6,10 @@ from typing import final
 from uuid import UUID, uuid4, uuid5
 
 from aura.collectors.cluster_state import ClusterStateSourceCollector
+from aura.collectors.deprovision import (
+    DEPROVISION_REQUESTED,
+    deprovision_status,
+)
 from aura.contracts import EvidenceItem, EvidenceSnapshot
 
 
@@ -136,9 +140,7 @@ class ClusterInventoryCollector:
         command_id: UUID,
     ) -> EvidenceItem:
         definition_conflict = len(git_items) > 1
-        deprovision_status = _deprovision_status(
-            git_items, openshift_item, sentinels
-        )
+        status = deprovision_status(git_items, openshift_item, sentinels)
         definition_statuses = sorted(
             {
                 str(item.data.get("status"))
@@ -167,7 +169,7 @@ class ClusterInventoryCollector:
                 "definition_statuses": definition_statuses,
                 "definition_conflict": definition_conflict,
                 "definition_kind": git_item.kind if git_item else None,
-                "deprovision_status": deprovision_status,
+                "deprovision_status": status,
                 "deprovision_sentinels": [
                     str(item.data["path"]) for item in sentinels
                 ],
@@ -188,7 +190,7 @@ class ClusterInventoryCollector:
                     desired_state=desired_state,
                     actual_state=actual_state,
                     definition_conflict=definition_conflict,
-                    deprovision_status=deprovision_status,
+                    deprovision_state=status,
                 ),
             },
         )
@@ -326,27 +328,6 @@ class ClusterInventoryCollector:
         return {field: latest.data.get(field) for field in fields}
 
 
-DEPROVISION_REQUESTED = frozenset({"pending", "archive-pending", "stranded"})
-
-
-def _deprovision_status(
-    git_items: list[EvidenceItem],
-    openshift_item: EvidenceItem | None,
-    sentinels: list[EvidenceItem],
-) -> str | None:
-    if not sentinels:
-        return None
-    if not git_items:
-        return "orphaned"
-    if all(item.data.get("status") == "archived" for item in git_items):
-        return "leftover"
-    if openshift_item is not None:
-        return "pending"
-    if any(item.data.get("archive_suffix") for item in sentinels):
-        return "archive-pending"
-    return "stranded"
-
-
 def _drift_indicator(
     *,
     git_item: EvidenceItem | None,
@@ -354,13 +335,13 @@ def _drift_indicator(
     desired_state: dict[str, object] | None,
     actual_state: dict[str, object] | None,
     definition_conflict: bool,
-    deprovision_status: str | None,
+    deprovision_state: str | None,
 ) -> str:
     if definition_conflict:
         return "definition-conflict"
     if git_item is None:
         return "missing-git"
-    if deprovision_status in DEPROVISION_REQUESTED:
+    if deprovision_state in DEPROVISION_REQUESTED:
         return "deprovision-requested"
     if git_item.data.get("status") == "archived":
         return (

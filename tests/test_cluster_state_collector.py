@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import final
 from uuid import UUID
 
+import pytest
+
 from aura.collectors.cluster_state import ClusterStateCollector
 from aura.collectors.git_inventory import GitInventoryCollector
 from aura.contracts import EvidenceItem, EvidenceSnapshot
@@ -354,6 +356,8 @@ def test_cluster_state_collector_correlates_evidence() -> None:
         "definition_conflict": False,
         "openshift_evidence_id": str(UUID(int=21)),
         "pipeline_run_evidence_ids": [str(UUID(int=31))],
+        "deprovision_status": None,
+        "deprovision_sentinel_evidence_ids": [],
         "missing_evidence": [],
     }
 
@@ -451,6 +455,62 @@ def test_cluster_state_collector_refuses_invalid_git_definition(
     assert snapshot.items[-1].data["missing_evidence"] == [
         "Valid Git cluster definition"
     ]
+
+
+def write_deprovisioned_cluster(
+    root: Path,
+    sentinel: str,
+    *,
+    directory: str = "provision",
+) -> None:
+    write_cluster(root, directory=directory)
+    (root / "deprovision").mkdir()
+    (root / "deprovision" / sentinel).write_text("", encoding="utf-8")
+    commit_repository(root)
+
+
+@pytest.mark.parametrize(
+    ("sentinel", "status"),
+    [("example", "stranded"), ("example-archive", "archive-pending")],
+)
+def test_cluster_state_collector_expects_no_openshift_after_deprovision(
+    tmp_path: Path,
+    sentinel: str,
+    status: str,
+) -> None:
+    write_deprovisioned_cluster(tmp_path, sentinel)
+
+    snapshot = collect_cluster_state(
+        git_collector=GitInventoryCollector(tmp_path),
+        openshift_collector=EmptyCollector(),
+        tekton_collector=MultipleTektonCollector(),
+    )
+
+    correlation = snapshot.items[-1]
+    sentinel_item = next(
+        item for item in snapshot.items if item.kind == "deprovision_sentinel"
+    )
+    assert correlation.data["deprovision_status"] == status
+    assert correlation.data["deprovision_sentinel_evidence_ids"] == [
+        str(sentinel_item.item_id)
+    ]
+    assert correlation.data["missing_evidence"] == []
+
+
+def test_cluster_state_collector_requires_openshift_for_leftover_sentinel(
+    tmp_path: Path,
+) -> None:
+    write_deprovisioned_cluster(tmp_path, "example", directory="archive")
+
+    snapshot = collect_cluster_state(
+        git_collector=GitInventoryCollector(tmp_path),
+        openshift_collector=EmptyCollector(),
+        tekton_collector=MultipleTektonCollector(),
+    )
+
+    correlation = snapshot.items[-1]
+    assert correlation.data["deprovision_status"] == "leftover"
+    assert correlation.data["missing_evidence"] == ["OpenShift actual state"]
 
 
 def test_cluster_state_collector_selects_latest_pipeline_run() -> None:

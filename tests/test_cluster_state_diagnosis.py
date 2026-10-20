@@ -23,9 +23,12 @@ import pytest
 
 from aura.diagnosis import DiagnosisEvidenceUnavailable
 from aura.services.cluster_state import ClusterStateDiagnosisModel
+from aura.collectors.git_inventory import GitInventoryCollector
 from test_cluster_state_collector import (
     ConflictingGitCollector,
+    MultipleTektonCollector,
     collect_cluster_state,
+    write_deprovisioned_cluster,
     ConditionOpenShiftCollector,
     EmptyCollector,
     FakeGitCollector,
@@ -279,6 +282,90 @@ def test_cluster_state_diagnosis_model_reports_pipeline_run_status(
     ] == inferences
     assert response.recommended_inspection.description == inspection
     assert response.confidence == confidence
+
+
+@pytest.mark.parametrize(
+    ("sentinel", "openshift_collector", "summary", "inferences", "inspection"),
+    [
+        (
+            "example",
+            EmptyCollector(),
+            "Cluster example has no OpenShift resources and only the bare "
+            "deprovision sentinel deprovision/example; PipelineRun "
+            "deploy-cluster-newer succeeded.",
+            [
+                {
+                    "statement": (
+                        "The archive-cluster Action requires "
+                        "deprovision/example-archive, so provision/example "
+                        "remains in place."
+                    ),
+                    "confidence": 0.8,
+                }
+            ],
+            "Read-only inspect the archive-cluster Action runs and the "
+            "deprovision sentinel name for cluster example.",
+        ),
+        (
+            "example-archive",
+            EmptyCollector(),
+            "Cluster example has no OpenShift resources and awaits "
+            "archiving through deprovision/example-archive; PipelineRun "
+            "deploy-cluster-newer succeeded.",
+            [
+                {
+                    "statement": (
+                        "The archive-cluster Action has not yet moved "
+                        "provision/example to archive/example."
+                    ),
+                    "confidence": 0.6,
+                }
+            ],
+            "Read-only inspect the archive-cluster Action runs for "
+            "cluster example.",
+        ),
+        (
+            "example",
+            FakeOpenShiftCollector(),
+            "Cluster example has a pending deprovision request in "
+            "deprovision/example, and PipelineRun deploy-cluster-newer "
+            "succeeded.",
+            [],
+            "Inspect PipelineRun deploy-cluster-newer and the remaining "
+            "OpenShift resources for cluster example.",
+        ),
+    ],
+)
+def test_cluster_state_diagnosis_model_explains_deprovision_requests(
+    tmp_path,
+    sentinel,
+    openshift_collector,
+    summary,
+    inferences,
+    inspection,
+) -> None:
+    write_deprovisioned_cluster(tmp_path, sentinel)
+    evidence_snapshot = collect_cluster_state(
+        git_collector=GitInventoryCollector(tmp_path),
+        openshift_collector=openshift_collector,
+        tekton_collector=MultipleTektonCollector(),
+    )
+
+    response = ClusterStateDiagnosisModel().diagnose(
+        make_cwa_snapshot(evidence_snapshot)
+    )
+
+    sentinel_item = next(
+        item
+        for item in evidence_snapshot.items
+        if item.kind == "deprovision_sentinel"
+    )
+    assert response.summary == summary
+    assert [
+        inference.model_dump() for inference in response.inferences
+    ] == inferences
+    assert response.recommended_inspection.description == inspection
+    assert sentinel_item.item_id in response.evidence_ids
 
 
 def test_cluster_state_diagnosis_model_requires_provisioned_condition() -> None:

@@ -4,6 +4,8 @@ from uuid import UUID
 from typing import final
 
 from aura.authorization import OperatorRole
+from aura.collectors.deprovision import DEPROVISION_REQUESTED
+from aura.collectors.git_inventory import ARCHIVE_SUFFIX
 from aura.contracts import CommandEnvelope, CommandType, EvidenceItem
 from aura.cwa import CWASnapshot
 from aura.diagnosis import (
@@ -101,6 +103,14 @@ class ClusterStateDiagnosisModel:
         )
         pipeline_item = _primary_pipeline_item(pipeline_items)
         cluster_name = str(correlation.data["cluster_name"])
+        sentinels = [
+            items_by_id[UUID(value)]
+            for value in correlation.data.get(
+                "deprovision_sentinel_evidence_ids", []
+            )
+            if UUID(value) in items_by_id
+        ]
+        facts.extend(_sentinel_facts(sentinels, cluster_name))
         inferences = _inferences(
             pipeline_item,
             cluster_name=cluster_name,
@@ -115,6 +125,22 @@ class ClusterStateDiagnosisModel:
             cluster_name=cluster_name,
             provisioned=provisioned,
         )
+        deprovision = _deprovision_answer(
+            correlation.data.get("deprovision_status"),
+            sentinels,
+            pipeline_item,
+            cluster_name=cluster_name,
+        )
+        if deprovision is not None:
+            summary, recommended_inspection, deprovision_inferences = (
+                deprovision
+            )
+            inferences = [
+                *deprovision_inferences,
+                *_inferences(
+                    pipeline_item, cluster_name=cluster_name, provisioned=True
+                ),
+            ]
         confidence = {"Failed": 0.8, "Succeeded": 0.9}.get(
             str(pipeline_item.data.get("status")),
             0.6,
@@ -314,10 +340,7 @@ def _summary(
     cluster_name: str,
     provisioned: bool,
 ) -> str:
-    outcome = {
-        "Failed": "failed",
-        "Succeeded": "succeeded",
-    }.get(str(pipeline_item.data.get("status")), "has not completed")
+    outcome = _outcome(pipeline_item)
     run = f"PipelineRun {pipeline_item.data.get('pipeline_run_name')}"
     if not provisioned:
         return (
@@ -328,6 +351,95 @@ def _summary(
     return (
         f"Cluster {cluster_name} is defined and deployed, "
         f"{conjunction} {run} {outcome}."
+    )
+
+
+def _outcome(pipeline_item: EvidenceItem) -> str:
+    return {
+        "Failed": "failed",
+        "Succeeded": "succeeded",
+    }.get(str(pipeline_item.data.get("status")), "has not completed")
+
+
+def _sentinel_facts(
+    sentinels: list[EvidenceItem],
+    cluster_name: str,
+) -> list[DiagnosisFact]:
+    return [
+        DiagnosisFact(
+            evidence_id=item.item_id,
+            observation=(
+                f"Git requests deprovision of cluster {cluster_name} "
+                f"with {item.data['path']}."
+            ),
+        )
+        for item in sentinels
+    ]
+
+
+def _deprovision_answer(
+    status: object,
+    sentinels: list[EvidenceItem],
+    pipeline_item: EvidenceItem,
+    *,
+    cluster_name: str,
+) -> tuple[str, RecommendedInspection, list[DiagnosisInference]] | None:
+    if status not in DEPROVISION_REQUESTED:
+        return None
+    paths = ", ".join(str(item.data["path"]) for item in sentinels)
+    name = pipeline_item.data.get("pipeline_run_name")
+    run = f"PipelineRun {name} {_outcome(pipeline_item)}"
+    if status == "pending":
+        return (
+            f"Cluster {cluster_name} has a pending deprovision request in "
+            f"{paths}, and {run}.",
+            RecommendedInspection(
+                description=(
+                    f"Inspect PipelineRun {name} and the remaining OpenShift "
+                    f"resources for cluster {cluster_name}."
+                )
+            ),
+            [],
+        )
+    if status == "archive-pending":
+        return (
+            f"Cluster {cluster_name} has no OpenShift resources and awaits "
+            f"archiving through {paths}; {run}.",
+            RecommendedInspection(
+                description=(
+                    "Read-only inspect the archive-cluster Action runs for "
+                    f"cluster {cluster_name}."
+                )
+            ),
+            [
+                DiagnosisInference(
+                    statement=(
+                        "The archive-cluster Action has not yet moved "
+                        f"provision/{cluster_name} to archive/{cluster_name}."
+                    ),
+                    confidence=0.6,
+                )
+            ],
+        )
+    return (
+        f"Cluster {cluster_name} has no OpenShift resources and only the "
+        f"bare deprovision sentinel {paths}; {run}.",
+        RecommendedInspection(
+            description=(
+                "Read-only inspect the archive-cluster Action runs and the "
+                f"deprovision sentinel name for cluster {cluster_name}."
+            )
+        ),
+        [
+            DiagnosisInference(
+                statement=(
+                    "The archive-cluster Action requires "
+                    f"deprovision/{cluster_name}{ARCHIVE_SUFFIX}, so "
+                    f"provision/{cluster_name} remains in place."
+                ),
+                confidence=0.8,
+            )
+        ],
     )
 
 

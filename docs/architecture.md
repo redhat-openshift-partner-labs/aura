@@ -111,7 +111,7 @@ Model output is untrusted data. Pydantic validates the exact response shape, con
 | Single Git definition | `Conflicting Git cluster definitions` |
 | Selected PipelineRun | `Selected Tekton PipelineRun NAME_OR_UID` |
 | OpenShift `Provisioned` condition | `OpenShift Provisioned condition` |
-| OpenShift actual state | `OpenShift actual state` |
+| OpenShift actual state, unless an active definition has a deprovision sentinel | `OpenShift actual state` |
 | ManagedCluster status | `ManagedCluster status` |
 | Tekton run | `Tekton PipelineRun status` |
 

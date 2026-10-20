@@ -4,6 +4,10 @@ from datetime import UTC, datetime
 from typing import Protocol, final
 from uuid import UUID, uuid4, uuid5
 
+from aura.collectors.deprovision import (
+    DEPROVISION_REQUESTED,
+    deprovision_status,
+)
 from aura.contracts import EvidenceItem, EvidenceSnapshot
 
 
@@ -76,6 +80,11 @@ class ClusterStateCollector:
                 "cluster_definition_invalid",
             },
         )
+        sentinel_items = self._cluster_items(
+            git_snapshot,
+            cluster_name=self._cluster_name,
+            kinds={"deprovision_sentinel"},
+        )
         openshift_item = self._cluster_item(
             openshift_snapshot,
             cluster_name=self._cluster_name,
@@ -98,8 +107,10 @@ class ClusterStateCollector:
             pipeline_items
         )
 
+        status = deprovision_status(git_items, openshift_item, sentinel_items)
         items: list[EvidenceItem] = []
         items.extend(git_items)
+        items.extend(sentinel_items)
         if openshift_item is not None:
             items.append(openshift_item)
         items.extend(selected_pipeline_items)
@@ -109,6 +120,7 @@ class ClusterStateCollector:
             openshift_item=openshift_item,
             pipeline_items=selected_pipeline_items,
             pipeline_run=self._pipeline_run,
+            deprovision_requested=status in DEPROVISION_REQUESTED,
         )
         items.append(
             EvidenceItem(
@@ -137,6 +149,10 @@ class ClusterStateCollector:
                     "pipeline_run_evidence_ids": [
                         str(item.item_id)
                         for item in selected_pipeline_items
+                    ],
+                    "deprovision_status": status,
+                    "deprovision_sentinel_evidence_ids": [
+                        str(item.item_id) for item in sentinel_items
                     ],
                     "missing_evidence": missing_evidence,
                 },
@@ -242,6 +258,7 @@ class ClusterStateCollector:
         openshift_item: EvidenceItem | None,
         pipeline_items: list[EvidenceItem],
         pipeline_run: str | None,
+        deprovision_requested: bool,
     ) -> list[str]:
         missing: list[str] = []
         if len(git_items) > 1:
@@ -254,7 +271,8 @@ class ClusterStateCollector:
             missing.append("Valid Git cluster definition")
 
         if openshift_item is None:
-            missing.append("OpenShift actual state")
+            if not deprovision_requested:
+                missing.append("OpenShift actual state")
         elif openshift_item.kind == "cluster_actual_state_incomplete":
             missing.append("ManagedCluster status")
 
