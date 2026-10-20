@@ -103,28 +103,18 @@ def test_keeps_fields_that_only_contain_secret_words(field: str) -> None:
     assert redact({field: "value"}).redacted_fields == []
 
 
-def test_redacts_parameters_whose_names_suggest_secrets() -> None:
-    result = redact_parameters(
-        {
-            "cluster-name": "example",
-            "github-token": "token-value",
-            "db_password": "password-value",
-            "AWS-Credentials": {"key": "value"},
-            "keycloak-admin-secret": "keycloak-admin",
-            "spoke-kubeconfig": "/workspace/kubeconfig",
-        }
-    )
 
-    assert result.value == {
-        "cluster-name": "example",
-        "github-token": "[REDACTED]",
-        "db_password": "[REDACTED]",
-        "AWS-Credentials": "[REDACTED]",
-        "keycloak-admin-secret": "keycloak-admin",
-        "spoke-kubeconfig": "/workspace/kubeconfig",
-    }
-    assert result.redacted_fields == [
-        "AWS-Credentials",
-        "db_password",
-        "github-token",
-    ]
+@pytest.mark.parametrize(
+    "name",
+    ["github-token", "db_password", "AWS-Credentials", "registry-apiKey"],
+)
+def test_redacts_parameters_with_secret_terms(name: str) -> None:
+    result = redact_parameters({name: "value", "cluster-name": "example"})
+
+    assert result.value == {name: "[REDACTED]", "cluster-name": "example"}
+    assert result.redacted_fields == [name]
+
+
+@pytest.mark.parametrize("name", ["keycloak-admin-secret", "spoke-kubeconfig"])
+def test_keeps_allowlisted_parameters(name: str) -> None:
+    assert redact_parameters({name: "value"}).value == {name: "value"}

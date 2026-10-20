@@ -29,33 +29,7 @@ class FakeTektonClient:
                 "spec": {
                     "pipelineRef": {"name": "deploy-cluster"},
                     "params": [
-                        {"name": "cluster-name", "value": "example"},
-                        {"name": "tier", "value": "base"},
-                        {"name": "github-token", "value": "token-value"},
-                    ],
-                    "workspaces": [
-                        {
-                            "name": "shared-workspace",
-                            "volumeClaimTemplate": {
-                                "spec": {
-                                    "accessModes": ["ReadWriteOnce"],
-                                    "resources": {
-                                        "requests": {"storage": "1Gi"}
-                                    },
-                                }
-                            },
-                        },
-                        {
-                            "name": "pull-secret",
-                            "secret": {
-                                "secretName": "fleet-pipeline-pull-secret"
-                            },
-                        },
-                        {
-                            "name": "config",
-                            "configMap": {"name": "fleet-config"},
-                            "subPath": "settings",
-                        },
+                        {"name": "cluster-name", "value": "example"}
                     ],
                 },
                 "status": {
@@ -114,7 +88,6 @@ def test_tekton_collector_returns_pipeline_run_with_failed_task() -> None:
     assert snapshot.source == "tekton"
     assert snapshot.source_version == "pipelineruns=789;taskruns=790"
     assert len(snapshot.items) == 1
-    assert snapshot.redactions == [REDACTION]
 
     item = snapshot.items[0]
     assert item.kind == "pipeline_run"
@@ -124,37 +97,8 @@ def test_tekton_collector_returns_pipeline_run_with_failed_task() -> None:
         "namespace": "example-ns",
         "cluster_name": "example",
         "pipeline_name": "deploy-cluster",
-        "params": {
-            "cluster-name": "example",
-            "tier": "base",
-            "github-token": "[REDACTED]",
-        },
-        "workspaces": [
-            {
-                "name": "shared-workspace",
-                "source": "volumeClaimTemplate",
-                "reference": None,
-                "sub_path": None,
-                "claim_spec": {
-                    "accessModes": ["ReadWriteOnce"],
-                    "resources": {"requests": {"storage": "1Gi"}},
-                },
-            },
-            {
-                "name": "pull-secret",
-                "source": "secret",
-                "reference": "fleet-pipeline-pull-secret",
-                "sub_path": None,
-                "claim_spec": None,
-            },
-            {
-                "name": "config",
-                "source": "configMap",
-                "reference": "fleet-config",
-                "sub_path": "settings",
-                "claim_spec": None,
-            },
-        ],
+        "params": {"cluster-name": "example"},
+        "workspaces": [],
         "status": "Failed",
         "start_time": "2026-01-01T00:00:00Z",
         "completion_time": "2026-01-01T00:05:00Z",
@@ -197,6 +141,84 @@ def test_tekton_collector_uses_deterministic_item_id() -> None:
     assert snapshot.items[0].item_id == expected_item_id
 
 
+@final
+class ParameterTektonClient:
+    def list_pipeline_runs(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "metadata": {
+                    "name": "deploy-cluster-abc",
+                    "namespace": "example-ns",
+                },
+                "spec": {
+                    "params": [
+                        {"name": "cluster-name", "value": "example"},
+                        {"name": "github-token", "value": "token-value"},
+                    ],
+                    "workspaces": [
+                        {
+                            "name": "shared-workspace",
+                            "volumeClaimTemplate": {
+                                "spec": {"accessModes": ["ReadWriteOnce"]}
+                            },
+                        },
+                        {
+                            "name": "pull-secret",
+                            "secret": {"secretName": "pull-secret"},
+                        },
+                        {
+                            "name": "config",
+                            "configMap": {"name": "fleet-config"},
+                            "subPath": "settings",
+                        },
+                    ],
+                },
+            }
+        ]
+
+    def list_task_runs(self) -> list[dict[str, Any]]:
+        return []
+
+    def resource_version(self) -> str:
+        return "pipelineruns=1;taskruns=1"
+
+
+def test_tekton_collector_records_redacted_params_and_workspaces() -> None:
+    collector = TektonInventoryCollector(client=ParameterTektonClient())
+
+    snapshot = collector.collect(command_id=UUID(int=1))
+
+    data = snapshot.items[0].data
+    assert data["params"] == {
+        "cluster-name": "example",
+        "github-token": "[REDACTED]",
+    }
+    assert data["workspaces"] == [
+        {
+            "name": "shared-workspace",
+            "source": "volumeClaimTemplate",
+            "reference": None,
+            "sub_path": None,
+            "claim_spec": {"accessModes": ["ReadWriteOnce"]},
+        },
+        {
+            "name": "pull-secret",
+            "source": "secret",
+            "reference": "pull-secret",
+            "sub_path": None,
+            "claim_spec": None,
+        },
+        {
+            "name": "config",
+            "source": "configMap",
+            "reference": "fleet-config",
+            "sub_path": "settings",
+            "claim_spec": None,
+        },
+    ]
+    assert snapshot.redactions == [REDACTION]
+
+
 @pytest.mark.parametrize(
     ("combined", "expected"),
     [
@@ -213,7 +235,9 @@ def test_combined_collectors_keep_included_tekton_redactions(
     sources = {
         "git_collector": EmptyCollector(),
         "openshift_collector": EmptyCollector(),
-        "tekton_collector": TektonInventoryCollector(client=FakeTektonClient()),
+        "tekton_collector": TektonInventoryCollector(
+            client=ParameterTektonClient()
+        ),
     }
     collector = {
         "cluster_inventory": lambda: ClusterInventoryCollector(**sources),
