@@ -15,12 +15,12 @@ All successful commands print JSON to standard output.
 | `--operator` | Yes | None | Any non-empty operator identifier | Records the self-asserted command actor |
 | `--idempotency-key` | Yes | None | Any non-empty key unique to one operator request | Recorded in the command envelope |
 | `--command-dir` | Yes | None | Writable directory | Stores terminal idempotency-key records |
-| `--role` | No | `viewer` | `viewer`, `proposer`, `approver`, `executor`, `admin` | Roles used for authorization; may be repeated |
+| `--role` | No | `viewer` when no `--role` is supplied | `viewer`, `proposer`, `approver`, `executor`, `admin` | Roles used for authorization; may be repeated; supplied roles replace the default |
 | `--query` | No | Command-specific | Any string | Recorded in command input and CWA interaction slot |
 | `--snapshot-dir` | No | None | Writable directory | Store the evidence snapshot |
 | `--audit-dir` | No | None | Writable directory | Store audit events |
 
-Phase 1 commands are authorized for `viewer` or `admin`. Other roles are rejected.
+Phase 1 commands are authorized for `viewer` or `admin`. A command whose supplied roles include neither is rejected before evidence collection.
 
 Every command stores one terminal idempotency-key record in `--command-dir`: `succeeded`, `failed`, or `refused`. Reusing the same key for the same request exits with code `2` before evidence collection and reports the prior terminal state. Reusing it for a different request is rejected as belonging to a different request. A new attempt requires a new key. Concurrent uses of the same key are serialized by the command store, and only one execution collects evidence.
 

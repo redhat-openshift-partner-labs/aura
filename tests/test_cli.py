@@ -198,6 +198,45 @@ def test_cli_inventory_list_rejects_invalid_command_arguments(
 
 
 @pytest.mark.parametrize(
+    ("roles", "expected_exit_code"),
+    [
+        ([], 0),
+        (["proposer"], 2),
+        (["proposer", "approver"], 2),
+        (["admin"], 0),
+        (["proposer", "viewer"], 0),
+    ],
+)
+def test_cli_inventory_list_uses_only_supplied_roles(
+    tmp_path,
+    capsys,
+    roles,
+    expected_exit_code,
+) -> None:
+    collector = CountingCollector()
+    arguments = inventory_arguments(tmp_path)
+    for role in roles:
+        arguments.extend(["--role", role])
+
+    exit_code = main(
+        arguments,
+        collector=collector,
+        command_id_factory=lambda: UUID(int=1),
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == expected_exit_code
+    if expected_exit_code == 0:
+        assert collector.calls == 1
+    else:
+        assert captured.err == (
+            "aura: operator is not authorized to list inventory\n"
+        )
+        assert captured.out == ""
+        assert collector.calls == 0
+
+
+@pytest.mark.parametrize(
     "flag",
     [
         "--snapshot-dir",

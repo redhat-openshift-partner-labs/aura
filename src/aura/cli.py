@@ -124,8 +124,7 @@ def _add_operator_arguments(
         "--role",
         action="append",
         choices=[role.value for role in OperatorRole],
-        default=["viewer"],
-        help="Operator role; may be repeated",
+        help="Operator role; may be repeated; defaults to viewer",
     )
 
 
@@ -1449,6 +1448,7 @@ def main(
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> int:
     args = build_parser().parse_args(argv)
+    args.role = args.role or [OperatorRole.VIEWER.value]
     argument_error = _argument_error(args)
     if argument_error is not None:
         print(
