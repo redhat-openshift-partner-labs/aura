@@ -75,7 +75,7 @@ PipelineRun correlation first reads `spec.params` where `name` is `cluster-name`
 
 ### Combined cluster inventory
 
-`ClusterInventoryCollector` runs Git, OpenShift, and Tekton collectors, preserves their source items, and appends one `cluster_inventory` item per correlated cluster. Complete, incomplete, and invalid Git definitions all participate in correlation by `cluster_name`; `definition_kind` records which one matched.
+`ClusterInventoryCollector` runs Git, OpenShift, and Tekton collectors, preserves their source items, and appends one `cluster_inventory` item per correlated cluster. Complete, incomplete, and invalid Git definitions all participate in correlation by `cluster_name`; `definition_kind` records which one matched. Deprovision sentinels correlate by the same name and set `deprovision_status`. Combined snapshots keep the source redactions of the items they include.
 
 ### Workflow inventory
 
@@ -83,7 +83,7 @@ PipelineRun correlation first reads `spec.params` where `name` is `cluster-name`
 
 ### Cluster state
 
-`ClusterStateCollector` runs Git, OpenShift, and Tekton collectors for one cluster. It emits all matching Git items, whether complete, incomplete, or invalid, the matching OpenShift item, the selected PipelineRun, and a `cluster_state_correlation` item.
+`ClusterStateCollector` runs Git, OpenShift, and Tekton collectors for one cluster. It emits all matching Git items, whether complete, incomplete, or invalid, any matching `deprovision_sentinel` items, the matching OpenShift item, the selected PipelineRun, and a `cluster_state_correlation` item.
 
 PipelineRun selection defaults to the latest matching run by `start_time`. The `diagnose state --pipeline-run` flag selects by PipelineRun name or UID. If multiple Git definitions match, the correlation records the conflict and diagnosis refuses to proceed.
 

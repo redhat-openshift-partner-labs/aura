@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 1 is implemented, validated, and published. The [Phase 2](05-phase-2-proposals.md) draft was revised after validation against the protected repositories and the live hub, and awaits approval. Phase 3 remains a draft that must be aligned with Phase 2 before implementation.
+Phase 1 is implemented, validated, and published. The [Phase 2](05-phase-2-proposals.md) plan is approved, and its prerequisites P0 and P1 are implemented. [Phase 3](06-phase-3-approved-execution.md) is a draft aligned with Phase 2 and awaits approval.
 
 ## Objective
 

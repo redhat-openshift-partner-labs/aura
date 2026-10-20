@@ -117,7 +117,7 @@ Without `--fleet-clusters`, the source is `openshift+tekton`. With it, the sourc
 
 Emitted item kinds:
 
-- Git definition items when Git is enabled.
+- Git definition and `deprovision_sentinel` items when Git is enabled.
 - OpenShift actual-state items.
 - `pipeline_run`.
 - `workflow_view`.

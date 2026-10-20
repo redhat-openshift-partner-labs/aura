@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-270 passed
+295 passed
 ```
 
 Run diff hygiene:
@@ -74,6 +74,7 @@ Check that output contains:
 - Archived definitions with `status: archived`.
 - 26 definitions at the validated commit: 12 `cluster_definition`, 14 `cluster_definition_incomplete`, and no `cluster_definition_invalid`.
 - Every incomplete definition has a `cluster_name` equal to its directory name.
+- 7 `deprovision_sentinel` items, all with `archive_suffix: false`.
 
 ## Live OpenShift Validation
 
@@ -124,11 +125,14 @@ Latest validation observed:
 | OpenShift cluster states | 13 |
 | PipelineRuns | 34 |
 | Combined inventory records | 25 |
-| Combined inventory evidence items | 98 |
-| `missing-git` or `detected` drift | 0 |
+| Combined inventory evidence items | 105 |
+| `missing-git`, `missing-openshift`, or `detected` drift | 0 |
 | `incomplete-definition` drift | 5 |
 | `incomplete-metadata` drift | 6 |
-| Workflow evidence items | 107 |
+| `deprovision-requested` drift | 6, all `deprovision_status: stranded` |
+| `leftover` deprovision status | 1, `f6f3eba2-redisvirt` |
+| Combined snapshot redactions | None; no live parameter name contains a non-allowlisted secret term |
+| Workflow evidence items | 114 |
 | Workflow views | 34 |
 | Correlated workflow views | 34 |
 | Uncorrelated workflow views | 0 |
@@ -159,6 +163,9 @@ Run the same command with these clusters and new idempotency keys to validate re
 | `423d216c-vistergy` | Exit code `2`; refused with `Git cluster definition files` and `Tekton PipelineRun status` |
 | `1bd62dc5-hpezerto` | Exit code `2`; refused with `OpenShift actual state` and `Tekton PipelineRun status` |
 | `pchriste` | Exit code `2`; refused with `Conflicting Git cluster definitions` |
+| `10f25620-vscopeocpv` | Exit code `0`; stranded deprovision summary citing its retained deprovision PipelineRun, confidence `0.9` |
+| `264c5202-codvoqs` | Exit code `0`; stranded deprovision summary stating `no PipelineRun is retained for it`, confidence `0.6` |
+| `f6f3eba2-redisvirt` | Exit code `2`; leftover sentinel, refused with `Git cluster definition files` and `OpenShift actual state` |
 
 Latest validation observed:
 
@@ -167,7 +174,8 @@ Latest validation observed:
 | Fixture diagnosis | Exit code `0`; summary names PipelineRun `post-provision-0171d46a-scopedaws-p4w4v` as succeeded with confidence `0.9` |
 | Evidence items | Snapshot holds 1 definition, 1 actual state, 1 PipelineRun, and 1 correlation; the response cites the first three |
 | Provenance | Evidence, CWA snapshot, CWA trace, diagnosis, and audit records linked by matching IDs and digests |
-| Refusals | All three refusal clusters exited `2` with the expected missing evidence; no diagnosis record was written for them |
+| Refusals | All four refusal clusters exited `2` with the expected missing evidence; no diagnosis record was written for them |
+| Stranded deprovisions | All six stranded clusters exited `0`: two cite a retained deprovision PipelineRun, four state that no PipelineRun is retained |
 
 ## Idempotency Validation
 

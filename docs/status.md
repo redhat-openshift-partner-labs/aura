@@ -28,6 +28,21 @@ Validation summary, recorded at Aura commit `6dc0eb3`:
 | Record durability | No `.tmp` files remained after fixture and live validation |
 | Protected repository tracked changes | None |
 
+## Phase 2 Prerequisites
+
+Prerequisites P0 and P1 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented. Validation, recorded at Aura commit `655a0ac`:
+
+| Check | Result |
+| --- | --- |
+| Automated tests | 295 passed |
+| Quality gate | `adb2c2b..HEAD` passed with zero gating findings |
+| Deprovision sentinels | 7 read from `fleet-clusters`, all without the `-archive` suffix |
+| Combined inventory | 25 records and 105 evidence items; 6 `stranded`, 1 `leftover`, no `missing-openshift` |
+| Stranded diagnosis | All 6 stranded clusters diagnosed; 4 have no retained PipelineRun |
+| PipelineRun parameters | Recorded for all 34 PipelineRuns; no live value redacted after allowlisting `htpasswd-provider-name` |
+| Workflow evidence items | 114 |
+| Protected repository tracked changes | None |
+
 ## Implemented
 
 | Area | Capability |
@@ -37,6 +52,8 @@ Validation summary, recorded at Aura commit `6dc0eb3`:
 | Incomplete definitions | Reports missing required files with definition status and directory-derived cluster name; correlates them in combined inventory and diagnosis |
 | Invalid definitions | Reports malformed YAML, wrong document shapes, and missing required patch paths per definition without aborting collection |
 | Legacy metadata | Reports `incomplete-metadata` drift when `metadata.yaml` has no `platform` and other compared fields match |
+| Deprovision sentinels | Reads `deprovision/` and reports pending, archive-pending, stranded, leftover, and orphaned deprovisions in inventory and diagnosis |
+| PipelineRun parameters | Records parameters and workspace bindings, redacting secret-named parameters outside an allowlist |
 | OpenShift inventory | Reads `ClusterDeployment` and `ManagedCluster` resources |
 | Tekton inventory | Reads `PipelineRun` and `TaskRun` resources and failed-task summaries |
 | Cluster correlation | Combines Git, OpenShift, and Tekton evidence by cluster name and reports conflicting definitions |
@@ -81,6 +98,12 @@ The model protocol remains provider-independent. A future provider must consume 
 
 | Commit | Change |
 | --- | --- |
+| `655a0ac` | Explained deprovision without retained PipelineRuns |
+| `3e9fff4` | Explained deprovision of legacy definitions |
+| `25fed6b` | Kept the htpasswd provider name parameter |
+| `53b5bd6` | Recorded redacted PipelineRun parameters |
+| `559076c` | Explained deprovision requests in diagnosis |
+| `b71aeab` | Reported deprovision sentinels |
 | `b841594` | Selected the workflow audit event by type instead of glob order |
 | `6dc0eb3` | Folded metadata drift cases into the drift test |
 | `5c00ab0` | Collapsed command lookup failures |
@@ -120,4 +143,4 @@ The model protocol remains provider-independent. A future provider must consume 
 Phase 1 is published. Remaining work:
 
 1. `fleet-clusters` owners backfill `metadata.yaml` and its `platform` key for the definitions listed in [Open Questions](plans/08-open-questions.md#fleet-clusters-data), pushing any added `metadata.yaml` with `[skip-provision]` in the head commit message, and decide how to remediate the stranded deprovision sentinels.
-2. Phase 2 starts only after the [revised draft plan](plans/05-phase-2-proposals.md) is approved; its prerequisites P0 through P4 come first.
+2. Implement the remaining [Phase 2](plans/05-phase-2-proposals.md) prerequisites P2 through P4, then the proposal types. P0 and P1 are done.

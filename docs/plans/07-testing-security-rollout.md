@@ -1,5 +1,9 @@
 # Testing, Security, and Rollout
 
+## Status
+
+Aligned on 2026-10-20 with the approved [Phase 2](05-phase-2-proposals.md) plan: proposals are generated deterministically, and no model writes any part of a proposal.
+
 ## Testing Strategy
 
 ### Contract Tests
@@ -17,12 +21,33 @@ Validate:
 
 Use recorded fixtures from:
 
-- `fleet-clusters`.
-- `fleet` pipeline definitions.
+- `fleet-clusters`, including `deprovision/` sentinels with and without the `-archive` suffix.
+- Tekton Pipeline definitions read from the hub.
 - OpenShift resource responses.
-- Tekton PipelineRun responses.
+- Tekton PipelineRun responses, including parameters and workspace bindings.
 
-Collectors must be deterministic and testable without a live cluster.
+Collectors must be deterministic and testable without a live cluster. Correlation tests that depend on Git item shapes use the real `GitInventoryCollector` over a temporary Git tree.
+
+### Proposal Generator Tests
+
+Required cases:
+
+| Case | Expected result |
+| --- | --- |
+| Scaffold proposal | Patch adds only `provision/<id>/**`, applies with `git apply --check`, and yields one complete `cluster_definition` |
+| Scaffold for an existing name | Refuse |
+| Deprovision proposal | Exactly one added file, `deprovision/<id>-archive`, in a standalone commit |
+| Deprovision with any existing sentinel | Refuse |
+| Edit that adds a file under `provision/<id>` | Commit message contains `[skip-provision]` |
+| Edit value without evidence | Refuse |
+| Post-provision rerun with a missing required parameter | Refuse |
+| Post-provision rerun with an unknown or redacted parameter | Refuse |
+| Patch touching two clusters | Refuse |
+| Base commit moved for the target cluster | Report stale |
+| Scaffold output outside `provision/<id>/` or containing a symlink | Refuse |
+| Generated content altered by redaction | Refuse |
+
+Each lifecycle fact in the [Phase 2](05-phase-2-proposals.md#lifecycle-facts) table has a test asserting the `trigger_effect` the generator reports.
 
 ### Guard Tests
 
@@ -37,7 +62,13 @@ Required cases:
 | Duplicate idempotency key | Do not dispatch twice |
 | Unknown adapter | Reject |
 | Out-of-scope target | Reject |
-| Model output with invalid schema | Reject |
+| Stale proposal | Reject |
+| Proposal touching two clusters | Reject |
+| Missing required commit message | Reject |
+| Bare deprovision sentinel | Reject |
+| Direct PipelineRun for pre-provision, provision, or deprovision | Reject |
+| EventListener as the execution path | Reject |
+| Proposal with invalid schema | Reject |
 
 ### Adapter Tests
 
@@ -53,15 +84,16 @@ Required assertions:
 
 ### Model Evaluation
 
-Evaluation sets should include:
+Phases 1 and 2 use deterministic models and generators, so no model evaluation set gates them. Before any external model is integrated, after explicit operator approval and a data-flow review, evaluation sets must include:
 
 | Category | Examples |
 | --- | --- |
 | Inventory questions | List active clusters, tier, region, status |
-| Diagnosis | Stuck provisioning, failed PipelineRun, drift |
-| Patch generation | New cluster, modify metadata, deprovision plan |
+| Diagnosis | Stuck provisioning, failed PipelineRun, drift, stranded deprovision |
 | Refusal | Missing evidence, ambiguous target, unsafe request |
-| Injection resistance | Malicious instructions in logs or documentation |
+| Injection resistance | Malicious instructions in logs, parameters, or documentation |
+
+A model never generates patches, sentinels, or PipelineRun parameters.
 
 Every evaluation case must record:
 
@@ -74,13 +106,13 @@ Every evaluation case must record:
 
 ## Security Requirements
 
-1. Secrets never enter model context.
+1. Secrets never enter model context. PipelineRun parameters whose names contain a secret term are redacted unless explicitly allowlisted.
 2. Secret names may be shown only when useful and safe.
 3. Model output is untrusted until validated.
 4. Authorization is enforced outside the model.
 5. Adapters use separate least-privilege credentials.
 6. Audit events are append-only.
-7. Git push and Tekton execution require explicit approval.
+7. Git push and Tekton execution require explicit approval. Aura never pushes to `main`, never merges, and never calls the fleet EventListener.
 8. All external calls are rate limited.
 9. All proposal changes are recorded with a digest.
 10. Model provider access is isolated from cluster credentials.
@@ -91,7 +123,7 @@ Every evaluation case must record:
 | --- | --- |
 | Gate 1 | Contract and collector tests pass |
 | Gate 2 | Read-only assistant works against staging |
-| Gate 3 | Proposal generation produces correct patches |
+| Gate 3 | Deterministic proposals pass generator tests and validate against the `fleet-clusters` fixture and live read-only evidence |
 | Gate 4 | Guard blocks all unauthorized execution |
 | Gate 5 | Approved Git patch execution succeeds in a test repository |
 | Gate 6 | Approved Tekton execution succeeds in staging |
@@ -103,7 +135,7 @@ Every evaluation case must record:
 1. Run Aura locally with read-only access.
 2. Connect to a staging OpenShift cluster.
 3. Generate patches without applying them.
-4. Execute only against a disposable Git fork.
+4. Execute only against a disposable Git fork, which has no webhook to the hub EventListener.
 5. Execute a staging Tekton pipeline.
 6. Enable one production operation at a time.
 7. Keep manual operation available as the fallback.
