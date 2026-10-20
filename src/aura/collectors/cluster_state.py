@@ -73,6 +73,7 @@ class ClusterStateCollector:
             kinds={
                 "cluster_definition",
                 "cluster_definition_incomplete",
+                "cluster_definition_invalid",
             },
         )
         openshift_item = self._cluster_item(
@@ -249,6 +250,8 @@ class ClusterStateCollector:
             missing.append("Git cluster definition")
         elif git_items[0].kind == "cluster_definition_incomplete":
             missing.append("Git cluster definition files")
+        elif git_items[0].kind == "cluster_definition_invalid":
+            missing.append("Valid Git cluster definition")
 
         if openshift_item is None:
             missing.append("OpenShift actual state")

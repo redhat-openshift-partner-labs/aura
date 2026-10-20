@@ -91,6 +91,7 @@ class ClusterInventoryCollector:
             kinds={
                 "cluster_definition",
                 "cluster_definition_incomplete",
+                "cluster_definition_invalid",
             },
         )
         openshift_items = self._items_by_cluster(
@@ -331,8 +332,10 @@ class ClusterInventoryCollector:
             )
         if openshift_item is None:
             return "missing-openshift"
-        if git_item.kind != "cluster_definition":
+        if git_item.kind == "cluster_definition_incomplete":
             return "incomplete-definition"
+        if git_item.kind == "cluster_definition_invalid":
+            return "invalid-definition"
         if desired_state != actual_state:
             return "detected"
         return "none"

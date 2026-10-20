@@ -443,6 +443,33 @@ def test_cluster_state_collector_matches_git_definition_without_metadata(
     ]
 
 
+def test_cluster_state_collector_refuses_invalid_git_definition(
+    tmp_path: Path,
+) -> None:
+    write_cluster(tmp_path)
+    (
+        tmp_path / "provision" / "example" / "metadata.yaml"
+    ).write_text("platform: [aws\n", encoding="utf-8")
+    commit_repository(tmp_path)
+    collector = ClusterStateCollector(
+        git_collector=GitInventoryCollector(tmp_path),
+        openshift_collector=FakeOpenShiftCollector(),
+        tekton_collector=FakeTektonCollector(),
+        cluster_name="example",
+    )
+
+    snapshot = collector.collect(
+        command_id=UUID(int=1),
+        snapshot_id=UUID(int=40),
+        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    assert snapshot.items[0].kind == "cluster_definition_invalid"
+    assert snapshot.items[-1].data["missing_evidence"] == [
+        "Valid Git cluster definition"
+    ]
+
+
 def test_cluster_state_collector_selects_latest_pipeline_run() -> None:
     collector = ClusterStateCollector(
         git_collector=FakeGitCollector(),

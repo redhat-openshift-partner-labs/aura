@@ -38,6 +38,15 @@ Required files for a complete definition:
 - `hive/patches/managedcluster.yaml`
 - `crossplane/kustomization.yaml`
 
+A definition missing a required file is emitted as `cluster_definition_incomplete`. A definition whose YAML is malformed, has the wrong document shape, or lacks a required patch path is emitted as `cluster_definition_invalid`; other definitions are still collected. Both kinds use the directory name as `cluster_name`. Invalid-YAML errors report only the file and line, never file content.
+
+Required patch paths:
+
+| File | Paths |
+| --- | --- |
+| `hive/patches/clusterdeployment.yaml` | `/metadata/name`, `/spec/platform/aws/region`, `/spec/provisioning/imageSetRef/name` |
+| `hive/patches/managedcluster.yaml` | `/metadata/labels/tier`, `/metadata/labels/environment` |
+
 The source version is the pinned commit. Working-tree modifications, later commits, and untracked files are not evidence.
 
 ### OpenShift

@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
+import pytest
+
 from aura.collectors.git_inventory import GitInventoryCollector, _GitTree
 
 
@@ -248,6 +250,66 @@ def test_git_inventory_collector_names_definition_without_metadata(
             },
         )
     ]
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "content", "expected_error"),
+    [
+        (
+            "metadata.yaml",
+            "platform: [aws\n",
+            "metadata.yaml: invalid YAML at line 2",
+        ),
+        (
+            "metadata.yaml",
+            "- aws\n",
+            "metadata.yaml: expected a mapping",
+        ),
+        (
+            "hive/patches/managedcluster.yaml",
+            "tier: base\n",
+            "hive/patches/managedcluster.yaml: "
+            "expected a list of patch operations",
+        ),
+        (
+            "hive/patches/clusterdeployment.yaml",
+            "- op: replace\n  path: /metadata/name\n  value: broken\n",
+            "hive/patches/clusterdeployment.yaml: "
+            "missing patch path /spec/platform/aws/region",
+        ),
+        (
+            "crossplane/kustomization.yaml",
+            "resources: base\n",
+            "crossplane/kustomization.yaml: "
+            "expected resources to be a list of paths",
+        ),
+    ],
+)
+def test_git_inventory_collector_reports_invalid_definition(
+    tmp_path: Path,
+    relative_path: str,
+    content: str,
+    expected_error: str,
+) -> None:
+    write_cluster(tmp_path)
+    write_cluster(tmp_path, cluster_name="broken")
+    (tmp_path / "provision" / "broken" / relative_path).write_text(
+        content,
+        encoding="utf-8",
+    )
+    commit_repository(tmp_path)
+
+    snapshot = collect_snapshot(tmp_path)
+
+    items = {item.data["path"]: item for item in snapshot.items}
+    assert items["provision/example"].kind == "cluster_definition"
+    assert items["provision/broken"].kind == "cluster_definition_invalid"
+    assert items["provision/broken"].data == {
+        "path": "provision/broken",
+        "status": "active",
+        "cluster_name": "broken",
+        "error": expected_error,
+    }
 
 
 def test_git_inventory_collector_reads_head_not_working_tree(

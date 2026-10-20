@@ -60,6 +60,7 @@ Emitted item kinds:
 
 - `cluster_definition`
 - `cluster_definition_incomplete`
+- `cluster_definition_invalid`
 
 ### OpenShift inventory
 

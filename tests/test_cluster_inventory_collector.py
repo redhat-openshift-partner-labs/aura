@@ -356,6 +356,32 @@ def test_cluster_inventory_collector_reports_incomplete_definitions(
     }
 
 
+def test_cluster_inventory_collector_reports_invalid_definition(
+    tmp_path: Path,
+) -> None:
+    write_cluster(tmp_path, cluster_name="broken")
+    (
+        tmp_path / "provision" / "broken" / "metadata.yaml"
+    ).write_text("platform: [aws\n", encoding="utf-8")
+    commit_repository(tmp_path)
+    collector = ClusterInventoryCollector(
+        git_collector=GitInventoryCollector(tmp_path),
+        openshift_collector=openshift_collector(actual_state("broken")),
+        tekton_collector=tekton_collector(),
+    )
+
+    snapshot = collector.collect(
+        command_id=UUID(int=1),
+        snapshot_id=UUID(int=40),
+        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    inventory = snapshot.items[-1]
+    assert inventory.data["definition_kind"] == "cluster_definition_invalid"
+    assert inventory.data["desired_state"] is None
+    assert inventory.data["drift_indicator"] == "invalid-definition"
+
+
 def test_cluster_inventory_collector_reports_definition_conflict() -> None:
     collector = ClusterInventoryCollector(
         git_collector=git_collector(

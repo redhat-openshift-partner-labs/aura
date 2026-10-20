@@ -23,6 +23,7 @@ An `EvidenceSnapshot` is the frozen result of one collector invocation.
 | --- | --- | --- |
 | `cluster_definition` | Git | Complete active or archived desired-state definition |
 | `cluster_definition_incomplete` | Git | Definition directory with missing required files; `cluster_name` is the directory name |
+| `cluster_definition_invalid` | Git | Definition with all required files whose YAML or required patch paths cannot be interpreted; `cluster_name` is the directory name and `error` names the file and problem |
 | `cluster_actual_state` | OpenShift | Complete observed cluster state |
 | `cluster_actual_state_incomplete` | OpenShift | Cluster resource with missing status data |
 | `pipeline_run` | Tekton | PipelineRun and summarized TaskRuns |
@@ -55,6 +56,7 @@ Drift values:
 | `none` | Desired and actual state match |
 | `detected` | Desired and actual state differ |
 | `incomplete-definition` | Active Git definition is missing required files and has an OpenShift resource, so desired and actual state cannot be compared |
+| `invalid-definition` | Active Git definition cannot be interpreted and has an OpenShift resource |
 | `missing-git` | OpenShift resource has no Git definition |
 | `missing-openshift` | Active Git definition has no OpenShift resource |
 | `archived` | Archived definition has no OpenShift resource |
@@ -157,7 +159,7 @@ Every fact's evidence ID must appear in `evidence_ids`.
 Cluster-state diagnosis rules:
 
 - Tekton `cluster-name` is the primary workflow correlation key.
-- Conflicting Git definitions, incomplete definitions, and a missing OpenShift `Provisioned` condition cause refusal.
+- Conflicting Git definitions, incomplete definitions, invalid definitions, and a missing OpenShift `Provisioned` condition cause refusal.
 - A non-provisioned cluster receives a summary that says it is not provisioned, a fact citing its `Provisioned` condition, and a read-only inspection recommendation.
 - A failed PipelineRun may be linked to non-provisioning as an inference, not as a fact.
 
