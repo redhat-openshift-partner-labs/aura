@@ -235,6 +235,8 @@ The contract enforces these invariants regardless of which generator produced th
 
 Patches must be Git-format diffs. Every proposal names exactly one cluster, and every patched path must belong to it.
 
+`GitProposalStaleness` reports a Git proposal as stale when its `base_commit` is not an ancestor of `fleet-clusters` `HEAD`, or when any commit since `base_commit` changed `provision/<id>`, `archive/<id>`, `deprovision/<id>`, or `deprovision/<id>-archive`. Changes to other clusters do not make it stale. Post-provision reruns have no base commit; their evidence is rechecked when they are generated or executed.
+
 ## Audit Events
 
 Audit events are immutable and reference the previous event where applicable:

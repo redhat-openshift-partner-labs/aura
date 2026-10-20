@@ -65,19 +65,25 @@ class _GitTree:
 
     @staticmethod
     def _git(root: Path, arguments: list[str]) -> str:
-        try:
-            return _run_git(root, arguments)
-        except subprocess.CalledProcessError as error:
-            output = str(error.stderr or error.stdout or "").strip()
-            detail = output.splitlines()[-1] if output else "no output"
-            raise GitInventoryError(
-                f"git command failed for fleet-clusters "
-                f"(exit {error.returncode}): {detail}"
-            ) from error
-        except OSError as error:
-            raise GitInventoryError(
-                f"git checkout is not usable: {root}"
-            ) from error
+        return read_git(root, arguments)
+
+
+def read_git(root: Path, arguments: list[str]) -> str:
+    """Run a read-only Git command, mapping failures to GitInventoryError."""
+
+    try:
+        return _run_git(root, arguments)
+    except subprocess.CalledProcessError as error:
+        output = str(error.stderr or error.stdout or "").strip()
+        detail = output.splitlines()[-1] if output else "no output"
+        raise GitInventoryError(
+            f"git command failed for fleet-clusters "
+            f"(exit {error.returncode}): {detail}"
+        ) from error
+    except OSError as error:
+        raise GitInventoryError(
+            f"git checkout is not usable: {root}"
+        ) from error
 
 
 def _run_git(root: Path, arguments: list[str]) -> str:
@@ -385,5 +391,5 @@ class GitInventoryCollector:
         return tree.revision
 
 
-__all__ = ["GitInventoryCollector", "GitInventoryError"]
+__all__ = ["GitInventoryCollector", "GitInventoryError", "read_git"]
 

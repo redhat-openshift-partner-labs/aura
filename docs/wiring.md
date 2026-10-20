@@ -104,6 +104,10 @@ Process error contracts:
 | Stores | Operating-system write failure | Exit `2`; `failed` terminal record stored when the command store is writable |
 | Command store | Unreadable record or lock failure | Exit `2` before collection |
 
+### Proposal staleness
+
+`GitProposalStaleness` resolves `HEAD`, runs `git merge-base --is-ancestor BASE HEAD`, and then `git diff --name-only BASE HEAD` limited to the target cluster's paths. All three commands are read-only.
+
 ## Record Wiring
 
 | Flag | Store | Path pattern |
