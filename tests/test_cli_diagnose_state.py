@@ -173,7 +173,8 @@ def test_cli_diagnose_state_returns_cluster_diagnosis(
     diagnosis = answer["diagnosis"]
     response = diagnosis["response"]
     assert response["summary"] == (
-        "Cluster example is defined and deployed, but its latest workflow failed."
+        "Cluster example is defined and deployed, but PipelineRun "
+        "deploy-cluster-abc failed."
     )
     assert response["recommended_inspection"]["description"] == (
         "Inspect the failed TaskRun provision-task-abc."

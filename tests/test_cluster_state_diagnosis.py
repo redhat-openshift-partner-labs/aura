@@ -8,6 +8,7 @@ from aura.authorization import OperatorRole
 from aura.collectors.cluster_state import ClusterStateCollector
 from aura.contracts import (
     AuditEvent,
+    EvidenceItem,
     AuditEventType,
     CommandEnvelope,
     CommandState,
@@ -100,7 +101,8 @@ def test_cluster_state_diagnosis_model_returns_failed_workflow_answer() -> None:
     response = model.diagnose(snapshot)
 
     assert response.summary == (
-        "Cluster example is defined and deployed, but its latest workflow failed."
+        "Cluster example is defined and deployed, but PipelineRun "
+        "deploy-cluster-abc failed."
     )
     assert response.facts[0].observation == (
         "Git defines cluster example in provision/example."
@@ -169,8 +171,8 @@ def test_cluster_state_diagnosis_model_explains_not_provisioned() -> None:
     response = ClusterStateDiagnosisModel().diagnose(snapshot)
 
     assert response.summary == (
-        "Cluster example is defined but not provisioned, and its "
-        "latest workflow failed."
+        "Cluster example is defined but not provisioned, and "
+        "PipelineRun deploy-cluster-abc failed."
     )
     assert response.facts[1].observation == (
         "OpenShift reports cluster example in namespace example-ns; "
@@ -190,6 +192,142 @@ def test_cluster_state_diagnosis_model_explains_not_provisioned() -> None:
         "Read-only inspect the failed TaskRun provision-task-abc and "
         "the OpenShift Provisioned condition."
     )
+
+
+@final
+class StatusTektonCollector:
+    def __init__(self, status: str) -> None:
+        self._status = status
+
+    def collect(
+        self,
+        *,
+        command_id: UUID,
+        snapshot_id: UUID | None = None,
+        collected_at: datetime | None = None,
+        source_version: str | None = None,
+    ) -> EvidenceSnapshot:
+        return EvidenceSnapshot(
+            snapshot_id=snapshot_id or UUID(int=30),
+            command_id=command_id,
+            collector="tekton_inventory",
+            collector_version="test",
+            collected_at=collected_at or datetime(2026, 1, 1, tzinfo=UTC),
+            source="tekton",
+            source_version=source_version or "tekton-version",
+            items=[
+                EvidenceItem(
+                    item_id=UUID(int=31),
+                    kind="pipeline_run",
+                    data={
+                        "namespace": "example-ns",
+                        "pipeline_run_name": "deploy-cluster-abc",
+                        "status": self._status,
+                        "failed_task": None,
+                    },
+                )
+            ],
+            redactions=[],
+        )
+
+
+INCOMPLETE_RUN_INFERENCE = {
+    "statement": (
+        "PipelineRun deploy-cluster-abc has not completed, so the "
+        "cluster state may still change."
+    ),
+    "confidence": 0.6,
+}
+
+
+@pytest.mark.parametrize(
+    (
+        "status",
+        "provisioned",
+        "summary",
+        "inferences",
+        "inspection",
+        "confidence",
+    ),
+    [
+        (
+            "Unknown",
+            True,
+            "Cluster example is defined and deployed, and PipelineRun "
+            "deploy-cluster-abc has not completed.",
+            [INCOMPLETE_RUN_INFERENCE],
+            "Inspect the conditions and TaskRuns of incomplete "
+            "PipelineRun deploy-cluster-abc.",
+            0.6,
+        ),
+        (
+            "Unknown",
+            False,
+            "Cluster example is defined but not provisioned, and "
+            "PipelineRun deploy-cluster-abc has not completed.",
+            [INCOMPLETE_RUN_INFERENCE],
+            "Read-only inspect the conditions and TaskRuns of incomplete "
+            "PipelineRun deploy-cluster-abc and the OpenShift "
+            "Provisioned condition.",
+            0.6,
+        ),
+        (
+            "Succeeded",
+            True,
+            "Cluster example is defined and deployed, and PipelineRun "
+            "deploy-cluster-abc succeeded.",
+            [],
+            "Review the cluster's current state and recent workflow.",
+            0.9,
+        ),
+        (
+            "Succeeded",
+            False,
+            "Cluster example is defined but not provisioned, and "
+            "PipelineRun deploy-cluster-abc succeeded.",
+            [],
+            "Read-only inspect the OpenShift Provisioned condition and "
+            "the cluster's recent workflow.",
+            0.9,
+        ),
+    ],
+)
+def test_cluster_state_diagnosis_model_reports_pipeline_run_status(
+    status,
+    provisioned,
+    summary,
+    inferences,
+    inspection,
+    confidence,
+) -> None:
+    collector = ClusterStateCollector(
+        git_collector=FakeGitCollector(),
+        openshift_collector=ConditionOpenShiftCollector(
+            {
+                "type": "Provisioned",
+                "status": "True" if provisioned else "False",
+                "reason": "" if provisioned else "ProvisioningFailed",
+            }
+        ),
+        tekton_collector=StatusTektonCollector(status),
+        cluster_name="example",
+    )
+    evidence_snapshot = collector.collect(
+        command_id=UUID(int=1),
+        snapshot_id=UUID(int=40),
+        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    response = ClusterStateDiagnosisModel().diagnose(
+        make_cwa_snapshot(evidence_snapshot)
+    )
+
+    assert response.summary == summary
+    assert [
+        inference.model_dump() for inference in response.inferences
+    ] == inferences
+    assert response.recommended_inspection.description == inspection
+    assert response.confidence == confidence
 
 
 def test_cluster_state_diagnosis_model_requires_provisioned_condition() -> None:

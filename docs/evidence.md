@@ -162,6 +162,14 @@ Cluster-state diagnosis rules:
 - Conflicting Git definitions, incomplete definitions, invalid definitions, and a missing OpenShift `Provisioned` condition cause refusal.
 - A non-provisioned cluster receives a summary that says it is not provisioned, a fact citing its `Provisioned` condition, and a read-only inspection recommendation.
 - A failed PipelineRun may be linked to non-provisioning as an inference, not as a fact.
+- The summary names the PipelineRun it describes. When several runs are selected, a `Failed` run takes precedence, then a run that has not completed, then the first run.
+- A PipelineRun whose `Succeeded` condition is neither `True` nor `False` is reported as not completed, never as succeeded, with an inference that the cluster state may still change.
+
+| PipelineRun status | Summary outcome | Confidence |
+| --- | --- | --- |
+| `Failed` | `failed` | `0.8` |
+| `Succeeded` | `succeeded` | `0.9` |
+| Any other value | `has not completed` | `0.6` |
 
 ## Diagnosis Record and Answer
 
