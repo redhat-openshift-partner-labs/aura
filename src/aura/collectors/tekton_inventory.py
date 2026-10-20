@@ -112,6 +112,10 @@ class TektonInventoryCollector:
             data={
                 "pipeline_run_name": name,
                 "namespace": namespace,
+                "cluster_name": self._param_value(
+                    spec,
+                    "cluster-name",
+                ),
                 "pipeline_name": spec.get("pipelineRef", {}).get("name", ""),
                 "status": self._status(resource),
                 "start_time": status.get("startTime", ""),
@@ -125,6 +129,13 @@ class TektonInventoryCollector:
                 ),
             },
         )
+
+    @staticmethod
+    def _param_value(spec: dict[str, Any], name: str) -> Any:
+        for param in spec.get("params", []):
+            if param.get("name") == name:
+                return param.get("value")
+        return None
 
     @staticmethod
     def _task_runs_by_pipeline(

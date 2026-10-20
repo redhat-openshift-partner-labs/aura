@@ -18,6 +18,9 @@ class FakeTektonClient:
                 },
                 "spec": {
                     "pipelineRef": {"name": "deploy-cluster"},
+                    "params": [
+                        {"name": "cluster-name", "value": "example"}
+                    ],
                 },
                 "status": {
                     "startTime": "2026-01-01T00:00:00Z",
@@ -81,6 +84,7 @@ def test_tekton_collector_returns_pipeline_run_with_failed_task() -> None:
     assert item.data == {
         "pipeline_run_name": "deploy-cluster-abc",
         "namespace": "example-ns",
+        "cluster_name": "example",
         "pipeline_name": "deploy-cluster",
         "status": "Failed",
         "start_time": "2026-01-01T00:00:00Z",
