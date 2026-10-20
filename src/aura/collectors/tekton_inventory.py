@@ -111,6 +111,7 @@ class TektonInventoryCollector:
             kind="pipeline_run",
             data={
                 "pipeline_run_name": name,
+                "pipeline_run_id": str(metadata.get("uid", "")),
                 "namespace": namespace,
                 "cluster_name": self._param_value(
                     spec,

@@ -7,6 +7,7 @@ from typing import final
 from uuid import UUID
 
 from aura.cli import main
+from aura.cli import build_parser
 from aura.collectors.cluster_state import ClusterStateCollector
 from aura.contracts import EvidenceSnapshot
 from test_cluster_state_collector import (
@@ -88,6 +89,31 @@ def run_diagnose_state(
         clock=lambda: datetime(2026, 1, 1, tzinfo=UTC),
     )
     return exit_code, snapshot_dir, audit_dir, cwa_dir, diagnosis_dir
+
+
+def test_cli_diagnose_state_parses_pipeline_run() -> None:
+    args = build_parser().parse_args(
+        [
+            "diagnose",
+            "state",
+            "--cluster",
+            "example",
+            "--fleet-clusters",
+            "/tmp/fleet-clusters",
+            "--openshift-kubeconfig",
+            "/tmp/kubeconfig",
+            "--cwa-dir",
+            "/tmp/cwa",
+            "--operator",
+            "operator@example.com",
+            "--idempotency-key",
+            "test-key",
+            "--pipeline-run",
+            "deploy-cluster-abc",
+        ]
+    )
+
+    assert args.pipeline_run == "deploy-cluster-abc"
 
 
 def test_cli_diagnose_state_returns_cluster_diagnosis(

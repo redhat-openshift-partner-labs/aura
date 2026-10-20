@@ -70,7 +70,9 @@ PipelineRun correlation first reads `spec.params` where `name` is `cluster-name`
 
 ### Cluster state
 
-`ClusterStateCollector` runs Git, OpenShift, and Tekton collectors for one cluster. It emits only the matching Git item, matching OpenShift item, matching PipelineRuns, and a `cluster_state_correlation` item.
+`ClusterStateCollector` runs Git, OpenShift, and Tekton collectors for one cluster. It emits all matching Git definitions, the matching OpenShift item, the selected PipelineRun, and a `cluster_state_correlation` item.
+
+PipelineRun selection defaults to the latest matching run by `start_time`. The `diagnose state --pipeline-run` flag selects by PipelineRun name or UID. If multiple Git definitions match, the correlation records the conflict and diagnosis refuses to proceed.
 
 ## Record Wiring
 

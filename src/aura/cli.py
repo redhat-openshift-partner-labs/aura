@@ -202,6 +202,13 @@ def _add_diagnose_state_arguments(
         required=True,
         help="Path to a read-only OpenShift kubeconfig",
     )
+    parser.add_argument(
+        "--pipeline-run",
+        required=False,
+        help=(
+            "PipelineRun name or UID; omit to select the latest run"
+        ),
+    )
     _add_evidence_output_arguments(parser)
     parser.add_argument(
         "--cwa-dir",
@@ -372,6 +379,7 @@ def _selected_cluster_state_collector(
             )
         ),
         cluster_name=args.cluster,
+        pipeline_run=args.pipeline_run,
     )
 
 
@@ -736,6 +744,7 @@ def _run_diagnose_state(
         input={
             "query": args.query,
             "cluster_name": args.cluster,
+            "pipeline_run": args.pipeline_run,
             "history": [],
         },
         idempotency_key=args.idempotency_key,

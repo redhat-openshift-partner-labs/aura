@@ -24,10 +24,13 @@ import pytest
 from aura.diagnosis import DiagnosisEvidenceUnavailable
 from aura.services.cluster_state import ClusterStateDiagnosisModel
 from test_cluster_state_collector import (
+    ConflictingGitCollector,
+    ConditionOpenShiftCollector,
     EmptyCollector,
     FakeGitCollector,
     FakeOpenShiftCollector,
     FakeTektonCollector,
+    IncompleteGitCollector,
 )
 
 
@@ -140,6 +143,118 @@ def test_cluster_state_diagnosis_model_reports_missing_evidence() -> None:
         "Git cluster definition",
         "OpenShift actual state",
         "Tekton PipelineRun status",
+    ]
+
+
+def test_cluster_state_diagnosis_model_explains_not_provisioned() -> None:
+    collector = ClusterStateCollector(
+        git_collector=FakeGitCollector(),
+        openshift_collector=ConditionOpenShiftCollector(
+            {
+                "type": "Provisioned",
+                "status": "False",
+                "reason": "ProvisioningFailed",
+            }
+        ),
+        tekton_collector=FakeTektonCollector(),
+        cluster_name="example",
+    )
+    evidence_snapshot = collector.collect(
+        command_id=UUID(int=1),
+        snapshot_id=UUID(int=40),
+        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    snapshot = make_cwa_snapshot(evidence_snapshot)
+
+    response = ClusterStateDiagnosisModel().diagnose(snapshot)
+
+    assert response.summary == (
+        "Cluster example is defined but not provisioned, and its "
+        "latest workflow failed."
+    )
+    assert response.facts[1].observation == (
+        "OpenShift reports cluster example in namespace example-ns; "
+        "its Provisioned condition is False with reason "
+        "ProvisioningFailed."
+    )
+    assert [inference.model_dump() for inference in response.inferences] == [
+        {
+            "statement": (
+                "The failed PipelineRun may explain why cluster example "
+                "is not provisioned."
+            ),
+            "confidence": 0.7,
+        }
+    ]
+    assert response.recommended_inspection.description == (
+        "Read-only inspect the failed TaskRun provision-task-abc and "
+        "the OpenShift Provisioned condition."
+    )
+
+
+def test_cluster_state_diagnosis_model_requires_provisioned_condition() -> None:
+    collector = ClusterStateCollector(
+        git_collector=FakeGitCollector(),
+        openshift_collector=ConditionOpenShiftCollector(None),
+        tekton_collector=FakeTektonCollector(),
+        cluster_name="example",
+    )
+    evidence_snapshot = collector.collect(
+        command_id=UUID(int=1),
+        snapshot_id=UUID(int=40),
+        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    snapshot = make_cwa_snapshot(evidence_snapshot)
+
+    with pytest.raises(DiagnosisEvidenceUnavailable) as error:
+        ClusterStateDiagnosisModel().diagnose(snapshot)
+
+    assert error.value.missing_evidence == [
+        "OpenShift Provisioned condition"
+    ]
+
+
+def test_cluster_state_diagnosis_model_refuses_definition_conflict() -> None:
+    collector = ClusterStateCollector(
+        git_collector=ConflictingGitCollector(),
+        openshift_collector=FakeOpenShiftCollector(),
+        tekton_collector=FakeTektonCollector(),
+        cluster_name="example",
+    )
+    evidence_snapshot = collector.collect(
+        command_id=UUID(int=1),
+        snapshot_id=UUID(int=40),
+        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    snapshot = make_cwa_snapshot(evidence_snapshot)
+
+    with pytest.raises(DiagnosisEvidenceUnavailable) as error:
+        ClusterStateDiagnosisModel().diagnose(snapshot)
+
+    assert error.value.missing_evidence == [
+        "Conflicting Git cluster definitions"
+    ]
+
+
+def test_cluster_state_diagnosis_model_refuses_incomplete_definition() -> None:
+    collector = ClusterStateCollector(
+        git_collector=IncompleteGitCollector(),
+        openshift_collector=FakeOpenShiftCollector(),
+        tekton_collector=FakeTektonCollector(),
+        cluster_name="example",
+    )
+    evidence_snapshot = collector.collect(
+        command_id=UUID(int=1),
+        snapshot_id=UUID(int=40),
+        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    snapshot = make_cwa_snapshot(evidence_snapshot)
+
+    with pytest.raises(DiagnosisEvidenceUnavailable) as error:
+        ClusterStateDiagnosisModel().diagnose(snapshot)
+
+    assert error.value.missing_evidence == [
+        "Git cluster definition files"
     ]
 
 

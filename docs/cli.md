@@ -126,6 +126,7 @@ Emitted item kinds:
 | `--audit-dir` | Yes when `--cwa-dir` is used | None | Writable directory |
 | `--diagnosis-dir` | No | None | Writable directory |
 | `--query` | No | `diagnose cluster state` | Any string |
+| `--pipeline-run` | No | Latest matching run | PipelineRun name or UID |
 
 Because `--cwa-dir` is required, `--audit-dir` is effectively required for `diagnose state`.
 
@@ -151,6 +152,8 @@ The command returns a `DiagnosisAnswer` containing:
 - CWA trace ID.
 
 If required evidence is missing, the command exits with code `2`, prints `diagnosis refused:` to standard error, and still stores evidence, CWA, and audit records.
+
+PipelineRun selection uses the latest matching run by `start_time` by default. Pass `--pipeline-run NAME_OR_UID` to select a specific run; if that run is absent, diagnosis is refused with `Selected Tekton PipelineRun`.
 
 ## Output and Exit Codes
 

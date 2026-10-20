@@ -35,7 +35,9 @@ An `EvidenceSnapshot` is the frozen result of one collector invocation.
 | Field | Source |
 | --- | --- |
 | `cluster_name` | Git or OpenShift |
-| `definition_status` | Git: `active` or `archived` |
+| `definition_status` | Git: `active`, `archived`, or `conflict` |
+| `definition_statuses` | Every matching Git status |
+| `definition_conflict` | Whether multiple Git definitions match one cluster |
 | `tier` | Desired or actual state |
 | `cloud_provider` | Desired or actual state |
 | `region` | Desired or actual state |
@@ -55,6 +57,35 @@ Drift values:
 | `missing-openshift` | Active Git definition has no OpenShift resource |
 | `archived` | Archived definition has no OpenShift resource |
 | `archived-with-openshift-resources` | Archived definition still has an OpenShift resource |
+| `definition-conflict` | Active and archived Git definitions both match one cluster |
+
+## PipelineRun Item Fields
+
+| Field | Source |
+| --- | --- |
+| `pipeline_run_name` | Tekton `metadata.name` |
+| `pipeline_run_id` | Tekton `metadata.uid` |
+| `namespace` | Tekton `metadata.namespace` |
+| `cluster_name` | Tekton `cluster-name` parameter |
+| `status` | Tekton `Succeeded` condition |
+| `start_time` and `completion_time` | Tekton status |
+| `conditions` | Tekton status conditions |
+| `task_runs` and `failed_task` | Summarized TaskRuns |
+
+## Cluster State Correlation Fields
+
+| Field | Meaning |
+| --- | --- |
+| `cluster_name` | Requested cluster name |
+| `namespace` | OpenShift namespace |
+| `git_evidence_id` | Single definition item, or `null` during a conflict |
+| `git_evidence_ids` | Every matching Git definition item |
+| `definition_conflict` | Whether more than one Git definition matched |
+| `openshift_evidence_id` | Actual-state item |
+| `pipeline_run_evidence_ids` | Selected PipelineRun item or items |
+| `missing_evidence` | Reasons a diagnosis cannot proceed |
+
+PipelineRun selection defaults to the matching run with the latest `start_time`. The `diagnose state --pipeline-run` flag can select by PipelineRun name or UID.
 
 ## Workflow View Fields
 
@@ -120,6 +151,13 @@ The trace is stored even when diagnosis is refused.
 | `evidence_ids` | Unique UUID references |
 
 Every fact's evidence ID must appear in `evidence_ids`.
+
+Cluster-state diagnosis rules:
+
+- Tekton `cluster-name` is the primary workflow correlation key.
+- Conflicting Git definitions, incomplete definitions, and a missing OpenShift `Provisioned` condition cause refusal.
+- A non-provisioned cluster receives a summary that says it is not provisioned, a fact citing its `Provisioned` condition, and a read-only inspection recommendation.
+- A failed PipelineRun may be linked to non-provisioning as an inference, not as a fact.
 
 ## Diagnosis Record and Answer
 

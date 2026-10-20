@@ -32,11 +32,13 @@ class ClusterStateCollector:
         openshift_collector: ClusterStateSourceCollector,
         tekton_collector: ClusterStateSourceCollector,
         cluster_name: str,
+        pipeline_run: str | None = None,
     ) -> None:
         self._git_collector = git_collector
         self._openshift_collector = openshift_collector
         self._tekton_collector = tekton_collector
         self._cluster_name = cluster_name
+        self._pipeline_run = pipeline_run
 
     def collect(
         self,
@@ -65,10 +67,13 @@ class ClusterStateCollector:
             collected_at=resolved_collected_at,
         )
 
-        git_item = self._cluster_item(
+        git_items = self._cluster_items(
             git_snapshot,
             cluster_name=self._cluster_name,
-            kinds={"cluster_definition"},
+            kinds={
+                "cluster_definition",
+                "cluster_definition_incomplete",
+            },
         )
         openshift_item = self._cluster_item(
             openshift_snapshot,
@@ -88,18 +93,21 @@ class ClusterStateCollector:
             cluster_name=self._cluster_name,
             namespace=namespace,
         )
+        selected_pipeline_items = self._selected_pipeline_items(
+            pipeline_items
+        )
 
         items: list[EvidenceItem] = []
-        if git_item is not None:
-            items.append(git_item)
+        items.extend(git_items)
         if openshift_item is not None:
             items.append(openshift_item)
-        items.extend(pipeline_items)
+        items.extend(selected_pipeline_items)
 
         missing_evidence = self._missing_evidence(
-            git_item=git_item,
+            git_items=git_items,
             openshift_item=openshift_item,
-            pipeline_items=pipeline_items,
+            pipeline_items=selected_pipeline_items,
+            pipeline_run=self._pipeline_run,
         )
         items.append(
             EvidenceItem(
@@ -112,17 +120,22 @@ class ClusterStateCollector:
                     "cluster_name": self._cluster_name,
                     "namespace": namespace,
                     "git_evidence_id": (
-                        str(git_item.item_id)
-                        if git_item is not None
+                        str(git_items[0].item_id)
+                        if len(git_items) == 1
                         else None
                     ),
+                    "git_evidence_ids": [
+                        str(item.item_id) for item in git_items
+                    ],
+                    "definition_conflict": len(git_items) > 1,
                     "openshift_evidence_id": (
                         str(openshift_item.item_id)
                         if openshift_item is not None
                         else None
                     ),
                     "pipeline_run_evidence_ids": [
-                        str(item.item_id) for item in pipeline_items
+                        str(item.item_id)
+                        for item in selected_pipeline_items
                     ],
                     "missing_evidence": missing_evidence,
                 },
@@ -155,15 +168,26 @@ class ClusterStateCollector:
         cluster_name: str,
         kinds: set[str],
     ) -> EvidenceItem | None:
-        return next(
-            (
-                item
-                for item in snapshot.items
-                if item.kind in kinds
-                and item.data.get("cluster_name") == cluster_name
-            ),
-            None,
+        items = ClusterStateCollector._cluster_items(
+            snapshot,
+            cluster_name=cluster_name,
+            kinds=kinds,
         )
+        return next(iter(items), None)
+
+    @staticmethod
+    def _cluster_items(
+        snapshot: EvidenceSnapshot,
+        *,
+        cluster_name: str,
+        kinds: set[str],
+    ) -> list[EvidenceItem]:
+        return [
+            item
+            for item in snapshot.items
+            if item.kind in kinds
+            and item.data.get("cluster_name") == cluster_name
+        ]
 
     @staticmethod
     def _pipeline_items(
@@ -185,17 +209,45 @@ class ClusterStateCollector:
             )
         ]
 
+    def _selected_pipeline_items(
+        self,
+        pipeline_items: list[EvidenceItem],
+    ) -> list[EvidenceItem]:
+        if self._pipeline_run is None:
+            if not pipeline_items:
+                return []
+            return [
+                max(
+                    pipeline_items,
+                    key=lambda item: str(
+                        item.data.get("start_time") or ""
+                    ),
+                )
+            ]
+        return [
+            item
+            for item in pipeline_items
+            if self._pipeline_run
+            in (
+                str(item.data.get("pipeline_run_id") or ""),
+                str(item.data.get("pipeline_run_name") or ""),
+            )
+        ]
+
     @staticmethod
     def _missing_evidence(
         *,
-        git_item: EvidenceItem | None,
+        git_items: list[EvidenceItem],
         openshift_item: EvidenceItem | None,
         pipeline_items: list[EvidenceItem],
+        pipeline_run: str | None,
     ) -> list[str]:
         missing: list[str] = []
-        if git_item is None:
+        if len(git_items) > 1:
+            missing.append("Conflicting Git cluster definitions")
+        elif not git_items:
             missing.append("Git cluster definition")
-        elif git_item.kind == "cluster_definition_incomplete":
+        elif git_items[0].kind == "cluster_definition_incomplete":
             missing.append("Git cluster definition files")
 
         if openshift_item is None:
@@ -204,5 +256,10 @@ class ClusterStateCollector:
             missing.append("ManagedCluster status")
 
         if not pipeline_items:
+            if pipeline_run is not None:
+                missing.append(
+                    f"Selected Tekton PipelineRun {pipeline_run}"
+                )
+                return missing
             missing.append("Tekton PipelineRun status")
         return missing

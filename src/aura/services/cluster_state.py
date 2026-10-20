@@ -77,14 +77,27 @@ class ClusterStateDiagnosisModel:
         missing_evidence = list(
             correlation.data.get("missing_evidence", []),
         )
+        provisioned_condition = self._provisioned_condition(
+            openshift_item
+        )
+        if (
+            openshift_item is not None
+            and not provisioned_condition.get("status", "")
+        ):
+            missing_evidence.append("OpenShift Provisioned condition")
         if missing_evidence:
             raise DiagnosisEvidenceUnavailable(missing_evidence)
+
+        provisioned = (
+            provisioned_condition.get("status") == "True"
+        )
 
         facts = self._facts(
             git_item=git_item,
             openshift_item=openshift_item,
             pipeline_items=pipeline_items,
             correlation=correlation,
+            provisioned_condition=provisioned_condition,
         )
         failed_pipeline = next(
             (
@@ -94,14 +107,20 @@ class ClusterStateDiagnosisModel:
             ),
             None,
         )
-        inferences = self._inferences(failed_pipeline)
+        inferences = self._inferences(
+            failed_pipeline,
+            cluster_name=str(correlation.data["cluster_name"]),
+            provisioned=provisioned,
+        )
         recommended_inspection = self._recommended_inspection(
             cluster_name=str(correlation.data["cluster_name"]),
             failed_pipeline=failed_pipeline,
+            provisioned=provisioned,
         )
         summary = self._summary(
             cluster_name=str(correlation.data["cluster_name"]),
             failed_pipeline=failed_pipeline,
+            provisioned=provisioned,
         )
         confidence = (
             0.8
@@ -131,12 +150,32 @@ class ClusterStateDiagnosisModel:
         return items_by_id.get(UUID(value))
 
     @staticmethod
+    def _provisioned_condition(
+        openshift_item: EvidenceItem | None,
+    ) -> dict:
+        if openshift_item is None:
+            return {}
+        conditions = openshift_item.data.get(
+            "cluster_deployment_conditions",
+            [],
+        )
+        return next(
+            (
+                condition
+                for condition in conditions
+                if condition.get("type") == "Provisioned"
+            ),
+            {},
+        )
+
+    @staticmethod
     def _facts(
         *,
         git_item: EvidenceItem | None,
         openshift_item: EvidenceItem | None,
         pipeline_items: list[EvidenceItem],
         correlation: EvidenceItem,
+        provisioned_condition: dict,
     ) -> list[DiagnosisFact]:
         facts: list[DiagnosisFact] = []
         if git_item is not None:
@@ -150,14 +189,27 @@ class ClusterStateDiagnosisModel:
                 )
             )
         if openshift_item is not None:
+            observation = (
+                f"OpenShift reports cluster "
+                f"{openshift_item.data['cluster_name']} in namespace "
+                f"{openshift_item.data['namespace']}"
+            )
+            if provisioned_condition.get("status") != "True":
+                reason = (
+                    provisioned_condition.get("reason")
+                    or "unspecified"
+                )
+                observation += (
+                    f"; its Provisioned condition is "
+                    f"{provisioned_condition.get('status')} "
+                    f"with reason {reason}."
+                )
+            else:
+                observation += "."
             facts.append(
                 DiagnosisFact(
                     evidence_id=openshift_item.item_id,
-                    observation=(
-                        f"OpenShift reports cluster "
-                        f"{openshift_item.data['cluster_name']} in namespace "
-                        f"{openshift_item.data['namespace']}."
-                    ),
+                    observation=observation,
                 )
             )
         for pipeline_item in pipeline_items:
@@ -183,14 +235,23 @@ class ClusterStateDiagnosisModel:
     @staticmethod
     def _inferences(
         failed_pipeline: EvidenceItem | None,
+        *,
+        cluster_name: str,
+        provisioned: bool,
     ) -> list[DiagnosisInference]:
         if failed_pipeline is None:
             return []
+        statement = (
+            "The failed PipelineRun may explain the current cluster state."
+            if provisioned
+            else (
+                "The failed PipelineRun may explain why cluster "
+                f"{cluster_name} is not provisioned."
+            )
+        )
         return [
             DiagnosisInference(
-                statement=(
-                    "The failed PipelineRun may explain the current cluster state."
-                ),
+                statement=statement,
                 confidence=0.7,
             )
         ]
@@ -200,15 +261,28 @@ class ClusterStateDiagnosisModel:
         *,
         cluster_name: str,
         failed_pipeline: EvidenceItem | None,
+        provisioned: bool,
     ) -> RecommendedInspection:
         if failed_pipeline is not None:
             failed_task = failed_pipeline.data.get("failed_task") or {}
             task_name = failed_task.get("name", "the failed task")
-            description = f"Inspect the failed TaskRun {task_name}."
+            if provisioned:
+                description = f"Inspect the failed TaskRun {task_name}."
+            else:
+                description = (
+                    f"Read-only inspect the failed TaskRun {task_name} "
+                    "and the OpenShift Provisioned condition."
+                )
         else:
-            description = (
-                "Review the cluster's current state and recent workflow."
-            )
+            if provisioned:
+                description = (
+                    "Review the cluster's current state and recent workflow."
+                )
+            else:
+                description = (
+                    "Read-only inspect the OpenShift Provisioned condition "
+                    "and the cluster's recent workflow."
+                )
         return RecommendedInspection(description=description)
 
     @staticmethod
@@ -216,7 +290,18 @@ class ClusterStateDiagnosisModel:
         *,
         cluster_name: str,
         failed_pipeline: EvidenceItem | None,
+        provisioned: bool,
     ) -> str:
+        if not provisioned:
+            workflow = (
+                ", and its latest workflow failed."
+                if failed_pipeline is not None
+                else "."
+            )
+            return (
+                f"Cluster {cluster_name} is defined but not provisioned"
+                f"{workflow}"
+            )
         if failed_pipeline is not None:
             return (
                 f"Cluster {cluster_name} is defined and deployed, but its "
