@@ -198,6 +198,7 @@ class GitInventoryCollector:
                 data={
                     "path": relative_path,
                     "status": status,
+                    "cluster_name": Path(relative_path).name,
                     "missing_files": missing_files,
                 },
             )

@@ -30,7 +30,7 @@ Validation summary:
 | --- | --- |
 | Git inventory | Reads committed `HEAD` definitions in `provision/` and `archive/`, and marks them `active` or `archived` |
 | Git provenance | Resolves `HEAD` once and pins tree and blob reads to that revision |
-| Incomplete definitions | Reports missing required files without discarding definition status |
+| Incomplete definitions | Reports missing required files with definition status and directory-derived cluster name; correlates them in combined inventory and diagnosis |
 | OpenShift inventory | Reads `ClusterDeployment` and `ManagedCluster` resources |
 | Tekton inventory | Reads `PipelineRun` and `TaskRun` resources and failed-task summaries |
 | Cluster correlation | Combines Git, OpenShift, and Tekton evidence by cluster name and reports conflicting definitions |

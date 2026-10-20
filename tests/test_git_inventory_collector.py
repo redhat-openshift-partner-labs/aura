@@ -218,6 +218,7 @@ def test_git_inventory_collector_reports_incomplete_cluster(tmp_path: Path) -> N
     assert item.data == {
         "path": "provision/incomplete",
         "status": "active",
+        "cluster_name": "incomplete",
         "missing_files": [
             "crossplane/kustomization.yaml",
             "hive/patches/clusterdeployment.yaml",
@@ -225,6 +226,28 @@ def test_git_inventory_collector_reports_incomplete_cluster(tmp_path: Path) -> N
             "metadata.yaml",
         ],
     }
+
+
+def test_git_inventory_collector_names_definition_without_metadata(
+    tmp_path: Path,
+) -> None:
+    write_cluster(tmp_path, directory="archive", cluster_name="legacy")
+    (tmp_path / "archive" / "legacy" / "metadata.yaml").unlink()
+    commit_repository(tmp_path)
+
+    snapshot = collect_snapshot(tmp_path)
+
+    assert [(item.kind, item.data) for item in snapshot.items] == [
+        (
+            "cluster_definition_incomplete",
+            {
+                "path": "archive/legacy",
+                "status": "archived",
+                "cluster_name": "legacy",
+                "missing_files": ["metadata.yaml"],
+            },
+        )
+    ]
 
 
 def test_git_inventory_collector_reads_head_not_working_tree(

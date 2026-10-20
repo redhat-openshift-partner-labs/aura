@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import final
 from uuid import UUID
 
 from aura.collectors.cluster_state import ClusterStateCollector
+from aura.collectors.git_inventory import GitInventoryCollector
 from aura.contracts import EvidenceItem, EvidenceSnapshot
+from test_git_inventory_collector import commit_repository, write_cluster
 
 
 @final
@@ -406,6 +409,35 @@ def test_cluster_state_collector_reports_incomplete_definition() -> None:
     assert correlation.data["git_evidence_id"] == str(UUID(int=11))
     assert correlation.data["git_evidence_ids"] == [str(UUID(int=11))]
     assert correlation.data["definition_conflict"] is False
+    assert correlation.data["missing_evidence"] == [
+        "Git cluster definition files"
+    ]
+
+
+def test_cluster_state_collector_matches_git_definition_without_metadata(
+    tmp_path: Path,
+) -> None:
+    write_cluster(tmp_path)
+    (tmp_path / "provision" / "example" / "metadata.yaml").unlink()
+    commit_repository(tmp_path)
+    collector = ClusterStateCollector(
+        git_collector=GitInventoryCollector(tmp_path),
+        openshift_collector=FakeOpenShiftCollector(),
+        tekton_collector=FakeTektonCollector(),
+        cluster_name="example",
+    )
+
+    snapshot = collector.collect(
+        command_id=UUID(int=1),
+        snapshot_id=UUID(int=40),
+        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    correlation = snapshot.items[-1]
+    assert snapshot.items[0].kind == "cluster_definition_incomplete"
+    assert correlation.data["git_evidence_id"] == str(
+        snapshot.items[0].item_id
+    )
     assert correlation.data["missing_evidence"] == [
         "Git cluster definition files"
     ]

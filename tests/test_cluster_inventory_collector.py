@@ -8,7 +8,9 @@ from uuid import UUID
 
 from aura.cli import main
 from aura.collectors.cluster_inventory import ClusterInventoryCollector
+from aura.collectors.git_inventory import GitInventoryCollector
 from aura.contracts import EvidenceItem, EvidenceSnapshot
+from test_git_inventory_collector import commit_repository, write_cluster
 
 
 @final
@@ -201,6 +203,7 @@ def test_cluster_inventory_collector_correlates_sources() -> None:
         "definition_status": "active",
         "definition_statuses": ["active"],
         "definition_conflict": False,
+        "definition_kind": "cluster_definition",
         "tier": "base",
         "cloud_provider": "aws",
         "region": "us-east-2",
@@ -284,6 +287,75 @@ def test_cluster_inventory_collector_distinguishes_archived_clusters() -> None:
     )
 
 
+def test_cluster_inventory_collector_reports_incomplete_definitions(
+    tmp_path: Path,
+) -> None:
+    write_cluster(tmp_path, cluster_name="legacy")
+    write_cluster(tmp_path, cluster_name="legacy-undeployed")
+    write_cluster(
+        tmp_path,
+        directory="archive",
+        cluster_name="legacy-archived",
+    )
+    for path in (
+        "provision/legacy",
+        "provision/legacy-undeployed",
+        "archive/legacy-archived",
+    ):
+        (tmp_path / path / "metadata.yaml").unlink()
+    commit_repository(tmp_path)
+    collector = ClusterInventoryCollector(
+        git_collector=GitInventoryCollector(tmp_path),
+        openshift_collector=openshift_collector(actual_state("legacy")),
+        tekton_collector=tekton_collector(),
+    )
+
+    snapshot = collector.collect(
+        command_id=UUID(int=1),
+        snapshot_id=UUID(int=40),
+        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    inventories = {
+        item.data["cluster_name"]: item.data
+        for item in snapshot.items
+        if item.kind == "cluster_inventory"
+    }
+    assert sorted(inventories) == [
+        "legacy",
+        "legacy-archived",
+        "legacy-undeployed",
+    ]
+    assert {
+        name: (
+            data["definition_status"],
+            data["definition_kind"],
+            data["desired_state"],
+            data["drift_indicator"],
+        )
+        for name, data in inventories.items()
+    } == {
+        "legacy": (
+            "active",
+            "cluster_definition_incomplete",
+            None,
+            "incomplete-definition",
+        ),
+        "legacy-archived": (
+            "archived",
+            "cluster_definition_incomplete",
+            None,
+            "archived",
+        ),
+        "legacy-undeployed": (
+            "active",
+            "cluster_definition_incomplete",
+            None,
+            "missing-openshift",
+        ),
+    }
+
+
 def test_cluster_inventory_collector_reports_definition_conflict() -> None:
     collector = ClusterInventoryCollector(
         git_collector=git_collector(
@@ -313,6 +385,7 @@ def test_cluster_inventory_collector_reports_definition_conflict() -> None:
         "archived",
     ]
     assert inventory.data["definition_conflict"] is True
+    assert inventory.data["definition_kind"] is None
     assert inventory.data["desired_state"] is None
     assert inventory.data["drift_indicator"] == "definition-conflict"
     assert len(

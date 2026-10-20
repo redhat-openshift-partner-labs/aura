@@ -22,7 +22,7 @@ An `EvidenceSnapshot` is the frozen result of one collector invocation.
 | Kind | Producer | Meaning |
 | --- | --- | --- |
 | `cluster_definition` | Git | Complete active or archived desired-state definition |
-| `cluster_definition_incomplete` | Git | Definition directory with missing required files |
+| `cluster_definition_incomplete` | Git | Definition directory with missing required files; `cluster_name` is the directory name |
 | `cluster_actual_state` | OpenShift | Complete observed cluster state |
 | `cluster_actual_state_incomplete` | OpenShift | Cluster resource with missing status data |
 | `pipeline_run` | Tekton | PipelineRun and summarized TaskRuns |
@@ -38,6 +38,7 @@ An `EvidenceSnapshot` is the frozen result of one collector invocation.
 | `definition_status` | Git: `active`, `archived`, or `conflict` |
 | `definition_statuses` | Every matching Git status |
 | `definition_conflict` | Whether multiple Git definitions match one cluster |
+| `definition_kind` | Matching Git item kind, or `null` when no definition or a conflict exists |
 | `tier` | Desired or actual state |
 | `cloud_provider` | Desired or actual state |
 | `region` | Desired or actual state |
@@ -53,6 +54,7 @@ Drift values:
 | --- | --- |
 | `none` | Desired and actual state match |
 | `detected` | Desired and actual state differ |
+| `incomplete-definition` | Active Git definition is missing required files and has an OpenShift resource, so desired and actual state cannot be compared |
 | `missing-git` | OpenShift resource has no Git definition |
 | `missing-openshift` | Active Git definition has no OpenShift resource |
 | `archived` | Archived definition has no OpenShift resource |

@@ -26,6 +26,21 @@ If yes, define:
 
 Default: Aura may propose a PR but never merge it.
 
+## Fleet-Clusters Data
+
+### Backfill `metadata.yaml` for definitions that predate it
+
+Status: open.
+
+`metadata.yaml` is a required definition file. At `fleet-clusters` commit `492bc8e07afddcd557441ddb7d72158de60ab8cb`, 14 of 26 committed definitions do not contain it because they were created before the file was introduced:
+
+| Directory | Definitions |
+| --- | --- |
+| `provision/` | `10f25620-vscopeocpv`, `264c5202-codvoqs`, `379b5094-ibmvirt`, `423d216c-vistergy`, `55b828b3-finaclen`, `639caee9-zenml1x3`, `835b1f6d-herouxz5`, `9d0b02b8-zoomcc42`, `aaa2607b-fortinet`, `bf2f78dc-vantiqfips`, `d8819a31-monetize` |
+| `archive/` | `f6f3eba2-redisvirt`, `test-cluster-01`, `virt-tier-cluster` |
+
+Aura reports these as `cluster_definition_incomplete` items with `missing_files: ["metadata.yaml"]`, includes them in combined inventory, and refuses diagnosis with `Git cluster definition files`. Aura does not modify `fleet-clusters`; resolution is a backfill by the repository owners.
+
 ## Operator Interface
 
 ### Which interface should ship first?

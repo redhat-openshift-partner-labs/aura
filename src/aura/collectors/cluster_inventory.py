@@ -88,7 +88,10 @@ class ClusterInventoryCollector:
     ) -> list[EvidenceItem]:
         git_items = self._grouped_items_by_cluster(
             git_snapshot,
-            kinds={"cluster_definition"},
+            kinds={
+                "cluster_definition",
+                "cluster_definition_incomplete",
+            },
         )
         openshift_items = self._items_by_cluster(
             openshift_snapshot,
@@ -153,6 +156,7 @@ class ClusterInventoryCollector:
                 ),
                 "definition_statuses": definition_statuses,
                 "definition_conflict": definition_conflict,
+                "definition_kind": git_item.kind if git_item else None,
                 "tier": display_state.get("tier"),
                 "cloud_provider": display_state.get("cloud_provider"),
                 "region": display_state.get("region"),
@@ -327,6 +331,8 @@ class ClusterInventoryCollector:
             )
         if openshift_item is None:
             return "missing-openshift"
+        if git_item.kind != "cluster_definition":
+            return "incomplete-definition"
         if desired_state != actual_state:
             return "detected"
         return "none"
