@@ -9,5 +9,6 @@ __all__ = [
     "openshift_cli_tekton_client",
     "openshift_inventory",
     "tekton_inventory",
+    "workflow_inventory",
 ]
 

@@ -21,6 +21,7 @@ from aura.collectors.openshift_cli_tekton_client import (
 )
 from aura.collectors.openshift_inventory import OpenShiftInventoryCollector
 from aura.collectors.tekton_inventory import TektonInventoryCollector
+from aura.collectors.workflow_inventory import WorkflowInventoryCollector
 from aura.cwa_store import (
     CWASnapshotAlreadyStored,
     CWATraceAlreadyStored,
@@ -160,6 +161,12 @@ def _add_workflow_inspect_arguments(
         type=Path,
         required=True,
         help="Path to a read-only OpenShift kubeconfig",
+    )
+    parser.add_argument(
+        "--fleet-clusters",
+        type=Path,
+        required=False,
+        help="Path to the fleet-clusters Git checkout",
     )
     parser.add_argument(
         "--namespace",
@@ -326,11 +333,23 @@ def _selected_workflow_collector(
 ) -> EvidenceCollector:
     if collector is not None:
         return collector
-    return TektonInventoryCollector(
-        client=OpenShiftCLITektonClient(
-            kubeconfig_path=args.openshift_kubeconfig,
-            namespace=args.namespace,
-        )
+    return WorkflowInventoryCollector(
+        git_collector=(
+            GitInventoryCollector(args.fleet_clusters)
+            if args.fleet_clusters is not None
+            else None
+        ),
+        openshift_collector=OpenShiftInventoryCollector(
+            client=OpenShiftCLIInventoryClient(
+                kubeconfig_path=args.openshift_kubeconfig,
+            )
+        ),
+        tekton_collector=TektonInventoryCollector(
+            client=OpenShiftCLITektonClient(
+                kubeconfig_path=args.openshift_kubeconfig,
+                namespace=args.namespace,
+            )
+        ),
     )
 
 

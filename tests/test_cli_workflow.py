@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, final
 from uuid import UUID, uuid5
 
 import aura.cli as cli
 from aura.cli import main
+from test_cluster_inventory_collector import (
+    definition,
+    git_collector,
+)
+from test_openshift_inventory_collector import FakeOpenShiftClient
 
 
 @final
@@ -54,45 +58,112 @@ class FakeOpenShiftCLITektonClient:
         return "pipelineruns=789;taskruns=790"
 
 
-def test_cli_workflow_inspect_uses_tekton_collector(
+def fake_inventory_client(**kwargs: object) -> FakeOpenShiftClient:
+    return FakeOpenShiftClient()
+
+
+def fake_git_collector(root: Path):
+    return git_collector(definition("example"))
+
+
+def run_workflow_inspect(
     tmp_path: Path,
     capsys,
     monkeypatch,
-) -> None:
+    *,
+    with_git: bool,
+) -> tuple[int, dict, str]:
     kubeconfig = tmp_path / "aura-readonly"
     kubeconfig.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        cli,
+        "OpenShiftCLIInventoryClient",
+        fake_inventory_client,
+    )
     monkeypatch.setattr(
         cli,
         "OpenShiftCLITektonClient",
         FakeOpenShiftCLITektonClient,
     )
-
-    exit_code = main(
+    arguments = [
+        "workflow",
+        "inspect",
+        "--openshift-kubeconfig",
+        str(kubeconfig),
+    ]
+    if with_git:
+        monkeypatch.setattr(
+            cli,
+            "GitInventoryCollector",
+            fake_git_collector,
+        )
+        arguments.extend(["--fleet-clusters", str(tmp_path)])
+    arguments.extend(
         [
-            "workflow",
-            "inspect",
-            "--openshift-kubeconfig",
-            str(kubeconfig),
             "--operator",
             "operator@example.com",
             "--idempotency-key",
             "test-key",
-        ],
+        ]
+    )
+    exit_code = main(
+        arguments,
         command_id_factory=lambda: UUID(
             "00000000-0000-0000-0000-000000000001"
         ),
     )
+    captured = capsys.readouterr()
+    return exit_code, json.loads(captured.out), captured.err
+
+
+def test_cli_workflow_inspect_uses_correlated_collector(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    exit_code, snapshot, stderr = run_workflow_inspect(
+        tmp_path,
+        capsys,
+        monkeypatch,
+        with_git=False,
+    )
 
     assert exit_code == 0
-    captured = capsys.readouterr()
-    snapshot = json.loads(captured.out)
-    assert snapshot["collector"] == "tekton_inventory"
-    assert snapshot["source"] == "tekton"
+    assert snapshot["collector"] == "workflow_inventory"
+    assert snapshot["source"] == "openshift+tekton"
     assert snapshot["source_version"] == (
-        "pipelineruns=789;taskruns=790"
+        "openshift=123;tekton=pipelineruns=789;taskruns=790"
     )
-    assert snapshot["items"][0]["kind"] == "pipeline_run"
-    assert captured.err == ""
+    assert snapshot["items"][0]["kind"] == "cluster_actual_state"
+    assert snapshot["items"][-1]["kind"] == "workflow_view"
+    assert stderr == ""
+
+
+def test_cli_workflow_inspect_returns_correlated_view(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    exit_code, snapshot, _ = run_workflow_inspect(
+        tmp_path,
+        capsys,
+        monkeypatch,
+        with_git=True,
+    )
+
+    assert exit_code == 0
+    assert snapshot["collector"] == "workflow_inventory"
+    assert snapshot["source"] == "git+openshift+tekton"
+    assert snapshot["source_version"] == (
+        "git=fleet-clusters-version;openshift=123;"
+        "tekton=pipelineruns=789;taskruns=790"
+    )
+    view = snapshot["items"][-1]
+    assert view["kind"] == "workflow_view"
+    assert view["data"]["related_cluster"] == "example"
+    assert view["data"]["next_diagnostic_step"] == (
+        "Inspect PipelineRun conditions and events."
+    )
 
 
 def test_cli_workflow_inspect_persists_snapshot_and_audit(
@@ -104,6 +175,11 @@ def test_cli_workflow_inspect_persists_snapshot_and_audit(
     kubeconfig.write_text("{}", encoding="utf-8")
     snapshot_dir = tmp_path / "snapshots"
     audit_dir = tmp_path / "audit"
+    monkeypatch.setattr(
+        cli,
+        "OpenShiftCLIInventoryClient",
+        fake_inventory_client,
+    )
     monkeypatch.setattr(
         cli,
         "OpenShiftCLITektonClient",
@@ -151,4 +227,4 @@ def test_cli_workflow_inspect_persists_snapshot_and_audit(
         UUID("00000000-0000-0000-0000-000000000001")
     )
     assert event["event_type"] == "evidence_collected"
-    assert event["data"]["collector"] == "tekton_inventory"
+    assert event["data"]["collector"] == "workflow_inventory"
