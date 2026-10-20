@@ -130,33 +130,16 @@ class ClusterStateCollector:
                     f"cluster-state-correlation:{self._cluster_name}",
                 ),
                 kind="cluster_state_correlation",
-                data={
-                    "cluster_name": self._cluster_name,
-                    "namespace": namespace,
-                    "git_evidence_id": (
-                        str(git_items[0].item_id)
-                        if len(git_items) == 1
-                        else None
-                    ),
-                    "git_evidence_ids": [
-                        str(item.item_id) for item in git_items
-                    ],
-                    "definition_conflict": len(git_items) > 1,
-                    "openshift_evidence_id": (
-                        str(openshift_item.item_id)
-                        if openshift_item is not None
-                        else None
-                    ),
-                    "pipeline_run_evidence_ids": [
-                        str(item.item_id)
-                        for item in selected_pipeline_items
-                    ],
-                    "deprovision_status": status,
-                    "deprovision_sentinel_evidence_ids": [
-                        str(item.item_id) for item in sentinel_items
-                    ],
-                    "missing_evidence": missing_evidence,
-                },
+                data=_correlation_data(
+                    cluster_name=self._cluster_name,
+                    namespace=namespace,
+                    git_items=git_items,
+                    openshift_item=openshift_item,
+                    pipeline_items=selected_pipeline_items,
+                    sentinel_items=sentinel_items,
+                    deprovision_state=status,
+                    missing_evidence=missing_evidence,
+                ),
             )
         )
 
@@ -319,3 +302,36 @@ def _included_redactions(
             ),
         }
     )
+
+
+def _evidence_ids(items: list[EvidenceItem]) -> list[str]:
+    return [str(item.item_id) for item in items]
+
+
+def _correlation_data(
+    *,
+    cluster_name: str,
+    namespace: object,
+    git_items: list[EvidenceItem],
+    openshift_item: EvidenceItem | None,
+    pipeline_items: list[EvidenceItem],
+    sentinel_items: list[EvidenceItem],
+    deprovision_state: str | None,
+    missing_evidence: list[str],
+) -> dict[str, object]:
+    return {
+        "cluster_name": cluster_name,
+        "namespace": namespace,
+        "git_evidence_id": (
+            str(git_items[0].item_id) if len(git_items) == 1 else None
+        ),
+        "git_evidence_ids": _evidence_ids(git_items),
+        "definition_conflict": len(git_items) > 1,
+        "openshift_evidence_id": (
+            str(openshift_item.item_id) if openshift_item is not None else None
+        ),
+        "pipeline_run_evidence_ids": _evidence_ids(pipeline_items),
+        "deprovision_status": deprovision_state,
+        "deprovision_sentinel_evidence_ids": _evidence_ids(sentinel_items),
+        "missing_evidence": missing_evidence,
+    }

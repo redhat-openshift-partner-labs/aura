@@ -101,16 +101,6 @@ class TektonInventoryCollector:
             (self._task_run_summary(task_run) for task_run in task_runs),
             key=lambda summary: summary["name"],
         )
-        params = redact_parameters(
-            {
-                str(param.get("name", "")): param.get("value")
-                for param in spec.get("params", [])
-            }
-        )
-        redactions.extend(
-            f"{pipeline_run_redaction_prefix(namespace, name)}.params.{field}"
-            for field in params.redacted_fields
-        )
         failed_task_run = next(
             (
                 task_run
@@ -127,12 +117,11 @@ class TektonInventoryCollector:
                 "pipeline_run_name": name,
                 "pipeline_run_id": str(metadata.get("uid", "")),
                 "namespace": namespace,
-                "cluster_name": self._param_value(
-                    spec,
-                    "cluster-name",
-                ),
+                "cluster_name": _param_value(spec, "cluster-name"),
                 "pipeline_name": spec.get("pipelineRef", {}).get("name", ""),
-                "params": params.value,
+                "params": _redacted_params(
+                    spec, namespace, name, redactions
+                ),
                 "workspaces": [
                     _workspace_binding(workspace)
                     for workspace in spec.get("workspaces", [])
@@ -151,13 +140,6 @@ class TektonInventoryCollector:
                 ),
             },
         )
-
-    @staticmethod
-    def _param_value(spec: dict[str, Any], name: str) -> Any:
-        for param in spec.get("params", []):
-            if param.get("name") == name:
-                return param.get("value")
-        return None
 
     @staticmethod
     def _task_runs_by_pipeline(
@@ -233,6 +215,32 @@ class TektonInventoryCollector:
         if condition.get("status") == "False":
             return "Failed"
         return "Unknown"
+
+
+def _param_value(spec: dict[str, Any], name: str) -> Any:
+    for param in spec.get("params", []):
+        if param.get("name") == name:
+            return param.get("value")
+    return None
+
+
+def _redacted_params(
+    spec: dict[str, Any],
+    namespace: str,
+    name: str,
+    redactions: list[str],
+) -> dict[str, Any]:
+    params = redact_parameters(
+        {
+            str(param.get("name", "")): param.get("value")
+            for param in spec.get("params", [])
+        }
+    )
+    redactions.extend(
+        f"{pipeline_run_redaction_prefix(namespace, name)}.params.{field}"
+        for field in params.redacted_fields
+    )
+    return params.value
 
 
 def pipeline_run_redaction_prefix(namespace: str, name: str) -> str:

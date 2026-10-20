@@ -68,14 +68,9 @@ class ClusterStateDiagnosisModel:
             items_by_id,
             "openshift_evidence_id",
         )
-        pipeline_items = [
-            items_by_id[UUID(value)]
-            for value in correlation.data.get(
-                "pipeline_run_evidence_ids",
-                [],
-            )
-            if UUID(value) in items_by_id
-        ]
+        pipeline_items = _referenced_items(
+            correlation, items_by_id, "pipeline_run_evidence_ids"
+        )
         missing_evidence = list(
             correlation.data.get("missing_evidence", []),
         )
@@ -103,13 +98,9 @@ class ClusterStateDiagnosisModel:
         )
         pipeline_item = _primary_pipeline_item(pipeline_items)
         cluster_name = str(correlation.data["cluster_name"])
-        sentinels = [
-            items_by_id[UUID(value)]
-            for value in correlation.data.get(
-                "deprovision_sentinel_evidence_ids", []
-            )
-            if UUID(value) in items_by_id
-        ]
+        sentinels = _referenced_items(
+            correlation, items_by_id, "deprovision_sentinel_evidence_ids"
+        )
         facts.extend(_sentinel_facts(sentinels, cluster_name))
         inferences = _inferences(
             pipeline_item,
@@ -132,15 +123,7 @@ class ClusterStateDiagnosisModel:
             cluster_name=cluster_name,
         )
         if deprovision is not None:
-            summary, recommended_inspection, deprovision_inferences = (
-                deprovision
-            )
-            inferences = [
-                *deprovision_inferences,
-                *_inferences(
-                    pipeline_item, cluster_name=cluster_name, provisioned=True
-                ),
-            ]
+            summary, recommended_inspection, inferences = deprovision
         confidence = {"Failed": 0.8, "Succeeded": 0.9}.get(
             str(pipeline_item.data.get("status")),
             0.6,
@@ -354,6 +337,18 @@ def _summary(
     )
 
 
+def _referenced_items(
+    correlation: EvidenceItem,
+    items_by_id: dict[UUID, EvidenceItem],
+    field: str,
+) -> list[EvidenceItem]:
+    return [
+        items_by_id[UUID(value)]
+        for value in correlation.data.get(field, [])
+        if UUID(value) in items_by_id
+    ]
+
+
 def _outcome(pipeline_item: EvidenceItem) -> str:
     return {
         "Failed": "failed",
@@ -386,6 +381,28 @@ def _deprovision_answer(
 ) -> tuple[str, RecommendedInspection, list[DiagnosisInference]] | None:
     if status not in DEPROVISION_REQUESTED:
         return None
+    summary, inspection, inferences = _deprovision_text(
+        status, sentinels, pipeline_item, cluster_name=cluster_name
+    )
+    return (
+        summary,
+        inspection,
+        [
+            *inferences,
+            *_inferences(
+                pipeline_item, cluster_name=cluster_name, provisioned=True
+            ),
+        ],
+    )
+
+
+def _deprovision_text(
+    status: object,
+    sentinels: list[EvidenceItem],
+    pipeline_item: EvidenceItem,
+    *,
+    cluster_name: str,
+) -> tuple[str, RecommendedInspection, list[DiagnosisInference]]:
     paths = ", ".join(str(item.data["path"]) for item in sentinels)
     name = pipeline_item.data.get("pipeline_run_name")
     run = f"PipelineRun {name} {_outcome(pipeline_item)}"
