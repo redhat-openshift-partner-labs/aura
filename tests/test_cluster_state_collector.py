@@ -497,6 +497,39 @@ def test_cluster_state_collector_expects_no_openshift_after_deprovision(
     assert correlation.data["missing_evidence"] == []
 
 
+@pytest.mark.parametrize(
+    ("metadata", "kind"),
+    [
+        (None, "cluster_definition_incomplete"),
+        ("platform: [aws\n", "cluster_definition_invalid"),
+    ],
+)
+def test_cluster_state_collector_explains_deprovision_of_legacy_definition(
+    tmp_path: Path,
+    metadata: str | None,
+    kind: str,
+) -> None:
+    write_cluster(tmp_path)
+    metadata_path = tmp_path / "provision" / "example" / "metadata.yaml"
+    if metadata is None:
+        metadata_path.unlink()
+    else:
+        metadata_path.write_text(metadata, encoding="utf-8")
+    (tmp_path / "deprovision").mkdir()
+    (tmp_path / "deprovision" / "example").write_text("", encoding="utf-8")
+    commit_repository(tmp_path)
+
+    snapshot = collect_cluster_state(
+        git_collector=GitInventoryCollector(tmp_path),
+        openshift_collector=EmptyCollector(),
+        tekton_collector=MultipleTektonCollector(),
+    )
+
+    assert snapshot.items[0].kind == kind
+    assert snapshot.items[-1].data["deprovision_status"] == "stranded"
+    assert snapshot.items[-1].data["missing_evidence"] == []
+
+
 def test_cluster_state_collector_requires_openshift_for_leftover_sentinel(
     tmp_path: Path,
 ) -> None:

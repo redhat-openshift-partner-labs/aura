@@ -106,8 +106,8 @@ Model output is untrusted data. Pydantic validates the exact response shape, con
 | Missing evidence | Refusal message component |
 | --- | --- |
 | Git definition | `Git cluster definition` |
-| Git required files | `Git cluster definition files` |
-| Interpretable Git definition | `Valid Git cluster definition` |
+| Git required files, unless deprovision is requested | `Git cluster definition files` |
+| Interpretable Git definition, unless deprovision is requested | `Valid Git cluster definition` |
 | Single Git definition | `Conflicting Git cluster definitions` |
 | Selected PipelineRun | `Selected Tekton PipelineRun NAME_OR_UID` |
 | OpenShift `Provisioned` condition | `OpenShift Provisioned condition` |

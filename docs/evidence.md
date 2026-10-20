@@ -181,7 +181,7 @@ Cluster-state diagnosis rules:
 - Conflicting Git definitions, incomplete definitions, invalid definitions, and a missing OpenShift `Provisioned` condition cause refusal.
 - A non-provisioned cluster receives a summary that says it is not provisioned, a fact citing its `Provisioned` condition, and a read-only inspection recommendation.
 - A failed PipelineRun may be linked to non-provisioning as an inference, not as a fact.
-- When `deprovision_status` is `pending`, `archive-pending`, or `stranded`, missing OpenShift resources are expected and do not cause refusal. Each sentinel is cited as a fact, and the summary describes the deprovision state:
+- When `deprovision_status` is `pending`, `archive-pending`, or `stranded`, missing OpenShift resources and an incomplete or invalid definition do not cause refusal, because neither affects the deprovision explanation. Conflicting definitions still cause refusal. Each sentinel is cited as a fact, and the summary describes the deprovision state:
 
 | Deprovision status | Summary | Inference |
 | --- | --- | --- |

@@ -254,6 +254,8 @@ class ClusterStateCollector:
             missing.append("Conflicting Git cluster definitions")
         elif not git_items:
             missing.append("Git cluster definition")
+        elif deprovision_requested:
+            pass
         elif git_items[0].kind == "cluster_definition_incomplete":
             missing.append("Git cluster definition files")
         elif git_items[0].kind == "cluster_definition_invalid":
