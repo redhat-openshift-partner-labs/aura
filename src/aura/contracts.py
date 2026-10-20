@@ -18,6 +18,10 @@ from pydantic import (
 )
 
 
+ARCHIVE_SUFFIX = "-archive"
+"""Suffix the fleet-clusters archive Action requires on deprovision sentinels."""
+
+
 class CommandType(StrEnum):
     """Command types supported by the Aura control plane."""
 
@@ -269,6 +273,7 @@ def compute_audit_event_digest(event: AuditEvent) -> str:
 
 
 __all__ = [
+    "ARCHIVE_SUFFIX",
     "AuditEvent",
     "AuditEventType",
     "CommandEnvelope",

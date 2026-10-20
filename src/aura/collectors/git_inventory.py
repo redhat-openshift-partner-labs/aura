@@ -10,10 +10,7 @@ from uuid import UUID, uuid4, uuid5
 
 import yaml
 
-from aura.contracts import EvidenceItem, EvidenceSnapshot
-
-
-ARCHIVE_SUFFIX = "-archive"
+from aura.contracts import ARCHIVE_SUFFIX, EvidenceItem, EvidenceSnapshot
 
 
 class GitInventoryError(RuntimeError):

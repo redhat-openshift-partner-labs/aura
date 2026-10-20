@@ -217,6 +217,24 @@ A `leftover` or `orphaned` sentinel does not relax refusal.
 - Evidence snapshot digest.
 - CWA trace ID.
 
+## Proposal
+
+A `Proposal` is an immutable, evidence-linked change that Phase 2 never executes. Its fields follow the [Phase 2 proposal contract](plans/05-phase-2-proposals.md#proposal-contract), plus `created_at` and `status`, which is always `proposal_ready` in Phase 2. `proposal_digest` is a SHA-256 digest over canonical JSON of every other field; a changed field under an old digest fails validation.
+
+The contract enforces these invariants regardless of which generator produced the proposal:
+
+| Rule | Scaffold | Deprovision | Cluster edit | Post-provision rerun |
+| --- | --- | --- | --- | --- |
+| Artifact | `patch` | `patch` | `patch` | `pipeline_run` |
+| `base_commit` | Required | Required | Required | Absent |
+| Patch scope | Adds only files under `provision/<id>/` | Adds only `deprovision/<id>-archive` | Adds or modifies files under `provision/<id>/` | None |
+| Commit message | Names the cluster; no `[skip-provision]` | Names the cluster; no `[skip-deprovision]` | Names the cluster; contains `[skip-provision]` when a file is added | None |
+| `trigger_effect` | `pre-provision`, `provision`, `post-provision` | `deprovision`, `archive-cluster` | None | `post-provision` |
+| `reversibility` | `reversible_before_merge` | `reversible_before_merge` | `reversible` | `irreversible` |
+| Other | Requires `scaffold_commit` | | | `PipelineRun` for the `post-provision` Pipeline, `generateName` in `openshift-pipelines`, `cluster-name` equal to the target, no secret-named parameters or fields |
+
+Patches must be Git-format diffs. Every proposal names exactly one cluster, and every patched path must belong to it.
+
 ## Audit Events
 
 Audit events are immutable and reference the previous event where applicable:

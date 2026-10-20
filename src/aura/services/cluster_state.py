@@ -5,8 +5,12 @@ from typing import final
 
 from aura.authorization import OperatorRole
 from aura.collectors.deprovision import DEPROVISION_REQUESTED
-from aura.collectors.git_inventory import ARCHIVE_SUFFIX
-from aura.contracts import CommandEnvelope, CommandType, EvidenceItem
+from aura.contracts import (
+    ARCHIVE_SUFFIX,
+    CommandEnvelope,
+    CommandType,
+    EvidenceItem,
+)
 from aura.cwa import CWASnapshot
 from aura.diagnosis import (
     DiagnosisEvidenceUnavailable,
