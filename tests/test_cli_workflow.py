@@ -282,7 +282,7 @@ def test_cli_workflow_inspect_persists_snapshot_and_audit(
 
     assert snapshot_path.is_file()
     assert json.loads(snapshot_path.read_text(encoding="utf-8")) == snapshot
-    assert len(event_files) == 1
+    assert len(event_files) == 2
     event = json.loads(event_files[0].read_text(encoding="utf-8"))
     expected_event_id = uuid5(
         UUID("00000000-0000-0000-0000-000000000001"),

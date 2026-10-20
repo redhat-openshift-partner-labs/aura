@@ -66,7 +66,7 @@ def test_workflow_service_collects_evidence_and_succeeds() -> None:
         {OperatorRole.VIEWER},
     )
 
-    assert result.command.status is CommandState.SUCCEEDED
+    assert result.command.status is CommandState.ASSEMBLING_CONTEXT
     assert result.snapshot.collector == "tekton_inventory"
 
 

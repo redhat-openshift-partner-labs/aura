@@ -13,8 +13,8 @@ All successful commands print JSON to standard output.
 | Flag | Required | Default | Acceptable values | Purpose |
 | --- | --- | --- | --- | --- |
 | `--operator` | Yes | None | Any non-empty operator identifier | Recorded as the command actor |
-| `--idempotency-key` | Yes | None | Any non-empty unique key | Recorded in the command envelope |
-| `--command-dir` | Yes | None | Writable directory | Stores completed idempotency-key records |
+| `--idempotency-key` | Yes | None | Any non-empty key unique to one operator request | Recorded in the command envelope |
+| `--command-dir` | Yes | None | Writable directory | Stores terminal idempotency-key records |
 | `--role` | No | `viewer` | `viewer`, `proposer`, `approver`, `executor`, `admin` | Roles used for authorization; may be repeated |
 | `--query` | No | Command-specific | Any string | Recorded in command input and CWA interaction slot |
 | `--snapshot-dir` | No | None | Writable directory | Store the evidence snapshot |
@@ -22,7 +22,7 @@ All successful commands print JSON to standard output.
 
 Phase 1 commands are authorized for `viewer` or `admin`. Other roles are rejected.
 
-Completed commands store their idempotency key in `--command-dir`. Reusing a key that has already completed exits with code `2` before evidence collection; failed commands may be retried with the same key.
+Every command stores one terminal idempotency-key record in `--command-dir`: `succeeded`, `failed`, or `refused`. Reusing the same key for the same request exits with code `2` before evidence collection and reports the prior terminal state. Reusing it for a different request is rejected as belonging to a different request. A new attempt requires a new key. Concurrent uses of the same key are serialized by the command store, and only one execution collects evidence.
 
 ## `inventory list`
 
@@ -52,7 +52,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --source git \
   --fleet-clusters ../fleet-clusters \
   --operator operator@example.com \
-  --idempotency-key git-inventory-001
+  --idempotency-key git-inventory-001 \
   --command-dir ./local/commands
 ```
 
@@ -68,7 +68,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --source openshift \
   --openshift-kubeconfig "$HOME/.kube/aura-readonly" \
   --operator operator@example.com \
-  --idempotency-key openshift-inventory-001
+  --idempotency-key openshift-inventory-001 \
   --command-dir ./local/commands
 ```
 
@@ -85,7 +85,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --fleet-clusters ../fleet-clusters \
   --openshift-kubeconfig "$HOME/.kube/aura-readonly" \
   --operator operator@example.com \
-  --idempotency-key combined-inventory-001
+  --idempotency-key combined-inventory-001 \
   --command-dir ./local/commands
 ```
 
@@ -107,7 +107,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura workflow inspect \
   --openshift-kubeconfig "$HOME/.kube/aura-readonly" \
   --fleet-clusters ../fleet-clusters \
   --operator operator@example.com \
-  --idempotency-key workflow-001
+  --idempotency-key workflow-001 \
   --command-dir ./local/commands
 ```
 
@@ -147,7 +147,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura diagnose state \
   --cwa-dir ./local/cwa \
   --diagnosis-dir ./local/diagnoses \
   --operator operator@example.com \
-  --idempotency-key diagnosis-001
+  --idempotency-key diagnosis-001 \
   --command-dir ./local/commands
 ```
 
@@ -166,7 +166,7 @@ PipelineRun selection uses the latest matching run by `start_time` by default. P
 | Exit code | Meaning |
 | --- | --- |
 | `0` | Success |
-| `2` | Argument error, unauthorized command, diagnosis refusal, or duplicate record |
+| `2` | Argument error, unauthorized command, execution failure, diagnosis refusal, duplicate record, or idempotency-key reuse |
 | Other non-zero | Unhandled collector or process failure |
 
 An `oc` failure is reported as a concise CLI error with exit code `2`; no partial JSON is printed.

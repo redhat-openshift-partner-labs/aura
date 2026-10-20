@@ -16,7 +16,9 @@ All services extend `EvidenceCommandService`. Before collection they:
 2. Check the command type.
 3. Transition the command from `received` to `collecting_evidence`.
 4. Call the selected collector.
-5. Transition the command to `succeeded`.
+5. Transition the command to `assembling_context`.
+
+The CLI owns the final terminal transition to `succeeded`, `failed`, or `refused` after collection, optional CWA assembly, diagnosis, persistence, and output.
 
 ## Collector Wiring
 
@@ -87,17 +89,20 @@ PipelineRun selection defaults to the latest matching run by `start_time`. The `
 | `--cwa-dir DIR` | `JsonCWATraceStore` | `DIR/traces/TRACE_ID.json` |
 | `--diagnosis-dir DIR` | `JsonDiagnosisStore` | `DIR/CWA_SNAPSHOT_ID.json` |
 
-Stores create parent directories and open files with exclusive-create mode. Existing IDs or completed keys are treated as errors rather than overwrites.
+Stores create parent directories and open files with exclusive-create mode. Existing IDs or terminal command keys are treated as errors rather than overwrites.
 
-Before dispatch, the CLI checks `--command-dir` for the requested idempotency key. A completed key exits with code `2` before collection. A command key is stored only after all requested evidence, CWA, diagnosis, and persistence work succeeds.
+The CLI locks `--command-dir`, checks the requested idempotency key, executes the command, and writes the terminal record while holding the lock. A terminal key with the same request digest exits with code `2` before collection. A terminal key with a different request digest is rejected. Failed and refused commands are terminal; a new attempt requires a new key.
 
 ## Audit Chain
 
 | Event | Emitted when |
 | --- | --- |
+| `command_received` | The CLI starts a command after the idempotency-key check |
 | `evidence_collected` | A collector returns a snapshot |
 | `context_assembled` | A CWA snapshot and trace are stored |
 | `model_called` | A diagnosis is produced |
+| `command_failed` | A command reaches the terminal failed state |
+| `command_refused` | A diagnosis command reaches the terminal refused state |
 
 Context and model events reference the previous event ID, forming an audit chain for one command.
 

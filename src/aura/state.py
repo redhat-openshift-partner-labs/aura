@@ -50,8 +50,7 @@ class CommandStateMachine:
         CommandState.EXECUTING: frozenset(
             {CommandState.SUCCEEDED, CommandState.FAILED}
         ),
-        CommandState.FAILED: frozenset({CommandState.AWAITING_RETRY}),
-        CommandState.AWAITING_RETRY: frozenset({CommandState.EXECUTING}),
+        CommandState.FAILED: frozenset(),
         CommandState.SUCCEEDED: frozenset(),
         CommandState.REJECTED: frozenset(),
         CommandState.REFUSED: frozenset(),

@@ -15,6 +15,7 @@ from aura.audit_store import (
 from aura.authorization import OperatorRole
 from aura.command_store import (
     CommandAlreadyStored,
+    CommandNotTerminal,
     CommandNotFound,
     JsonCommandStore,
 )
@@ -87,7 +88,7 @@ from aura.services.workflow import (
     UnauthorizedWorkflowCommand,
     WorkflowService,
 )
-from aura.state import InvalidCommandTransition
+from aura.state import CommandStateMachine, InvalidCommandTransition
 
 
 def _add_evidence_output_arguments(
@@ -323,17 +324,7 @@ def _argument_error(args: argparse.Namespace) -> str | None:
     return None
 
 
-def _duplicate_command_exists(
-    args: argparse.Namespace,
-) -> bool:
-    try:
-        JsonCommandStore(args.command_dir).load(args.idempotency_key)
-    except CommandNotFound:
-        return False
-    return True
-
-
-def _store_completed_command(
+def _store_terminal_command(
     args: argparse.Namespace,
     command: CommandEnvelope,
 ) -> str | None:
@@ -341,23 +332,108 @@ def _store_completed_command(
         JsonCommandStore(args.command_dir).save(command)
     except CommandAlreadyStored as error:
         return str(error)
+    except CommandNotTerminal as error:
+        return str(error)
     return None
+
+
+def _duplicate_command_error(
+    store: JsonCommandStore,
+    command: CommandEnvelope,
+) -> str | None:
+    try:
+        existing = store.load(command.idempotency_key)
+    except CommandNotFound:
+        return None
+    if existing.request_digest != command.request_digest:
+        return (
+            "idempotency key belongs to a different request: "
+            f"{command.idempotency_key}"
+        )
+    if existing.status is CommandState.REFUSED:
+        return (
+            "idempotency key already refused: "
+            f"{command.idempotency_key}"
+        )
+    if existing.status is CommandState.FAILED:
+        return (
+            "idempotency key already failed: "
+            f"{command.idempotency_key}"
+        )
+    return (
+        "idempotency key already succeeded: "
+        f"{command.idempotency_key}"
+    )
+
+
+def _execute_command(
+    args: argparse.Namespace,
+    command: CommandEnvelope,
+    action: Callable[[], int],
+) -> int:
+    store = JsonCommandStore(args.command_dir)
+    with store.lock():
+        duplicate_error = _duplicate_command_error(store, command)
+        if duplicate_error is not None:
+            print(f"aura: {duplicate_error}", file=sys.stderr)
+            return 2
+        return action()
 
 
 def _complete_command(
     args: argparse.Namespace,
-    result: EvidenceCommandResult,
+    command: CommandEnvelope,
     output: str,
 ) -> int:
-    command_store_error = _store_completed_command(
+    state_machine = CommandStateMachine()
+    succeeded = (
+        command
+        if command.status is CommandState.SUCCEEDED
+        else command.with_status(
+            state_machine.transition(
+                command.status,
+                CommandState.SUCCEEDED,
+            )
+        )
+    )
+    command_store_error = _store_terminal_command(
         args,
-        result.command,
+        succeeded,
     )
     if command_store_error is not None:
         print(f"aura: {command_store_error}", file=sys.stderr)
         return 2
     print(output)
     return 0
+
+
+def _fail_command(
+    args: argparse.Namespace,
+    command: CommandEnvelope,
+    error: str,
+    *,
+    previous_event_id: UUID | None,
+    clock: Callable[[], datetime],
+) -> int:
+    state_machine = CommandStateMachine()
+    failed = command.with_status(
+        state_machine.transition(command.status, CommandState.FAILED)
+    )
+    command_store_error = _store_terminal_command(args, failed)
+    if args.audit_dir is not None:
+        event = _command_terminal_audit_event(
+            failed,
+            AuditEventType.COMMAND_FAILED,
+            error,
+            previous_event_id=previous_event_id,
+            occurred_at=clock(),
+        )
+        try:
+            JsonAuditEventStore(args.audit_dir).save(event)
+        except AuditEventAlreadyStored as audit_error:
+            command_store_error = command_store_error or str(audit_error)
+    print(f"aura: {command_store_error or error}", file=sys.stderr)
+    return 2
 
 
 def _make_command(
@@ -381,24 +457,11 @@ def _make_command(
 def _run_evidence_command(
     action: Callable[[], EvidenceCommandResult],
     errors: tuple[type[Exception], ...],
-) -> EvidenceCommandResult | int:
+) -> EvidenceCommandResult | str:
     try:
         return action()
     except errors as error:
-        print(f"aura: {error}", file=sys.stderr)
-        return 2
-
-
-def _persist_command_evidence(
-    args: argparse.Namespace,
-    command: CommandEnvelope,
-    result: EvidenceCommandResult,
-) -> int | None:
-    _, persistence_error = _persist_evidence(args, command, result)
-    if persistence_error is not None:
-        print(f"aura: {persistence_error}", file=sys.stderr)
-        return 2
-    return None
+        return str(error)
 
 
 @dataclass(frozen=True)
@@ -410,6 +473,14 @@ class EvidenceCommandRoute:
         EvidenceCommandService,
     ]
     errors: tuple[type[Exception], ...]
+
+
+@dataclass(frozen=True)
+class AssembledCommandResult:
+    command: CommandEnvelope
+    answer: DiagnosisAnswer | None
+    refusal_error: str | None
+    last_event: AuditEvent | None
 
 
 def _run_simple_evidence_command(
@@ -428,41 +499,117 @@ def _run_simple_evidence_command(
         command_id_factory,
         clock,
     )
+    return _execute_command(
+        args,
+        command,
+        lambda: _run_simple_command(
+            args,
+            route,
+            selected_collector,
+            command,
+            roles={OperatorRole(role) for role in args.role},
+            assemble=assemble,
+            clock=clock,
+        ),
+    )
+
+
+def _run_simple_command(
+    args: argparse.Namespace,
+    route: EvidenceCommandRoute,
+    selected_collector: EvidenceCollector,
+    command: CommandEnvelope,
+    *,
+    roles: set[OperatorRole],
+    assemble: bool,
+    clock: Callable[[], datetime],
+) -> int:
     service = route.service_factory(selected_collector)
-    roles = {OperatorRole(role) for role in args.role}
+    received_event, received_error = _persist_command_received(
+        args,
+        command,
+    )
+    if received_error is not None:
+        return _fail_command(
+            args,
+            command,
+            received_error,
+            previous_event_id=(
+                received_event.event_id if received_event else None
+            ),
+            clock=clock,
+        )
+
     result = _run_evidence_command(
         lambda: service.run(command, roles),
         route.errors,
     )
-    if isinstance(result, int):
-        return result
-
-    persistence_error = _persist_command_evidence(
-        args,
-        command,
-        result,
-    )
-    if persistence_error is not None:
-        return persistence_error
-
-    if assemble and args.cwa_dir is not None:
-        _, assembly_error = _assemble_and_diagnose(
+    if isinstance(result, str):
+        return _fail_command(
             args,
             command,
             result,
+            previous_event_id=(
+                received_event.event_id if received_event else None
+            ),
+            clock=clock,
+        )
+
+    evidence_event, persistence_error = _persist_evidence(
+        args,
+        command,
+        result,
+        received_event.event_id if received_event else None,
+    )
+    if persistence_error is not None:
+        return _fail_command(
+            args,
+            result.command,
+            persistence_error,
+            previous_event_id=(
+                evidence_event.event_id if evidence_event else None
+            ),
+            clock=clock,
+        )
+
+    final_command = result.command
+
+    if assemble and args.cwa_dir is not None:
+        assembled, assembly_error = _assemble_and_diagnose(
+            args,
+            result,
             roles,
+            evidence_event,
             output_schema="inventory_list",
             diagnosis_model=None,
             always_diagnose=False,
             clock=clock,
         )
         if assembly_error is not None:
-            print(f"aura: {assembly_error}", file=sys.stderr)
-            return 2
+            return _fail_command(
+                args,
+                result.command,
+                assembly_error,
+                previous_event_id=(
+                    evidence_event.event_id if evidence_event else None
+                ),
+                clock=clock,
+            )
+        if assembled is None:
+            return _fail_command(
+                args,
+                result.command,
+                "CWA assembly did not return a command",
+                previous_event_id=(
+                    evidence_event.event_id if evidence_event else None
+                ),
+                clock=clock,
+            )
+        final_command = assembled.command
 
     return _complete_command(
         args,
-        result,
+        final_command,
         result.snapshot.model_dump_json(indent=2),
     )
 
@@ -708,10 +855,65 @@ def _diagnose_and_trace(
     return diagnosis_record, refusal_error, trace
 
 
+def _command_received_audit_event(
+    command: CommandEnvelope,
+) -> AuditEvent:
+    return AuditEvent(
+        event_id=uuid5(command.command_id, "command_received"),
+        command_id=command.command_id,
+        event_type=AuditEventType.COMMAND_RECEIVED,
+        occurred_at=command.created_at,
+        actor=command.operator_id,
+        data={
+            "command_type": command.command_type.value,
+            "request_digest": command.request_digest,
+        },
+    )
+
+
+def _command_terminal_audit_event(
+    command: CommandEnvelope,
+    event_type: AuditEventType,
+    reason: str,
+    *,
+    previous_event_id: UUID | None,
+    occurred_at: datetime,
+) -> AuditEvent:
+    return AuditEvent(
+        event_id=uuid5(command.command_id, event_type.value),
+        command_id=command.command_id,
+        event_type=event_type,
+        occurred_at=occurred_at,
+        actor=command.operator_id,
+        data={
+            "command_type": command.command_type.value,
+            "request_digest": command.request_digest,
+            "status": command.status.value,
+            "reason": reason,
+        },
+        previous_event_id=previous_event_id,
+    )
+
+
+def _persist_command_received(
+    args: argparse.Namespace,
+    command: CommandEnvelope,
+) -> tuple[AuditEvent | None, str | None]:
+    if args.audit_dir is None:
+        return None, None
+    event = _command_received_audit_event(command)
+    try:
+        JsonAuditEventStore(args.audit_dir).save(event)
+    except AuditEventAlreadyStored as error:
+        return None, str(error)
+    return event, None
+
+
 def _evidence_audit_event(
     command: CommandEnvelope,
     snapshot: EvidenceSnapshot,
     persisted: bool,
+    previous_event_id: UUID | None = None,
 ) -> AuditEvent:
     return AuditEvent(
         event_id=uuid5(
@@ -730,6 +932,7 @@ def _evidence_audit_event(
             "source_version": snapshot.source_version,
             "persisted": persisted,
         },
+        previous_event_id=previous_event_id,
     )
 
 
@@ -771,6 +974,7 @@ def _persist_evidence(
     args: argparse.Namespace,
     command: CommandEnvelope,
     result: EvidenceCommandResult,
+    previous_event_id: UUID | None,
 ) -> tuple[AuditEvent | None, str | None]:
     if args.snapshot_dir is not None:
         try:
@@ -786,6 +990,7 @@ def _persist_evidence(
             command,
             result.snapshot,
             args.snapshot_dir is not None,
+            previous_event_id,
         )
         try:
             JsonAuditEventStore(args.audit_dir).save(
@@ -799,20 +1004,17 @@ def _persist_evidence(
 
 def _assemble_and_diagnose(
     args: argparse.Namespace,
-    command: CommandEnvelope,
     result: EvidenceCommandResult,
     roles: set[OperatorRole],
+    evidence_audit_event: AuditEvent | None,
     *,
     output_schema: str,
     diagnosis_model: DiagnosisModel | None,
     always_diagnose: bool,
     clock: Callable[[], datetime],
-) -> tuple[DiagnosisAnswer | None, str | None]:
-    evidence_audit_event = _evidence_audit_event(
-        command,
-        result.snapshot,
-        args.snapshot_dir is not None,
-    )
+) -> tuple[AssembledCommandResult | None, str | None]:
+    if evidence_audit_event is None:
+        return None, "audit event is required for CWA assembly"
     assembly_request = CWAAssemblyRequest(
         command=result.command,
         evidence_snapshot=result.snapshot,
@@ -834,7 +1036,7 @@ def _assemble_and_diagnose(
         )
         diagnosis_record, refusal_error, trace = _diagnose_and_trace(
             args,
-            command.command_id,
+            result.command.command_id,
             assembly,
             diagnosis_model,
             always_diagnose,
@@ -850,7 +1052,7 @@ def _assemble_and_diagnose(
         return None, str(error)
 
     context_event = _context_audit_event(
-        command,
+        result.command,
         assembly,
         result.snapshot,
         evidence_audit_event.event_id,
@@ -862,7 +1064,7 @@ def _assemble_and_diagnose(
 
     if diagnosis_record is not None:
         model_event = _model_audit_event(
-            command,
+            result.command,
             diagnosis_record,
             assembly.trace.trace_id,
             context_event.event_id,
@@ -870,6 +1072,20 @@ def _assemble_and_diagnose(
         )
         try:
             JsonAuditEventStore(args.audit_dir).save(model_event)
+        except AuditEventAlreadyStored as error:
+            return None, str(error)
+
+    refusal_event: AuditEvent | None = None
+    if refusal_error is not None:
+        refusal_event = _command_terminal_audit_event(
+            result.command,
+            AuditEventType.COMMAND_REFUSED,
+            refusal_error,
+            previous_event_id=context_event.event_id,
+            occurred_at=clock(),
+        )
+        try:
+            JsonAuditEventStore(args.audit_dir).save(refusal_event)
         except AuditEventAlreadyStored as error:
             return None, str(error)
 
@@ -882,7 +1098,44 @@ def _assemble_and_diagnose(
         if diagnosis_record is not None
         else None
     )
-    return diagnosis_answer, refusal_error
+    state_machine = CommandStateMachine()
+    if diagnosis_record is not None:
+        model_called = result.command.with_status(
+            state_machine.transition(
+                result.command.status,
+                CommandState.MODEL_CALLED,
+            )
+        )
+        final_command = model_called.with_status(
+            state_machine.transition(
+                model_called.status,
+                CommandState.SUCCEEDED,
+            )
+        )
+    elif refusal_error is not None:
+        final_command = result.command.with_status(
+            state_machine.transition(
+                result.command.status,
+                CommandState.REFUSED,
+            )
+        )
+    else:
+        final_command = result.command.with_status(
+            state_machine.transition(
+                result.command.status,
+                CommandState.SUCCEEDED,
+            )
+        )
+
+    return (
+        AssembledCommandResult(
+            command=final_command,
+            answer=diagnosis_answer,
+            refusal_error=refusal_error,
+            last_event=refusal_event or context_event,
+        ),
+        None,
+    )
 
 
 def _run_diagnose_state(
@@ -904,9 +1157,40 @@ def _run_diagnose_state(
         command_id_factory=command_id_factory,
         clock=clock,
     )
+
+    def run_diagnosis() -> int:
+        return _run_diagnosis(args, command, collector, clock)
+
+    return _execute_command(
+        args,
+        command,
+        run_diagnosis,
+    )
+
+
+def _run_diagnosis(
+    args: argparse.Namespace,
+    command: CommandEnvelope,
+    collector: EvidenceCollector | None,
+    clock: Callable[[], datetime],
+) -> int:
     selected_collector = _selected_cluster_state_collector(args, collector)
     service = ClusterStateService(collector=selected_collector)
     roles = {OperatorRole(role) for role in args.role}
+    received_event, received_error = _persist_command_received(
+        args,
+        command,
+    )
+    if received_error is not None:
+        return _fail_command(
+            args,
+            command,
+            received_error,
+            previous_event_id=(
+                received_event.event_id if received_event else None
+            ),
+            clock=clock,
+        )
 
     result = _run_evidence_command(
         lambda: service.diagnose_state(command, roles),
@@ -917,45 +1201,87 @@ def _run_diagnose_state(
             OpenShiftCLIError,
         ),
     )
-    if isinstance(result, int):
-        return result
-
-    diagnosis_answer: DiagnosisAnswer | None = None
-    persistence_error = _persist_command_evidence(
-        args,
-        command,
-        result,
-    )
-    if persistence_error is not None:
-        return persistence_error
-
-    if args.cwa_dir is not None:
-        diagnosis_answer, assembly_error = _assemble_and_diagnose(
+    if isinstance(result, str):
+        return _fail_command(
             args,
             command,
             result,
+            previous_event_id=(
+                received_event.event_id if received_event else None
+            ),
+            clock=clock,
+        )
+
+    evidence_event, persistence_error = _persist_evidence(
+        args,
+        command,
+        result,
+        received_event.event_id if received_event else None,
+    )
+    if persistence_error is not None:
+        return _fail_command(
+            args,
+            result.command,
+            persistence_error,
+            previous_event_id=(
+                evidence_event.event_id if evidence_event else None
+            ),
+            clock=clock,
+        )
+
+    if args.cwa_dir is not None:
+        assembled, assembly_error = _assemble_and_diagnose(
+            args,
+            result,
             roles,
+            evidence_event,
             output_schema="diagnosis_state",
             diagnosis_model=ClusterStateDiagnosisModel(),
             always_diagnose=True,
             clock=clock,
         )
         if assembly_error is not None:
-            print(f"aura: {assembly_error}", file=sys.stderr)
-            return 2
-
-    if diagnosis_answer is None:
-        print(
-            "aura: --cwa-dir is required for diagnose state",
-            file=sys.stderr,
+            return _fail_command(
+                args,
+                result.command,
+                assembly_error,
+                previous_event_id=(
+                    evidence_event.event_id if evidence_event else None
+                ),
+                clock=clock,
+            )
+        if assembled is None or assembled.answer is None:
+            if assembled is not None and assembled.refusal_error:
+                final_command = assembled.command
+                command_store_error = _store_terminal_command(
+                    args,
+                    final_command,
+                )
+                print(
+                    f"aura: {command_store_error or assembled.refusal_error}",
+                    file=sys.stderr,
+                )
+                return 2
+            return _fail_command(
+                args,
+                result.command,
+                "CWA assembly did not return a diagnosis",
+                previous_event_id=(
+                    evidence_event.event_id if evidence_event else None
+                ),
+                clock=clock,
+            )
+        return _complete_command(
+            args,
+            assembled.command,
+            assembled.answer.model_dump_json(indent=2),
         )
-        return 2
 
-    return _complete_command(
-        args,
-        result,
-        diagnosis_answer.model_dump_json(indent=2),
+    print(
+        "aura: --cwa-dir is required for diagnose state",
+        file=sys.stderr,
     )
+    return 2
 
 
 def _dispatch_command(
@@ -965,14 +1291,6 @@ def _dispatch_command(
     command_id_factory: Callable[[], UUID],
     clock: Callable[[], datetime],
 ) -> int:
-    if _duplicate_command_exists(args):
-        print(
-            "aura: idempotency key already succeeded: "
-            f"{args.idempotency_key}",
-            file=sys.stderr,
-        )
-        return 2
-
     if args.command == "workflow":
         return _run_simple_evidence_command(
             args,

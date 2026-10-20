@@ -66,7 +66,7 @@ def test_inventory_service_collects_evidence_and_succeeds() -> None:
 
     result = service.list_inventory(command, {OperatorRole.VIEWER})
 
-    assert result.command.status is CommandState.SUCCEEDED
+    assert result.command.status is CommandState.ASSEMBLING_CONTEXT
     assert result.snapshot.command_id == command.command_id
     assert result.snapshot.collector == "git_inventory"
 

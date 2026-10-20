@@ -29,8 +29,6 @@ from aura.state import CommandStateMachine, InvalidCommandTransition
         (CommandState.APPROVED, CommandState.EXECUTING),
         (CommandState.EXECUTING, CommandState.SUCCEEDED),
         (CommandState.EXECUTING, CommandState.FAILED),
-        (CommandState.FAILED, CommandState.AWAITING_RETRY),
-        (CommandState.AWAITING_RETRY, CommandState.EXECUTING),
     ],
 )
 def test_valid_command_transitions(
@@ -74,6 +72,7 @@ def test_terminal_states_have_no_outgoing_transitions() -> None:
         CommandState.SUCCEEDED,
         CommandState.REJECTED,
         CommandState.REFUSED,
+        CommandState.FAILED,
     ):
         assert not any(
             machine.can_transition(terminal, candidate)

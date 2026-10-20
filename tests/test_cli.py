@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import final
@@ -8,8 +9,9 @@ from uuid import UUID, uuid5
 
 import aura.collectors.git_inventory as git_inventory
 from aura.cli import main
+from aura.command_store import JsonCommandStore
 from aura.collectors.git_inventory import GitInventoryCollector
-from aura.contracts import EvidenceSnapshot
+from aura.contracts import CommandState, EvidenceSnapshot
 from test_git_inventory_collector import commit_repository
 
 
@@ -114,6 +116,63 @@ def test_cli_inventory_list_suppresses_duplicate_idempotency_key(
     assert collector.calls == 1
 
 
+def test_cli_inventory_list_rejects_key_reused_for_different_request(
+    tmp_path,
+    capsys,
+) -> None:
+    collector = CountingCollector()
+    arguments = inventory_arguments(tmp_path)
+    changed_arguments = [
+        *arguments[:8],
+        "--query",
+        "different request",
+        *arguments[8:],
+    ]
+
+    first_exit_code = main(
+        arguments,
+        collector=collector,
+        command_id_factory=lambda: UUID(int=1),
+    )
+    capsys.readouterr()
+    second_exit_code = main(
+        changed_arguments,
+        collector=collector,
+        command_id_factory=lambda: UUID(int=2),
+    )
+    second_captured = capsys.readouterr()
+
+    assert first_exit_code == 0
+    assert second_exit_code == 2
+    assert second_captured.err == (
+        "aura: idempotency key belongs to a different request: test-key\n"
+    )
+    assert second_captured.out == ""
+    assert collector.calls == 1
+
+
+def test_cli_inventory_list_suppresses_concurrent_duplicate_key(
+    tmp_path,
+) -> None:
+    collector = CountingCollector()
+    arguments = inventory_arguments(tmp_path)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(
+                main,
+                arguments,
+                collector=collector,
+                command_id_factory=lambda: UUID(int=1),
+            )
+            for _ in range(2)
+        ]
+        exit_codes = [future.result() for future in futures]
+
+    assert sorted(exit_codes) == [0, 2]
+    assert collector.calls == 1
+
+
 def test_cli_inventory_list_writes_snapshot_json(
     tmp_path,
     capsys,
@@ -127,8 +186,10 @@ def test_cli_inventory_list_writes_snapshot_json(
     assert exit_code == 0
     captured = capsys.readouterr()
     snapshot = json.loads(captured.out)
+    command = JsonCommandStore(tmp_path / "commands").load("test-key")
     assert snapshot["command_id"] == str(UUID(int=1))
     assert snapshot["collector"] == "git_inventory"
+    assert command.status is CommandState.SUCCEEDED
     assert captured.err == ""
 
 
@@ -190,13 +251,30 @@ def test_cli_inventory_list_records_audit_event(
     captured = capsys.readouterr()
     snapshot = json.loads(captured.out)
     event_files = list(audit_dir.glob("*.json"))
-    assert len(event_files) == 1
+    assert len(event_files) == 2
 
-    event = json.loads(event_files[0].read_text(encoding="utf-8"))
+    events = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted(event_files)
+    ]
+    received_event = next(
+        event
+        for event in events
+        if event["event_type"] == "command_received"
+    )
+    event = next(
+        event
+        for event in events
+        if event["event_type"] == "evidence_collected"
+    )
     expected_event_id = uuid5(
         UUID(int=1),
         f"evidence_collected:{snapshot['snapshot_id']}",
     )
+    assert received_event["event_id"] == str(
+        uuid5(UUID(int=1), "command_received")
+    )
+    assert received_event["previous_event_id"] is None
     assert event["event_id"] == str(expected_event_id)
     assert event["command_id"] == str(UUID(int=1))
     assert event["event_type"] == "evidence_collected"
@@ -210,7 +288,7 @@ def test_cli_inventory_list_records_audit_event(
         "source_version": snapshot["source_version"],
         "persisted": True,
     }
-    assert event["previous_event_id"] is None
+    assert event["previous_event_id"] == received_event["event_id"]
 
 
 def test_cli_inventory_list_assembles_and_persists_cwa(
@@ -280,7 +358,7 @@ def test_cli_inventory_list_assembles_and_persists_cwa(
     )
 
     event_files = list(audit_dir.glob("*.json"))
-    assert len(event_files) == 2
+    assert len(event_files) == 3
     events = [
         json.loads(path.read_text(encoding="utf-8"))
         for path in event_files
@@ -390,7 +468,7 @@ def test_cli_inventory_list_persists_diagnosis_and_model_audit(
         json.loads(path.read_text(encoding="utf-8"))
         for path in audit_dir.glob("*.json")
     ]
-    assert len(events) == 3
+    assert len(events) == 4
     context_event = next(
         event
         for event in events

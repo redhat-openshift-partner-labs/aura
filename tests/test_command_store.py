@@ -7,6 +7,7 @@ import pytest
 
 from aura.command_store import (
     CommandAlreadyStored,
+    CommandNotTerminal,
     CommandNotFound,
     JsonCommandStore,
 )
@@ -50,5 +51,36 @@ def test_json_command_store_rejects_duplicate_key(tmp_path) -> None:
 
     with pytest.raises(CommandAlreadyStored):
         store.save(replacement)
+
+
+def test_json_command_store_rejects_non_terminal_command(tmp_path) -> None:
+    store = JsonCommandStore(tmp_path)
+    command = make_command("test-key").with_status(
+        CommandState.COLLECTING_EVIDENCE
+    )
+
+    with pytest.raises(CommandNotTerminal):
+        store.save(command)
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        CommandState.SUCCEEDED,
+        CommandState.FAILED,
+        CommandState.REFUSED,
+    ],
+)
+def test_json_command_store_saves_terminal_commands(
+    tmp_path,
+    status: CommandState,
+) -> None:
+    store = JsonCommandStore(tmp_path)
+    command = make_command("test-key").with_status(status)
+
+    path = store.save(command)
+
+    assert store.load("test-key") == command
+    assert path.is_file()
 
 

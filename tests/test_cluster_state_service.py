@@ -63,7 +63,7 @@ def test_cluster_state_service_collects_evidence_and_succeeds() -> None:
 
     result = service.diagnose_state(command, {OperatorRole.VIEWER})
 
-    assert result.command.status is CommandState.SUCCEEDED
+    assert result.command.status is CommandState.ASSEMBLING_CONTEXT
     assert result.snapshot.collector == "cluster_state"
 
 

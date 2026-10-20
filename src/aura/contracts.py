@@ -46,7 +46,6 @@ class CommandState(StrEnum):
     EXECUTING = "executing"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
-    AWAITING_RETRY = "awaiting_retry"
 
 
 class CommandEnvelope(BaseModel):

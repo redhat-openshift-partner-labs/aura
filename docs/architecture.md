@@ -123,6 +123,7 @@ The command exits with code `2`. Evidence, CWA snapshot, CWA trace, and audit re
 | Duplicate immutable record | Store error, exit code `2` |
 | External `oc` failure | Converted to `OpenShiftCLIError`; CLI reports a concise error and exits `2` without partial JSON |
 | Model unavailable | Generic diagnosis service falls back deterministically |
-| Completed idempotency key reused | CLI exits `2` before evidence collection and creates no new records |
+| Terminal idempotency key reused | CLI exits `2` before evidence collection and creates no new records |
+| Idempotency key reused for a different request | CLI exits `2` before evidence collection |
 
-Command records are written only after all requested evidence, CWA, diagnosis, and persistence work succeeds. Failed commands remain retryable with the same key.
+Command records are written only in a terminal state. `succeeded`, `failed`, and `refused` records are immutable; a new attempt requires a new idempotency key.

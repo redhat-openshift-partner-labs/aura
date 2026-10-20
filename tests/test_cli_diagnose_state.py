@@ -8,8 +8,9 @@ from uuid import UUID
 
 from aura.cli import main
 from aura.cli import build_parser
+from aura.command_store import JsonCommandStore
 from aura.collectors.cluster_state import ClusterStateCollector
-from aura.contracts import EvidenceSnapshot
+from aura.contracts import CommandState, EvidenceSnapshot
 from test_cluster_state_collector import (
     EmptyCollector,
     FakeGitCollector,
@@ -191,10 +192,12 @@ def test_cli_diagnose_state_returns_cluster_diagnosis(
     assert diagnosis["model_name"] == "cluster-state-deterministic"
 
     assert len(list(snapshot_dir.glob("*.json"))) == 1
-    assert len(list(audit_dir.glob("*.json"))) == 3
+    assert len(list(audit_dir.glob("*.json"))) == 4
     assert len(list((cwa_dir / "snapshots").glob("*.json"))) == 1
     assert len(list((cwa_dir / "traces").glob("*.json"))) == 1
     assert len(list(diagnosis_dir.glob("*.json"))) == 1
+    command = JsonCommandStore(tmp_path / "commands").load("test-key")
+    assert command.status is CommandState.SUCCEEDED
 
 
 def test_cli_diagnose_state_refuses_missing_evidence(
@@ -214,10 +217,31 @@ def test_cli_diagnose_state_refuses_missing_evidence(
     assert "Git cluster definition" in captured.err
     assert captured.out == ""
     assert len(list(snapshot_dir.glob("*.json"))) == 1
-    assert len(list(audit_dir.glob("*.json"))) == 2
+    assert len(list(audit_dir.glob("*.json"))) == 4
     assert len(list((cwa_dir / "snapshots").glob("*.json"))) == 1
     assert len(list((cwa_dir / "traces").glob("*.json"))) == 1
     assert list(diagnosis_dir.glob("*.json")) == []
+    command = JsonCommandStore(tmp_path / "commands").load("test-key")
+    assert command.status is CommandState.REFUSED
+    cwa_snapshot = json.loads(
+        next((cwa_dir / "snapshots").glob("*.json")).read_text()
+    )
+    state_task = next(
+        slot
+        for slot in cwa_snapshot["slots"]
+        if slot["name"] == "state.task"
+    )
+    assert state_task["content"]["status"] == "assembling_context"
+    event_types = {
+        json.loads(path.read_text())["event_type"]
+        for path in audit_dir.glob("*.json")
+    }
+    assert event_types == {
+        "command_received",
+        "evidence_collected",
+        "context_assembled",
+        "command_refused",
+    }
 
 
 def test_cli_diagnose_state_suppresses_duplicate_idempotency_key(

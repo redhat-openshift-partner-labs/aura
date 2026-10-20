@@ -62,7 +62,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --source git \
   --fleet-clusters ../fleet-clusters \
   --operator operator@example.com \
-  --idempotency-key fixture-git-001
+  --idempotency-key fixture-git-001 \
   --command-dir ./local/commands
 ```
 
@@ -88,7 +88,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --source openshift \
   --openshift-kubeconfig "$AURA_KUBECONFIG" \
   --operator operator@example.com \
-  --idempotency-key live-openshift-001
+  --idempotency-key live-openshift-001 \
   --command-dir ./local/commands
 ```
 
@@ -100,7 +100,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
   --fleet-clusters ../fleet-clusters \
   --openshift-kubeconfig "$AURA_KUBECONFIG" \
   --operator operator@example.com \
-  --idempotency-key live-combined-001
+  --idempotency-key live-combined-001 \
   --command-dir ./local/commands
 ```
 
@@ -111,7 +111,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura workflow inspect \
   --openshift-kubeconfig "$AURA_KUBECONFIG" \
   --fleet-clusters ../fleet-clusters \
   --operator operator@example.com \
-  --idempotency-key live-workflow-001
+  --idempotency-key live-workflow-001 \
   --command-dir ./local/commands
 ```
 
@@ -155,7 +155,7 @@ Latest validation observed:
 
 ## Idempotency Validation
 
-Repeat a command with an idempotency key that has already completed.
+Repeat a command with an idempotency key that has already reached a terminal state.
 
 Expected result:
 
@@ -164,7 +164,7 @@ Expected result:
 - No JSON is written to standard output.
 - No new command, evidence, CWA, or audit record is created.
 
-Failed commands do not create a completed-key record and may be retried with the same key.
+Failed and refused commands create terminal records. A new attempt requires a new idempotency key.
 
 ## Record Persistence Validation
 

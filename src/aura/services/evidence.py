@@ -99,15 +99,15 @@ class EvidenceCommandService:
         snapshot = redact_snapshot(
             self._collector.collect(command_id=command.command_id)
         )
-        succeeded = collecting.with_status(
+        assembling = collecting.with_status(
             self._state_machine.transition(
                 collecting.status,
-                CommandState.SUCCEEDED,
+                CommandState.ASSEMBLING_CONTEXT,
             )
         )
 
         return EvidenceCommandResult(
-            command=succeeded,
+            command=assembling,
             snapshot=snapshot,
         )
 

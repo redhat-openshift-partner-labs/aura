@@ -8,7 +8,7 @@ Validation summary:
 
 | Check | Result |
 | --- | --- |
-| Automated tests | 201 passed |
+| Automated tests | 221 passed |
 | Scoped-AWS fixture | `provision/0171d46a-scopedaws` |
 | Fixture source commit | `492bc8e07afddcd557441ddb7d72158de60ab8cb` |
 | Live OpenShift cluster states | 13 |
@@ -17,7 +17,7 @@ Validation summary:
 | Correlated workflow views | 34 of 34 |
 | Live cluster diagnosis | Fixture cluster diagnosed with four evidence items |
 | Non-provisioned refusal | Archived cluster refused with structured missing evidence |
-| Duplicate idempotency key | Rejected before collection with no new command record |
+| Duplicate idempotency key | Request-bound and concurrency-safe rejection before collection |
 | Quality gate | Pending committed baseline during closure hardening |
 | Protected repository tracked changes | None |
 
@@ -39,7 +39,7 @@ Validation summary:
 | CWA | Assembles all nine required slots and computes a snapshot digest |
 | Provenance | Links evidence, CWA snapshot, CWA trace, diagnosis, and audit events |
 | Stores | Uses append-only JSON stores for evidence, CWA, audit, and diagnosis records |
-| Idempotency | Suppresses reuse of keys belonging to completed commands |
+| Idempotency | Binds keys to one request and suppresses concurrent or sequential terminal-key reuse |
 | Authorization | Allows Phase 1 commands for `viewer` and `admin` roles |
 | CLI | Provides `inventory list`, `workflow inspect`, and `diagnose state` |
 
@@ -69,6 +69,7 @@ The model protocol remains provider-independent. A future provider must consume 
 
 | Commit | Change |
 | --- | --- |
+| `1c62c7a` | Added refused lifecycle digests |
 | `97c6ece` | Suppressed reuse of completed idempotency keys |
 | `447f748` | Validated selectors and reported `oc` failures concisely |
 | `7debde5` | Hardened conflict, PipelineRun selection, and non-provisioned diagnosis |
