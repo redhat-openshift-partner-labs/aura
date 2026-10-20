@@ -86,7 +86,7 @@ class _GitTree:
     @staticmethod
     def _git(root: Path, arguments: list[str]) -> str:
         try:
-            return _GitTree._run_git(root, arguments)
+            return _run_git(root, arguments)
         except subprocess.CalledProcessError as error:
             output = str(error.stderr or error.stdout or "").strip()
             detail = output.splitlines()[-1] if output else "no output"
@@ -99,17 +99,16 @@ class _GitTree:
                 f"git checkout is not usable: {root}"
             ) from error
 
-    @staticmethod
-    def _run_git(root: Path, arguments: list[str]) -> str:
-        if not root.is_dir():
-            raise GitInventoryError(f"git checkout is not usable: {root}")
-        result = subprocess.run(
-            ["git", "-C", str(root), *arguments],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        return result.stdout
+def _run_git(root: Path, arguments: list[str]) -> str:
+    if not root.is_dir():
+        raise GitInventoryError(f"git checkout is not usable: {root}")
+    result = subprocess.run(
+        ["git", "-C", str(root), *arguments],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout
 
 
 @final

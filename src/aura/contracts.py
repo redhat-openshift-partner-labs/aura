@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from enum import StrEnum
-from hashlib import sha256
 from typing import Any
 from uuid import UUID
 
+from aura.canonical import canonical_digest
 from pydantic import (
     AwareDatetime,
     BaseModel,
@@ -95,13 +94,7 @@ class CommandEnvelope(BaseModel):
 
 
 def _canonical_digest(payload: dict[str, Any]) -> str:
-    canonical_json = json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    )
-    return sha256(canonical_json.encode("utf-8")).hexdigest()
+    return canonical_digest(payload)
 
 
 def compute_command_request_digest(command: CommandEnvelope) -> str:
@@ -185,13 +178,7 @@ def compute_snapshot_digest(snapshot: EvidenceSnapshot) -> str:
     """Return a canonical SHA-256 digest for an evidence snapshot."""
 
     payload = snapshot.model_dump(mode="json", exclude={"snapshot_digest"})
-    canonical_json = json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    )
-    return sha256(canonical_json.encode("utf-8")).hexdigest()
+    return canonical_digest(payload)
 
 
 class AuditEventType(StrEnum):

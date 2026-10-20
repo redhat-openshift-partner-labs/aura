@@ -25,6 +25,36 @@ def _run_command(args: Sequence[str]) -> str:
     return result.stdout
 
 
+def _read_oc(
+    command_runner: CommandRunner,
+    args: Sequence[str],
+    resource: str,
+) -> dict[str, Any]:
+    try:
+        output = command_runner(args)
+    except subprocess.CalledProcessError as error:
+        output_text = str(error.stderr or error.stdout or "").strip()
+        detail = output_text.splitlines()[-1] if output_text else "no output"
+        raise OpenShiftCLIError(
+            f"oc command failed for {resource} "
+            f"(exit {error.returncode}): {detail}"
+        ) from error
+    except subprocess.TimeoutExpired as error:
+        raise OpenShiftCLIError(
+            f"oc command timed out for {resource}"
+        ) from error
+    except OSError as error:
+        raise OpenShiftCLIError(
+            f"oc command failed for {resource}: {error}"
+        ) from error
+    try:
+        return json.loads(output)
+    except json.JSONDecodeError as error:
+        raise OpenShiftCLIError(
+            f"oc returned invalid JSON for {resource}"
+        ) from error
+
+
 @final
 class OpenShiftResource:
     """Cached read-only access to one Kubernetes resource type."""
@@ -73,29 +103,11 @@ class OpenShiftResource:
         elif self._namespace is not None:
             args.extend(["-n", self._namespace])
         args.extend(["-o", "json"])
-        try:
-            output = self._command_runner(args)
-        except subprocess.CalledProcessError as error:
-            output_text = str(error.stderr or error.stdout or "").strip()
-            detail = output_text.splitlines()[-1] if output_text else "no output"
-            raise OpenShiftCLIError(
-                f"oc command failed for {self._resource} "
-                f"(exit {error.returncode}): {detail}"
-            ) from error
-        except subprocess.TimeoutExpired as error:
-            raise OpenShiftCLIError(
-                f"oc command timed out for {self._resource}"
-            ) from error
-        except OSError as error:
-            raise OpenShiftCLIError(
-                f"oc command failed for {self._resource}: {error}"
-            ) from error
-        try:
-            return json.loads(output)
-        except json.JSONDecodeError as error:
-            raise OpenShiftCLIError(
-                f"oc returned invalid JSON for {self._resource}"
-            ) from error
+        return _read_oc(
+            self._command_runner,
+            args,
+            self._resource,
+        )
 
 
 @final

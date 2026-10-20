@@ -13,36 +13,32 @@ class CommandStateMachine:
     """Validates transitions between Aura command states."""
 
     _transitions: dict[CommandState, frozenset[CommandState]] = {
-        CommandState.RECEIVED: frozenset(
-            {CommandState.COLLECTING_EVIDENCE, CommandState.FAILED}
-        ),
-        CommandState.COLLECTING_EVIDENCE: frozenset(
-            {
-                CommandState.ASSEMBLING_CONTEXT,
-                CommandState.SUCCEEDED,
-                CommandState.FAILED,
-                CommandState.REFUSED,
-            }
-        ),
-        CommandState.ASSEMBLING_CONTEXT: frozenset(
-            {
-                CommandState.SUCCEEDED,
-                CommandState.MODEL_CALLED,
-                CommandState.FAILED,
-                CommandState.REFUSED,
-            }
-        ),
-        CommandState.MODEL_CALLED: frozenset(
-            {
-                CommandState.SUCCEEDED,
-                CommandState.PROPOSAL_READY,
-                CommandState.FAILED,
-                CommandState.REFUSED,
-            }
-        ),
-        CommandState.PROPOSAL_READY: frozenset(
-            {CommandState.AWAITING_APPROVAL, CommandState.FAILED}
-        ),
+        CommandState.RECEIVED: frozenset({
+            CommandState.COLLECTING_EVIDENCE,
+            CommandState.FAILED,
+        }),
+        CommandState.COLLECTING_EVIDENCE: frozenset({
+            CommandState.ASSEMBLING_CONTEXT,
+            CommandState.SUCCEEDED,
+            CommandState.FAILED,
+            CommandState.REFUSED,
+        }),
+        CommandState.ASSEMBLING_CONTEXT: frozenset({
+            CommandState.SUCCEEDED,
+            CommandState.MODEL_CALLED,
+            CommandState.FAILED,
+            CommandState.REFUSED,
+        }),
+        CommandState.MODEL_CALLED: frozenset({
+            CommandState.SUCCEEDED,
+            CommandState.PROPOSAL_READY,
+            CommandState.FAILED,
+            CommandState.REFUSED,
+        }),
+        CommandState.PROPOSAL_READY: frozenset({
+            CommandState.AWAITING_APPROVAL,
+            CommandState.FAILED,
+        }),
         CommandState.AWAITING_APPROVAL: frozenset(
             {CommandState.APPROVED, CommandState.REJECTED}
         ),

@@ -102,18 +102,39 @@ def test_openshift_cli_client_reads_inventory(tmp_path: Path) -> None:
     ]
 
 
-def test_openshift_cli_client_converts_oc_failure(
+@pytest.mark.parametrize(
+    ("make_error", "expected"),
+    [
+        (
+            lambda args: CalledProcessError(
+                returncode=1,
+                cmd=args,
+                stderr="Error from server (Forbidden): denied\n",
+            ),
+            "oc command failed for clusterdeployments "
+            "(exit 1): Error from server (Forbidden): denied",
+        ),
+        (
+            lambda args: FileNotFoundError("oc executable not found"),
+            "oc command failed for clusterdeployments: "
+            "oc executable not found",
+        ),
+        (
+            lambda args: TimeoutExpired(cmd=args, timeout=30),
+            "oc command timed out for clusterdeployments",
+        ),
+    ],
+)
+def test_openshift_cli_client_converts_oc_process_errors(
     tmp_path: Path,
+    make_error,
+    expected: str,
 ) -> None:
     kubeconfig = tmp_path / "aura-readonly"
     kubeconfig.write_text("{}", encoding="utf-8")
 
     def failing_runner(args: list[str]) -> str:
-        raise CalledProcessError(
-            returncode=1,
-            cmd=args,
-            stderr="Error from server (Forbidden): denied\n",
-        )
+        raise make_error(args)
 
     client = OpenShiftCLIInventoryClient(
         kubeconfig_path=kubeconfig,
@@ -123,50 +144,7 @@ def test_openshift_cli_client_converts_oc_failure(
     with pytest.raises(OpenShiftCLIError) as error:
         client.list_cluster_deployments()
 
-    assert str(error.value) == (
-        "oc command failed for clusterdeployments "
-        "(exit 1): Error from server (Forbidden): denied"
-    )
-
-
-def test_openshift_cli_client_reports_missing_oc_executable(
-    tmp_path: Path,
-) -> None:
-    kubeconfig = tmp_path / "aura-readonly"
-    kubeconfig.write_text("{}", encoding="utf-8")
-
-    def missing_runner(args: list[str]) -> str:
-        raise FileNotFoundError("oc executable not found")
-
-    client = OpenShiftCLIInventoryClient(
-        kubeconfig_path=kubeconfig,
-        command_runner=missing_runner,
-    )
-
-    with pytest.raises(OpenShiftCLIError) as error:
-        client.list_cluster_deployments()
-
-    assert str(error.value) == (
-        "oc command failed for clusterdeployments: oc executable not found"
-    )
-
-
-def test_openshift_cli_client_reports_oc_timeout(tmp_path: Path) -> None:
-    kubeconfig = tmp_path / "aura-readonly"
-    kubeconfig.write_text("{}", encoding="utf-8")
-
-    def timing_out_runner(args: list[str]) -> str:
-        raise TimeoutExpired(cmd=args, timeout=30)
-
-    client = OpenShiftCLIInventoryClient(
-        kubeconfig_path=kubeconfig,
-        command_runner=timing_out_runner,
-    )
-
-    with pytest.raises(OpenShiftCLIError) as error:
-        client.list_cluster_deployments()
-
-    assert str(error.value) == "oc command timed out for clusterdeployments"
+    assert str(error.value) == expected
 
 
 def test_openshift_cli_client_reports_invalid_oc_json(

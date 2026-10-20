@@ -89,12 +89,17 @@ def inventory_arguments(
     return arguments
 
 
-def test_cli_inventory_list_suppresses_duplicate_idempotency_key(
+@pytest.mark.parametrize("different_request", [False, True])
+def test_cli_inventory_list_rejects_duplicate_idempotency_key(
     tmp_path,
     capsys,
+    different_request,
 ) -> None:
     collector = CountingCollector()
     arguments = inventory_arguments(tmp_path)
+    second_arguments = list(arguments)
+    if different_request:
+        second_arguments.extend(["--query", "different request"])
 
     first_exit_code = main(
         arguments,
@@ -103,7 +108,7 @@ def test_cli_inventory_list_suppresses_duplicate_idempotency_key(
     )
     first_captured = capsys.readouterr()
     second_exit_code = main(
-        arguments,
+        second_arguments,
         collector=collector,
         command_id_factory=lambda: UUID(int=2),
     )
@@ -112,44 +117,12 @@ def test_cli_inventory_list_suppresses_duplicate_idempotency_key(
     assert first_exit_code == 0
     assert first_captured.err == ""
     assert second_exit_code == 2
-    assert second_captured.err == (
-        "aura: idempotency key already succeeded: test-key\n"
-    )
-    assert second_captured.out == ""
-    assert collector.calls == 1
-
-
-def test_cli_inventory_list_rejects_key_reused_for_different_request(
-    tmp_path,
-    capsys,
-) -> None:
-    collector = CountingCollector()
-    arguments = inventory_arguments(tmp_path)
-    changed_arguments = [
-        *arguments[:8],
-        "--query",
-        "different request",
-        *arguments[8:],
-    ]
-
-    first_exit_code = main(
-        arguments,
-        collector=collector,
-        command_id_factory=lambda: UUID(int=1),
-    )
-    capsys.readouterr()
-    second_exit_code = main(
-        changed_arguments,
-        collector=collector,
-        command_id_factory=lambda: UUID(int=2),
-    )
-    second_captured = capsys.readouterr()
-
-    assert first_exit_code == 0
-    assert second_exit_code == 2
-    assert second_captured.err == (
+    expected_error = (
         "aura: idempotency key belongs to a different request: test-key\n"
+        if different_request
+        else "aura: idempotency key already succeeded: test-key\n"
     )
+    assert second_captured.err == expected_error
     assert second_captured.out == ""
     assert collector.calls == 1
 
@@ -176,13 +149,27 @@ def test_cli_inventory_list_suppresses_concurrent_duplicate_key(
     assert collector.calls == 1
 
 
-def test_cli_inventory_list_rejects_blank_operator(
+@pytest.mark.parametrize(
+    ("flag", "value", "expected_error"),
+    [
+        ("--operator", " ", "aura: --operator must not be blank\n"),
+        (
+            "--idempotency-key",
+            "",
+            "aura: --idempotency-key must not be blank\n",
+        ),
+    ],
+)
+def test_cli_inventory_list_rejects_blank_identity(
     tmp_path,
     capsys,
+    flag,
+    value,
+    expected_error,
 ) -> None:
     collector = CountingCollector()
     arguments = inventory_arguments(tmp_path)
-    arguments[arguments.index("--operator") + 1] = " "
+    arguments[arguments.index(flag) + 1] = value
 
     exit_code = main(
         arguments,
@@ -192,28 +179,7 @@ def test_cli_inventory_list_rejects_blank_operator(
     captured = capsys.readouterr()
 
     assert exit_code == 2
-    assert captured.err == "aura: --operator must not be blank\n"
-    assert captured.out == ""
-    assert collector.calls == 0
-
-
-def test_cli_inventory_list_rejects_blank_idempotency_key(
-    tmp_path,
-    capsys,
-) -> None:
-    collector = CountingCollector()
-    arguments = inventory_arguments(tmp_path)
-    arguments[arguments.index("--idempotency-key") + 1] = ""
-
-    exit_code = main(
-        arguments,
-        collector=collector,
-        command_id_factory=lambda: UUID(int=1),
-    )
-    captured = capsys.readouterr()
-
-    assert exit_code == 2
-    assert captured.err == "aura: --idempotency-key must not be blank\n"
+    assert captured.err == expected_error
     assert captured.out == ""
     assert collector.calls == 0
 
@@ -317,9 +283,9 @@ def test_cli_inventory_list_reports_git_command_failure(
         )
 
     monkeypatch.setattr(
-        git_inventory._GitTree,
+        git_inventory,
         "_run_git",
-        staticmethod(failing_git),
+        failing_git,
     )
 
     exit_code = main(arguments, command_id_factory=lambda: UUID(int=1))
@@ -385,24 +351,14 @@ def test_cli_inventory_list_records_audit_event(
 ) -> None:
     snapshot_dir = tmp_path / "snapshots"
     audit_dir = tmp_path / "audit"
+    arguments = inventory_arguments(
+        tmp_path,
+        snapshot_dir=snapshot_dir,
+    )
+    arguments.extend(["--audit-dir", str(audit_dir)])
 
     exit_code = main(
-        [
-            "inventory",
-            "list",
-            "--fleet-clusters",
-            str(tmp_path),
-            "--operator",
-            "operator@example.com",
-            "--idempotency-key",
-            "test-key",
-            "--command-dir",
-            str(tmp_path / "commands"),
-            "--snapshot-dir",
-            str(snapshot_dir),
-            "--audit-dir",
-            str(audit_dir),
-        ],
+        arguments,
         collector=FakeCollector(),
         command_id_factory=lambda: UUID(int=1),
     )

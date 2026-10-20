@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from enum import StrEnum
-from hashlib import sha256
 from typing import Any
 from uuid import UUID
 
+from aura.canonical import canonical_digest
 from pydantic import (
     AwareDatetime,
     BaseModel,
@@ -121,13 +120,7 @@ def compute_cwa_snapshot_digest(snapshot: CWASnapshot) -> str:
     """Return a canonical SHA-256 digest for a CWA snapshot."""
 
     payload = snapshot.model_dump(mode="json", exclude={"snapshot_digest"})
-    canonical_json = json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    )
-    return sha256(canonical_json.encode("utf-8")).hexdigest()
+    return canonical_digest(payload)
 
 
 __all__ = [

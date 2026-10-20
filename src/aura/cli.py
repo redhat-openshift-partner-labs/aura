@@ -455,10 +455,8 @@ def _fail_command(
             previous_event_id=previous_event_id,
             occurred_at=clock(),
         )
-        try:
-            JsonAuditEventStore(args.audit_dir).save(event)
-        except AuditEventAlreadyStored as audit_error:
-            command_store_error = command_store_error or str(audit_error)
+        audit_error = _save_audit_event(args, event)
+        command_store_error = command_store_error or audit_error
     print(f"aura: {command_store_error or error}", file=sys.stderr)
     return 2
 
@@ -510,6 +508,12 @@ class AssembledCommandResult:
     last_event: AuditEvent | None
 
 
+@dataclass(frozen=True)
+class CollectedEvidence:
+    result: EvidenceCommandResult
+    audit_event: AuditEvent | None
+
+
 def _run_simple_evidence_command(
     args: argparse.Namespace,
     route: EvidenceCommandRoute,
@@ -552,6 +556,64 @@ def _run_simple_command(
     clock: Callable[[], datetime],
 ) -> int:
     service = route.service_factory(selected_collector)
+    collected = _collect_evidence(
+        args,
+        command,
+        lambda: service.run(command, roles),
+        route.errors,
+        clock,
+    )
+    if isinstance(collected, int):
+        return collected
+
+    result = collected.result
+    evidence_event = collected.audit_event
+
+    final_command = result.command
+
+    if assemble and args.cwa_dir is not None:
+        assembled, assembly_error = _assemble_and_diagnose(
+            args,
+            result,
+            roles,
+            evidence_event,
+            output_schema="inventory_list",
+            diagnosis_model=None,
+            always_diagnose=False,
+            clock=clock,
+        )
+        if assembly_error is not None:
+            return _fail_assembly(
+                args,
+                result,
+                assembly_error,
+                evidence_event,
+                clock,
+            )
+        if assembled is None:
+            return _fail_assembly(
+                args,
+                result,
+                "CWA assembly did not return a command",
+                evidence_event,
+                clock,
+            )
+        final_command = assembled.command
+
+    return _complete_command(
+        args,
+        final_command,
+        result.snapshot.model_dump_json(indent=2),
+    )
+
+
+def _collect_evidence(
+    args: argparse.Namespace,
+    command: CommandEnvelope,
+    action: Callable[[], EvidenceCommandResult],
+    errors: tuple[type[Exception], ...],
+    clock: Callable[[], datetime],
+) -> CollectedEvidence | int:
     received_event, received_error = _persist_command_received(
         args,
         command,
@@ -567,10 +629,7 @@ def _run_simple_command(
             clock=clock,
         )
 
-    result = _run_evidence_command(
-        lambda: service.run(command, roles),
-        route.errors,
-    )
+    result = _run_evidence_command(action, errors)
     if isinstance(result, str):
         return _fail_command(
             args,
@@ -599,45 +658,24 @@ def _run_simple_command(
             clock=clock,
         )
 
-    final_command = result.command
+    return CollectedEvidence(result=result, audit_event=evidence_event)
 
-    if assemble and args.cwa_dir is not None:
-        assembled, assembly_error = _assemble_and_diagnose(
-            args,
-            result,
-            roles,
-            evidence_event,
-            output_schema="inventory_list",
-            diagnosis_model=None,
-            always_diagnose=False,
-            clock=clock,
-        )
-        if assembly_error is not None:
-            return _fail_command(
-                args,
-                result.command,
-                assembly_error,
-                previous_event_id=(
-                    evidence_event.event_id if evidence_event else None
-                ),
-                clock=clock,
-            )
-        if assembled is None:
-            return _fail_command(
-                args,
-                result.command,
-                "CWA assembly did not return a command",
-                previous_event_id=(
-                    evidence_event.event_id if evidence_event else None
-                ),
-                clock=clock,
-            )
-        final_command = assembled.command
 
-    return _complete_command(
+def _fail_assembly(
+    args: argparse.Namespace,
+    result: EvidenceCommandResult,
+    error: str,
+    evidence_event: AuditEvent | None,
+    clock: Callable[[], datetime],
+) -> int:
+    return _fail_command(
         args,
-        final_command,
-        result.snapshot.model_dump_json(indent=2),
+        result.command,
+        error,
+        previous_event_id=(
+            evidence_event.event_id if evidence_event else None
+        ),
+        clock=clock,
     )
 
 
@@ -931,10 +969,9 @@ def _persist_command_received(
     if args.audit_dir is None:
         return None, None
     event = _command_received_audit_event(command)
-    try:
-        JsonAuditEventStore(args.audit_dir).save(event)
-    except AuditEventAlreadyStored as error:
-        return None, str(error)
+    error = _save_audit_event(args, event)
+    if error is not None:
+        return None, error
     return event, None
 
 
@@ -1021,14 +1058,73 @@ def _persist_evidence(
             args.snapshot_dir is not None,
             previous_event_id,
         )
-        try:
-            JsonAuditEventStore(args.audit_dir).save(
-                evidence_audit_event
-            )
-        except AuditEventAlreadyStored as error:
-            return None, str(error)
+        error = _save_audit_event(args, evidence_audit_event)
+        if error is not None:
+            return None, error
 
     return evidence_audit_event, None
+
+
+def _save_audit_event(
+    args: argparse.Namespace,
+    event: AuditEvent,
+) -> str | None:
+    try:
+        JsonAuditEventStore(args.audit_dir).save(event)
+    except AuditEventAlreadyStored as error:
+        return str(error)
+    return None
+
+
+def _assembly_request(
+    result: EvidenceCommandResult,
+    roles: set[OperatorRole],
+    evidence_audit_event: AuditEvent,
+    output_schema: str,
+    clock: Callable[[], datetime],
+) -> CWAAssemblyRequest:
+    return CWAAssemblyRequest(
+        command=result.command,
+        evidence_snapshot=result.snapshot,
+        audit_event=evidence_audit_event,
+        operator_roles=roles,
+        policy=CWAAssemblyPolicy(
+            instructions={"policy": "read-only"},
+            capabilities={"adapters": []},
+            output_contract={"schema": output_schema},
+            knowledge={"documents": []},
+        ),
+        assembled_at=clock(),
+    )
+
+
+def _assembled_command(
+    command: CommandEnvelope,
+    diagnosis_record: DiagnosisRecord | None,
+    refusal_error: str | None,
+) -> CommandEnvelope:
+    state_machine = CommandStateMachine()
+    if diagnosis_record is not None:
+        model_called = command.with_status(
+            state_machine.transition(
+                command.status,
+                CommandState.MODEL_CALLED,
+            )
+        )
+        return model_called.with_status(
+            state_machine.transition(
+                model_called.status,
+                CommandState.SUCCEEDED,
+            )
+        )
+    terminal_state = (
+        CommandState.REFUSED
+        if refusal_error is not None
+        else CommandState.SUCCEEDED
+    )
+    return command.with_status(
+        state_machine.transition(command.status, terminal_state)
+    )
 
 
 def _assemble_and_diagnose(
@@ -1044,18 +1140,12 @@ def _assemble_and_diagnose(
 ) -> tuple[AssembledCommandResult | None, str | None]:
     if evidence_audit_event is None:
         return None, "audit event is required for CWA assembly"
-    assembly_request = CWAAssemblyRequest(
-        command=result.command,
-        evidence_snapshot=result.snapshot,
-        audit_event=evidence_audit_event,
-        operator_roles=roles,
-        policy=CWAAssemblyPolicy(
-            instructions={"policy": "read-only"},
-            capabilities={"adapters": []},
-            output_contract={"schema": output_schema},
-            knowledge={"documents": []},
-        ),
-        assembled_at=clock(),
+    assembly_request = _assembly_request(
+        result,
+        roles,
+        evidence_audit_event,
+        output_schema,
+        clock,
     )
 
     try:
@@ -1086,10 +1176,9 @@ def _assemble_and_diagnose(
         result.snapshot,
         evidence_audit_event.event_id,
     )
-    try:
-        JsonAuditEventStore(args.audit_dir).save(context_event)
-    except AuditEventAlreadyStored as error:
-        return None, str(error)
+    error = _save_audit_event(args, context_event)
+    if error is not None:
+        return None, error
 
     if diagnosis_record is not None:
         model_event = _model_audit_event(
@@ -1099,10 +1188,9 @@ def _assemble_and_diagnose(
             context_event.event_id,
             args.diagnosis_dir is not None,
         )
-        try:
-            JsonAuditEventStore(args.audit_dir).save(model_event)
-        except AuditEventAlreadyStored as error:
-            return None, str(error)
+        error = _save_audit_event(args, model_event)
+        if error is not None:
+            return None, error
 
     refusal_event: AuditEvent | None = None
     if refusal_error is not None:
@@ -1113,10 +1201,9 @@ def _assemble_and_diagnose(
             previous_event_id=context_event.event_id,
             occurred_at=clock(),
         )
-        try:
-            JsonAuditEventStore(args.audit_dir).save(refusal_event)
-        except AuditEventAlreadyStored as error:
-            return None, str(error)
+        error = _save_audit_event(args, refusal_event)
+        if error is not None:
+            return None, error
 
     diagnosis_answer = (
         _diagnosis_answer(
@@ -1127,34 +1214,11 @@ def _assemble_and_diagnose(
         if diagnosis_record is not None
         else None
     )
-    state_machine = CommandStateMachine()
-    if diagnosis_record is not None:
-        model_called = result.command.with_status(
-            state_machine.transition(
-                result.command.status,
-                CommandState.MODEL_CALLED,
-            )
-        )
-        final_command = model_called.with_status(
-            state_machine.transition(
-                model_called.status,
-                CommandState.SUCCEEDED,
-            )
-        )
-    elif refusal_error is not None:
-        final_command = result.command.with_status(
-            state_machine.transition(
-                result.command.status,
-                CommandState.REFUSED,
-            )
-        )
-    else:
-        final_command = result.command.with_status(
-            state_machine.transition(
-                result.command.status,
-                CommandState.SUCCEEDED,
-            )
-        )
+    final_command = _assembled_command(
+        result.command,
+        diagnosis_record,
+        refusal_error,
+    )
 
     return (
         AssembledCommandResult(
@@ -1206,22 +1270,9 @@ def _run_diagnosis(
     selected_collector = _selected_cluster_state_collector(args, collector)
     service = ClusterStateService(collector=selected_collector)
     roles = {OperatorRole(role) for role in args.role}
-    received_event, received_error = _persist_command_received(
+    collected = _collect_evidence(
         args,
         command,
-    )
-    if received_error is not None:
-        return _fail_command(
-            args,
-            command,
-            received_error,
-            previous_event_id=(
-                received_event.event_id if received_event else None
-            ),
-            clock=clock,
-        )
-
-    result = _run_evidence_command(
         lambda: service.diagnose_state(command, roles),
         (
             UnauthorizedClusterStateCommand,
@@ -1230,34 +1281,13 @@ def _run_diagnosis(
             OpenShiftCLIError,
             GitInventoryError,
         ),
+        clock,
     )
-    if isinstance(result, str):
-        return _fail_command(
-            args,
-            command,
-            result,
-            previous_event_id=(
-                received_event.event_id if received_event else None
-            ),
-            clock=clock,
-        )
+    if isinstance(collected, int):
+        return collected
 
-    evidence_event, persistence_error = _persist_evidence(
-        args,
-        command,
-        result,
-        received_event.event_id if received_event else None,
-    )
-    if persistence_error is not None:
-        return _fail_command(
-            args,
-            result.command,
-            persistence_error,
-            previous_event_id=(
-                evidence_event.event_id if evidence_event else None
-            ),
-            clock=clock,
-        )
+    result = collected.result
+    evidence_event = collected.audit_event
 
     if args.cwa_dir is not None:
         assembled, assembly_error = _assemble_and_diagnose(
@@ -1271,35 +1301,30 @@ def _run_diagnosis(
             clock=clock,
         )
         if assembly_error is not None:
-            return _fail_command(
+            return _fail_assembly(
                 args,
-                result.command,
+                result,
                 assembly_error,
-                previous_event_id=(
-                    evidence_event.event_id if evidence_event else None
-                ),
-                clock=clock,
+                evidence_event,
+                clock,
             )
         if assembled is None or assembled.answer is None:
             if assembled is not None and assembled.refusal_error:
-                final_command = assembled.command
                 command_store_error = _store_terminal_command(
                     args,
-                    final_command,
+                    assembled.command,
                 )
                 print(
                     f"aura: {command_store_error or assembled.refusal_error}",
                     file=sys.stderr,
                 )
                 return 2
-            return _fail_command(
+            return _fail_assembly(
                 args,
-                result.command,
+                result,
                 "CWA assembly did not return a diagnosis",
-                previous_event_id=(
-                    evidence_event.event_id if evidence_event else None
-                ),
-                clock=clock,
+                evidence_event,
+                clock,
             )
         return _complete_command(
             args,

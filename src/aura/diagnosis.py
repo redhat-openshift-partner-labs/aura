@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-from hashlib import sha256
 from typing import Protocol
 from uuid import UUID
 
@@ -14,6 +12,7 @@ from pydantic import (
     model_validator,
 )
 
+from aura.canonical import canonical_digest
 from aura.cwa import CWASnapshot
 
 
@@ -172,14 +171,7 @@ def compute_diagnosis_response_digest(
 ) -> str:
     """Return a canonical SHA-256 digest for a diagnosis response."""
 
-    payload = response.model_dump(mode="json")
-    canonical_json = json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    )
-    return sha256(canonical_json.encode("utf-8")).hexdigest()
+    return canonical_digest(response.model_dump(mode="json"))
 
 
 class DiagnosisModel(Protocol):
