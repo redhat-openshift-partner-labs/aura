@@ -1,0 +1,14 @@
+# ripwire quality acks v1 — written by --quality-ack; a finding stays suppressed until it worsens past its acked magnitude
+# format: ack <kind> <16-hex-key> <ackNow> [cid=<16-hex-content-id>] [by=<scope that acked it>] <reason to end of line> — one per line, kept SORTED by (kind,key) on every write (merge-friendly)
+ack dead-code:new-symbol 06a72250db0f60f3 0 cid=a28f1c9c5a0366e2 Store exceptions are referenced as JsonRecordStore class attributes and caught in cli.py; ripwire counts only direct construction
+ack dead-code:new-symbol de11090f24dbd6cd 0 cid=d515f7d62849a559 Store exceptions are referenced as JsonRecordStore class attributes and caught in cli.py; ripwire counts only direct construction
+ack dead-code:preexisting 3e43111d8a69fcde 0 cid=654baad57af2c20b Store exceptions are referenced as JsonRecordStore class attributes and caught in cli.py; ripwire counts only direct construction
+ack dead-code:preexisting 3f541d7edc997740 0 cid=603d78d674e45c99 Store exceptions are referenced as JsonRecordStore class attributes and caught in cli.py; ripwire counts only direct construction
+ack dead-code:preexisting 437f99464022490c 0 cid=bdf5846590f1bb3c Store exceptions are referenced as JsonRecordStore class attributes and caught in cli.py; ripwire counts only direct construction
+ack dead-code:preexisting 5e867dfaed5827aa 0 cid=f754676909edbed9 Store exceptions are referenced as JsonRecordStore class attributes and caught in cli.py; ripwire counts only direct construction
+ack dead-code:preexisting 667249f0eb1de51e 0 cid=c717a8c56e1a0ace Store exceptions are referenced as JsonRecordStore class attributes and caught in cli.py; ripwire counts only direct construction
+ack dead-code:preexisting 79b666bb8fa557e2 0 cid=aa9df9f6796fb26a Store exceptions are referenced as JsonRecordStore class attributes and caught in cli.py; ripwire counts only direct construction
+ack dead-code:preexisting c387ea09d70f13b8 0 cid=3af8c25ab9f87d17 Store exceptions are referenced as JsonRecordStore class attributes and caught in cli.py; ripwire counts only direct construction
+ack dead-code:preexisting d55c958d762d51f6 0 cid=3d216f64779c2ac6 Store exceptions are referenced as JsonRecordStore class attributes and caught in cli.py; ripwire counts only direct construction
+ack dead-code:preexisting f5a1dcf5c856604e 0 cid=a68ce0013c7e4a24 Store exceptions are referenced as JsonRecordStore class attributes and caught in cli.py; ripwire counts only direct construction
+ack dead-code:preexisting f74f627c8673e362 0 cid=6897172bfada1eed Store exceptions are referenced as JsonRecordStore class attributes and caught in cli.py; ripwire counts only direct construction
