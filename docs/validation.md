@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-295 passed
+335 passed
 ```
 
 Run diff hygiene:
@@ -26,7 +26,17 @@ Run the structural quality gate:
 ripwire . --quality-delta=adb2c2b..HEAD
 ```
 
-Expected current result: zero gating findings. The committed range is the quality baseline through the Phase 1 closure changes.
+Expected current result: zero gating findings. The committed range is the quality baseline through the current changes.
+
+Confirmed false positives are acknowledged in `.ripwire_quality_acks`, never by editing the baseline. Acknowledge only the specific findings, with a reason:
+
+```bash
+ripwire . --quality-delta=adb2c2b..HEAD \
+  --quality-ack="REASON" \
+  --ack-only=SUBSTRING
+```
+
+The current ledger acknowledges the store exception classes, which `JsonRecordStore` references as class attributes and `cli.py` catches by name; ripwire counts only direct construction as use.
 
 The test suite covers:
 
@@ -39,6 +49,7 @@ The test suite covers:
 - CWA assembly and digests.
 - Immutable JSON stores, record write failures, and unreadable command records.
 - CLI argument combinations and output.
+- Proposal contract invariants, the proposal store, and Git proposal staleness.
 - Fixture validity and secret redaction, including field spelling variants.
 
 ## Local Fixture

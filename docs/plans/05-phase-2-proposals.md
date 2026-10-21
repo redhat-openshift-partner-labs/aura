@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved on 2026-10-20. Prerequisites P0 and P1 are implemented and validated against the live hub; P2 through P4 remain. Revised after validation on 2026-10-20 against `fleet` commit `b8302da`, `fleet-clusters` commit `492bc8e07afddcd557441ddb7d72158de60ab8cb`, `fleet-cluster-scaffold` commit `e5346c3`, and the live hub. Implementation starts only after this plan is approved.
+Approved on 2026-10-20. Prerequisites P0 and P1 are implemented and validated against the live hub, and P3 is implemented; P2 and P4 remain. Revised after validation on 2026-10-20 against `fleet` commit `b8302da`, `fleet-clusters` commit `492bc8e07afddcd557441ddb7d72158de60ab8cb`, `fleet-cluster-scaffold` commit `e5346c3`, and the live hub. Implementation starts only after this plan is approved.
 
 ## Objective
 
@@ -49,7 +49,7 @@ These must land before proposal types that depend on them:
 | P0 | Git collector reads `deprovision/` sentinels, records whether each has the `-archive` suffix, and inventory and diagnosis distinguish pending, archive-pending, stranded, leftover, and orphaned deprovisions | Deprovision sentinel, inventory accuracy | Done |
 | P1 | Tekton collector records redacted `spec.params` and workspace bindings, not only `cluster-name` | Post-provision rerun | Done |
 | P2 | Read-only RBAC adds `list` on `pipelines.tekton.dev` in `openshift-pipelines`, and a collector reads Pipeline parameter definitions | Post-provision rerun | Open |
-| P3 | Append-only proposal store and `Proposal` contract | All proposal types | Open |
+| P3 | Append-only proposal store and `Proposal` contract | All proposal types | Done |
 | P4 | `propose` CLI commands, authorized for `proposer` and `admin` | All proposal types | Open |
 
 At the validated commit, seven bare `deprovision/<id>` sentinels exist; six of those clusters still appear under `provision/` with no OpenShift resources, and only two still have a retained deprovision PipelineRun. With P0, Aura reports those six as `deprovision_status: stranded` and explains them in `diagnose state`, including the four without a retained PipelineRun. P1 records parameters with name-based redaction; `htpasswd-provider-name` is allowlisted because live validation showed it is the identity provider display name.

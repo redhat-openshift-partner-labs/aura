@@ -30,7 +30,7 @@ Validation summary, recorded at Aura commit `6dc0eb3`:
 
 ## Phase 2 Prerequisites
 
-Prerequisites P0 and P1 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented. Validation, recorded at Aura commit `655a0ac`:
+Prerequisites P0, P1, and P3 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`; it is local and needs no cluster access. Automated tests at `ec84fd4`: 335 passed, with zero gating quality findings. Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
 
 | Check | Result |
 | --- | --- |
@@ -98,6 +98,11 @@ The model protocol remains provider-independent. A future provider must consume 
 
 | Commit | Change |
 | --- | --- |
+| `ec84fd4` | Acknowledged store exception false positives |
+| `bdb5864` | Shared JSON record store behavior |
+| `cbd7b2f` | Reported stale Git proposals |
+| `029f8c4` | Added the append-only proposal store |
+| `b60308a` | Added the proposal contract |
 | `655a0ac` | Explained deprovision without retained PipelineRuns |
 | `3e9fff4` | Explained deprovision of legacy definitions |
 | `25fed6b` | Kept the htpasswd provider name parameter |
@@ -143,4 +148,4 @@ The model protocol remains provider-independent. A future provider must consume 
 Phase 1 is published. Remaining work:
 
 1. `fleet-clusters` owners backfill `metadata.yaml` and its `platform` key for the definitions listed in [Open Questions](plans/08-open-questions.md#fleet-clusters-data), pushing any added `metadata.yaml` with `[skip-provision]` in the head commit message, and decide how to remediate the stranded deprovision sentinels.
-2. Implement the remaining [Phase 2](plans/05-phase-2-proposals.md) prerequisites P2 through P4, then the proposal types. P0 and P1 are done.
+2. Implement the remaining [Phase 2](plans/05-phase-2-proposals.md) prerequisites P4 and P2, then the proposal types. P0, P1, and P3 are done.
