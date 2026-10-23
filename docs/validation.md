@@ -190,6 +190,57 @@ Latest validation observed:
 | Refusals | All four refusal clusters exited `2` with the expected missing evidence; no diagnosis record was written for them |
 | Stranded deprovisions | All six stranded clusters exited `0`: two cite a retained deprovision PipelineRun, four state that no PipelineRun is retained |
 
+## Live Proposal Validation
+
+Choose a cluster that has OpenShift resources and no `deprovision/` sentinel. Generating a proposal reads only; it writes nothing to `fleet-clusters` or the hub.
+
+```bash
+export CLUSTER=<live-cluster> OUT=./local/propose-validation
+mkdir -p "$OUT"
+```
+
+```bash
+UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura propose deprovision \
+  --cluster "$CLUSTER" \
+  --fleet-clusters ../fleet-clusters \
+  --openshift-kubeconfig "$AURA_KUBECONFIG" \
+  --snapshot-dir "$OUT/snapshots" \
+  --audit-dir "$OUT/audit" \
+  --cwa-dir "$OUT/cwa" \
+  --proposal-dir "$OUT/proposals" \
+  --role proposer \
+  --operator operator@example.com \
+  --idempotency-key propose-live-001 \
+  --command-dir "$OUT/commands" > "$OUT/proposal.json"
+```
+
+Check the proposal against `fleet-clusters` without changing it:
+
+```bash
+jq -r .patch "$OUT/proposal.json" | git -C ../fleet-clusters apply --check -v -
+```
+
+```bash
+UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync python -c 'import sys; from pathlib import Path; from aura.proposals import Proposal, patch_changes; from aura.collectors.git_staleness import GitProposalStaleness; p = Proposal.model_validate_json(Path(sys.argv[1]).read_text()); print(patch_changes(p.patch), [str(e) for e in p.trigger_effect]); print(GitProposalStaleness(Path(sys.argv[2])).check(p))' "$OUT/proposal.json" ../fleet-clusters
+```
+
+Then rerun the command with new idempotency keys for a deprovisioned cluster, such as `0171d46a-scopedaws`, and with `--role viewer`.
+
+| Check | Expected result |
+| --- | --- |
+| Success | Exit code `0`; one proposal file; `base_commit` equals `fleet-clusters` `HEAD` |
+| Patch | `git apply --check` passes; the only change adds `deprovision/<id>-archive` |
+| Contract | Proposal validates with its digest; trigger effects `deprovision`, `archive-cluster`; not stale |
+| Commit message | Names the cluster, states it is standalone, ends with `Aura-Proposal: <id>` |
+| CWA trace | Provider `aura`, model `deprovision-sentinel-deterministic`, response digest equal to `proposal_digest` |
+| Audit chain | `command_received`, `evidence_collected`, `context_assembled`, `proposal_created`, each linked to the previous event |
+| Deprovisioned cluster | Exit code `2`; `proposal refused:` including `no OpenShift resources for cluster <id>`; no proposal stored |
+| `viewer` role | Exit code `2`; `operator is not authorized to propose changes`; no evidence collected |
+| Command records | `propose.patch` with `succeeded`, `refused`, and `failed` |
+| `fleet-clusters` | `git status --porcelain` is empty |
+
+Latest validation, run by the operator on 2026-10-23 against Aura commit `c5abafb` with `virt-cookbook` as the live cluster and `0171d46a-scopedaws` for refusal: every check above produced the expected result.
+
 ## Idempotency Validation
 
 Repeat a command with an idempotency key that has already reached a terminal state.
