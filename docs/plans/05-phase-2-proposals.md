@@ -180,7 +180,7 @@ Failure-mode criteria, added on 2026-10-23 under the [development workflow](../d
 - `proposal status` fails, rather than reporting no proposals, when the proposal store is missing or unreadable or a record is misnamed, unreadable, or tampered.
 - Each proposal type has failure tests for every row of its failure-mode matrix.
 
-The deprovision type meets these except full matrix coverage: it has failure tests for the trace, `proposal_created`, and proposal writes, and the shared failure-injection harness will cover the remaining rows.
+The deprovision type and `proposal status` meet these criteria; the shared failure-injection harness covers every row of their matrices, including refusal.
 
 ## Out of Scope
 

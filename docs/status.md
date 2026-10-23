@@ -30,7 +30,7 @@ Validation summary, recorded at Aura commit `6dc0eb3`:
 
 ## Phase 2 Prerequisites
 
-Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented; P2 remains. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`. P4 adds `propose deprovision`, authorized for `proposer` and `admin`, which generates the deprovision sentinel proposal type. `proposal status` reports Git staleness of stored proposals for `viewer`, `proposer`, and `admin`. Automated tests at `5465797`: 401 passed, with zero gating quality findings. The operator validated `propose deprovision` against the live hub on 2026-10-23 with `virt-cookbook`; see [Live Proposal Validation](validation.md#live-proposal-validation). Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
+Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented; P2 remains. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`. P4 adds `propose deprovision`, authorized for `proposer` and `admin`, which generates the deprovision sentinel proposal type. `proposal status` reports Git staleness of stored proposals for `viewer`, `proposer`, and `admin`. Automated tests at `33fc43f`: 434 passed, with zero gating quality findings. The shared failure-injection matrix and invariant check cover every command. The operator validated `propose deprovision` against the live hub on 2026-10-23 with `virt-cookbook`; see [Live Proposal Validation](validation.md#live-proposal-validation). Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
 
 | Check | Result |
 | --- | --- |
@@ -101,6 +101,7 @@ The model protocol remains provider-independent. A future provider must consume 
 
 | Commit | Change |
 | --- | --- |
+| `33fc43f` | Added the failure-injection matrix and invariant checks |
 | `5465797` | Stored proposals last and linked failures to stored audit events |
 | `554b1c6` | Required an empty regular-file deprovision sentinel |
 | `d81056b` | Failed proposal status on unreadable stores |
@@ -159,5 +160,4 @@ The model protocol remains provider-independent. A future provider must consume 
 Phase 1 is published. Remaining work:
 
 1. `fleet-clusters` owners backfill `metadata.yaml` and its `platform` key for the definitions listed in [Open Questions](plans/08-open-questions.md#fleet-clusters-data), pushing any added `metadata.yaml` with `[skip-provision]` in the head commit message, and decide how to remediate the stranded deprovision sentinels.
-2. Build the shared failure-injection harness and invariant check listed under [Adoption Status](development.md#adoption-status) in the development workflow.
-3. Implement the remaining [Phase 2](plans/05-phase-2-proposals.md) prerequisite P2, then the scaffold, cluster-edit, and post-provision rerun proposal types, each under the development workflow. P0, P1, P3, and P4 are done.
+2. Implement the remaining [Phase 2](plans/05-phase-2-proposals.md) prerequisite P2, then the scaffold, cluster-edit, and post-provision rerun proposal types, each under the development workflow. P0, P1, P3, and P4 are done.

@@ -151,6 +151,19 @@ For each command, list every step that reads external state or writes a record, 
 
 Rows that do not apply to a command are omitted from its matrix. A new command or write step adds rows.
 
+### Shared Harness
+
+`tests/test_failure_matrix.py` applies the matrix to every command automatically:
+
+1. It runs each scenario once and records every store write. All writes go through `save_private_json`, which `tests/failure_injection.py` intercepts.
+2. It asserts that the recorded write labels equal the scenario's documented write order. This pins the order in `docs/wiring.md`, so moving a write is a visible, reviewed change.
+3. It reruns the scenario once per write, failing only that write with the `OSError` a full disk raises. Each run must exit `2`, print nothing to standard output, and store a `failed` record. The exception is a failure of the final terminal-record write, which leaves no record by design. No proposal from that command may remain, and `command_failed` must link to the last audit event stored before the failure.
+4. It replaces the collector with one that raises `GitInventoryError` and asserts the chain `command_received` then `command_failed`.
+
+`tests/invariants.py` provides `assert_command_invariants`, which checks I1–I4 on the records a command left, and `command_chain`, which returns a command's audit events in chain order after asserting I2. Every matrix run calls it. Other CLI tests may call it too.
+
+To cover a new command, or a new outcome of an existing command, add a `Scenario` with its builder and its documented write order. Rows for new write steps are then tested without further code.
+
 ## Input Edge Checklist
 
 - Empty input, empty directory, and missing directory.
@@ -174,10 +187,12 @@ Plans, checklists, and task trackers record scope and progress. They do not show
 
 ## Adoption Status
 
-Adopted on 2026-10-23. Not yet in place:
+Adopted on 2026-10-23.
 
-- A shared failure-injection harness that applies the failure-mode matrix to every command. Until it exists, write failure tests per command.
-- A shared invariant check for I1–I3 that CLI tests run after each command.
-- Mutation testing. When adopted, run it periodically on changed modules to confirm that tests constrain the code.
+| Practice | Status |
+| --- | --- |
+| Failure-injection harness | In place. It covers every command, including refusals: inventory list with and without record directories, workflow inspect, diagnose state, propose deprovision, and proposal status. Against the CLI from before the review fixes, it fails 8 of its 17 matrix tests. |
+| Invariant check for I1–I4 | In place. It runs after every matrix run. Existing per-command CLI tests do not call it yet. |
+| Mutation testing | Not adopted. When adopted, run it periodically on changed modules to confirm that tests constrain the code. |
 
-Building the first two is the next engineering task, before further Phase 2 proposal types.
+The harness does not cover failures of the command-store lock, the idempotency check, or the failure-path writes themselves, such as the `command_failed` audit write. Existing CLI tests cover the lock and idempotency check; a failing failure-path write is not yet tested.

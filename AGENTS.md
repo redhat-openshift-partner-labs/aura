@@ -109,7 +109,7 @@ Leave these untracked local artifacts alone unless the user explicitly asks othe
 - Store tests assert exclusive-create behavior.
 - Fixture tests must not contain secrets.
 - Every spec rule that says only, exactly, empty, must, must not, or never has a negative test against the contract or validator, not only the generator.
-- Every command has failure tests for each record write and external read in its failure-mode matrix, asserting the terminal record, absent artifacts, and the `command_failed` link.
+- Every command has failure tests for each record write and external read in its failure-mode matrix, asserting the terminal record, absent artifacts, and the `command_failed` link. Add a `Scenario` to `tests/test_failure_matrix.py` for each new command or outcome, with its documented write order; the shared harness then tests every row.
 - Tests force failures deterministically, for example by pre-creating a record at its deterministic ID, and restore any permissions they change.
 - A change that touches a project invariant in `docs/development.md` has a test asserting it.
 
