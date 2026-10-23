@@ -27,6 +27,11 @@ from aura.collectors.cluster_inventory import ClusterInventoryCollector
 from aura.collectors.cluster_state import ClusterStateCollector
 from aura.collectors.git_inventory import GitInventoryCollector
 from aura.collectors.git_inventory import GitInventoryError
+from aura.collectors.git_staleness import (
+    GitProposalStaleness,
+    ProposalRecordUnreadable,
+    ProposalStalenessCollector,
+)
 from aura.collectors.oc_cli import OpenShiftCLIError
 from aura.collectors.openshift_cli_client import OpenShiftCLIInventoryClient
 from aura.collectors.openshift_cli_tekton_client import (
@@ -64,7 +69,11 @@ from aura.evidence_store import (
     EvidenceSnapshotAlreadyStored,
     JsonEvidenceSnapshotStore,
 )
-from aura.proposal_store import JsonProposalStore, ProposalAlreadyStored
+from aura.proposal_store import (
+    JsonProposalStore,
+    ProposalAlreadyStored,
+    ProposalNotFound,
+)
 from aura.proposals import CLUSTER_NAME_PATTERN, Proposal, ProposalType
 from aura.services.cwa import (
     CWAAssemblyResult,
@@ -89,19 +98,11 @@ from aura.services.proposal import (
     InvalidProposalCommand,
     ProposalRefused,
     ProposalService,
+    ProposalStatusService,
     UnauthorizedProposalCommand,
 )
-from aura.services.inventory import (
-    EvidenceCollector,
-    InventoryService,
-    InvalidCommandType,
-    UnauthorizedCommand,
-)
-from aura.services.workflow import (
-    InvalidWorkflowCommand,
-    UnauthorizedWorkflowCommand,
-    WorkflowService,
-)
+from aura.services.inventory import EvidenceCollector, InventoryService
+from aura.services.workflow import WorkflowService
 from aura.state import CommandStateMachine, InvalidCommandTransition
 
 
@@ -246,6 +247,25 @@ def _add_propose_deprovision_arguments(
     _add_operator_arguments(parser, "propose deprovision")
 
 
+def _add_proposal_status_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    _add_path_arguments(parser, _FLEET_CLUSTERS, _PROPOSAL_DIR, required=True)
+    parser.add_argument(
+        "--proposal-id",
+        action="append",
+        type=UUID,
+        default=[],
+        help="Proposal ID to check; may be repeated; omit for all",
+    )
+    _add_path_arguments(parser, _SNAPSHOT_DIR, _AUDIT_DIR)
+    _add_operator_arguments(
+        parser,
+        "check proposal staleness",
+        query_help="Operator query recorded with the command",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="aura")
     command_parser = parser.add_subparsers(dest="command", required=True)
@@ -280,6 +300,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     deprovision_parser = propose_command_parser.add_parser("deprovision")
     _add_propose_deprovision_arguments(deprovision_parser)
+
+    proposal_parser = command_parser.add_parser("proposal")
+    proposal_command_parser = proposal_parser.add_subparsers(
+        dest="proposal_command",
+        required=True,
+    )
+    status_parser = proposal_command_parser.add_parser("status")
+    _add_proposal_status_arguments(status_parser)
     return parser
 
 
@@ -523,13 +551,28 @@ def _run_evidence_command(
 
 @dataclass(frozen=True)
 class EvidenceCommandRoute:
-    command_type: CommandType
+    service_type: type[EvidenceCommandService]
     command_input: Callable[[argparse.Namespace], dict[str, object]]
-    service_factory: Callable[
-        [EvidenceCollector],
-        EvidenceCommandService,
+    select_collector: Callable[
+        [argparse.Namespace, EvidenceCollector | None],
+        EvidenceCollector,
     ]
-    errors: tuple[type[Exception], ...]
+    source_errors: tuple[type[Exception], ...]
+    assemble: bool = False
+
+    @property
+    def command_type(self) -> CommandType:
+        return self.service_type.spec.command_type
+
+    @property
+    def errors(self) -> tuple[type[Exception], ...]:
+        spec = self.service_type.spec
+        return (
+            spec.unauthorized_error,
+            spec.invalid_error,
+            InvalidCommandTransition,
+            *self.source_errors,
+        )
 
 
 @dataclass(frozen=True)
@@ -549,16 +592,14 @@ class CollectedEvidence:
 def _run_simple_evidence_command(
     args: argparse.Namespace,
     route: EvidenceCommandRoute,
-    selected_collector: EvidenceCollector,
+    collector: EvidenceCollector | None,
     command_id_factory: Callable[[], UUID],
     clock: Callable[[], datetime],
-    *,
-    assemble: bool,
 ) -> int:
     command = _make_command(
         args,
         route.command_type,
-        route.command_input(args),
+        {"query": args.query, **route.command_input(args), "history": []},
         command_id_factory,
         clock,
     )
@@ -568,10 +609,10 @@ def _run_simple_evidence_command(
         lambda: _run_simple_command(
             args,
             route,
-            selected_collector,
+            route.select_collector(args, collector),
             command,
             roles={OperatorRole(role) for role in args.role},
-            assemble=assemble,
+            assemble=route.assemble,
             clock=clock,
         ),
     )
@@ -587,7 +628,7 @@ def _run_simple_command(
     assemble: bool,
     clock: Callable[[], datetime],
 ) -> int:
-    service = route.service_factory(selected_collector)
+    service = route.service_type(collector=selected_collector)
     collected = _collect_evidence(
         args,
         command,
@@ -789,45 +830,44 @@ def _selected_cluster_state_collector(
     )
 
 
-def _workflow_route() -> EvidenceCommandRoute:
-    return EvidenceCommandRoute(
-        command_type=CommandType.WORKFLOW_INSPECT,
-        command_input=lambda args: {
-            "query": args.query,
-            "namespace": args.namespace,
-            "history": [],
-        },
-        service_factory=lambda collector: WorkflowService(
-            collector=collector
-        ),
-        errors=(
-            UnauthorizedWorkflowCommand,
-            InvalidWorkflowCommand,
-            InvalidCommandTransition,
-            OpenShiftCLIError,
-            GitInventoryError,
-        ),
+def _selected_proposal_status_collector(
+    args: argparse.Namespace,
+    collector: EvidenceCollector | None,
+) -> EvidenceCollector:
+    return collector or ProposalStalenessCollector(
+        proposal_store=JsonProposalStore(args.proposal_dir),
+        staleness=GitProposalStaleness(args.fleet_clusters),
+        proposal_ids=args.proposal_id,
     )
 
 
-def _inventory_route() -> EvidenceCommandRoute:
-    return EvidenceCommandRoute(
-        command_type=CommandType.INVENTORY_LIST,
+_EVIDENCE_ROUTES = {
+    "inventory": EvidenceCommandRoute(
+        service_type=InventoryService,
+        command_input=lambda args: {},
+        select_collector=_selected_collector,
+        source_errors=(OpenShiftCLIError, GitInventoryError),
+        assemble=True,
+    ),
+    "workflow": EvidenceCommandRoute(
+        service_type=WorkflowService,
+        command_input=lambda args: {"namespace": args.namespace},
+        select_collector=_selected_workflow_collector,
+        source_errors=(OpenShiftCLIError, GitInventoryError),
+    ),
+    "proposal": EvidenceCommandRoute(
+        service_type=ProposalStatusService,
         command_input=lambda args: {
-            "query": args.query,
-            "history": [],
+            "proposal_ids": [str(item) for item in args.proposal_id],
         },
-        service_factory=lambda collector: InventoryService(
-            collector=collector
-        ),
-        errors=(
-            UnauthorizedCommand,
-            InvalidCommandType,
-            InvalidCommandTransition,
-            OpenShiftCLIError,
+        select_collector=_selected_proposal_status_collector,
+        source_errors=(
             GitInventoryError,
+            ProposalNotFound,
+            ProposalRecordUnreadable,
         ),
-    )
+    ),
+}
 
 
 def _diagnosis_record(
@@ -1617,14 +1657,14 @@ def _dispatch_command(
     command_id_factory: Callable[[], UUID],
     clock: Callable[[], datetime],
 ) -> int:
-    if args.command == "workflow":
+    route = _EVIDENCE_ROUTES.get(args.command)
+    if route is not None:
         return _run_simple_evidence_command(
             args,
-            _workflow_route(),
-            _selected_workflow_collector(args, collector),
+            route,
+            collector,
             command_id_factory,
             clock,
-            assemble=False,
         )
     if args.command == "diagnose":
         return _execute_new_command(
@@ -1640,27 +1680,18 @@ def _dispatch_command(
             command_id_factory=command_id_factory,
             clock=clock,
         )
-    if args.command == "propose":
-        return _execute_new_command(
-            args,
-            CommandType.PROPOSE_PATCH,
-            {
-                "query": args.query,
-                "proposal_type": ProposalType.DEPROVISION.value,
-                "cluster_name": args.cluster,
-                "history": [],
-            },
-            lambda command: _run_proposal(args, command, collector, clock),
-            command_id_factory=command_id_factory,
-            clock=clock,
-        )
-    return _run_simple_evidence_command(
+    return _execute_new_command(
         args,
-        _inventory_route(),
-        _selected_collector(args, collector),
-        command_id_factory,
-        clock,
-        assemble=True,
+        CommandType.PROPOSE_PATCH,
+        {
+            "query": args.query,
+            "proposal_type": ProposalType.DEPROVISION.value,
+            "cluster_name": args.cluster,
+            "history": [],
+        },
+        lambda command: _run_proposal(args, command, collector, clock),
+        command_id_factory=command_id_factory,
+        clock=clock,
     )
 
 

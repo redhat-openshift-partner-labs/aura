@@ -50,6 +50,25 @@ class ProposalService(EvidenceCommandService):
     )
 
 
+class UnauthorizedProposalStatusCommand(Exception):
+    """Raised when an operator cannot check proposal staleness."""
+
+
+class InvalidProposalStatusCommand(Exception):
+    """Raised when a command is not a proposal status command."""
+
+
+class ProposalStatusService(EvidenceCommandService):
+    """Reports read-only staleness of stored proposals."""
+
+    spec = make_evidence_command_spec(
+        command_type=CommandType.PROPOSAL_STATUS,
+        unauthorized_error=UnauthorizedProposalStatusCommand,
+        invalid_error=InvalidProposalStatusCommand,
+        action="check proposal staleness",
+    )
+
+
 @final
 class DeprovisionProposalGenerator:
     """Deterministically proposes a standalone deprovision sentinel commit."""
@@ -192,7 +211,10 @@ def _unmet_preconditions(
 __all__ = [
     "DeprovisionProposalGenerator",
     "InvalidProposalCommand",
+    "InvalidProposalStatusCommand",
     "ProposalRefused",
     "ProposalService",
+    "ProposalStatusService",
     "UnauthorizedProposalCommand",
+    "UnauthorizedProposalStatusCommand",
 ]

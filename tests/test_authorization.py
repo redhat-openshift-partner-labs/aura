@@ -95,22 +95,23 @@ def test_empty_roles_are_denied() -> None:
     assert not policy.can_approve(set())
 
 
-def test_required_roles_are_reported() -> None:
-    policy = AuthorizationPolicy()
-
-    assert policy.required_roles(CommandType.EXECUTE_PIPELINE) == {
-        OperatorRole.EXECUTOR,
-        OperatorRole.ADMIN,
-    }
-
-
 @pytest.mark.parametrize(
-    "role",
-    [OperatorRole.APPROVER, OperatorRole.EXECUTOR],
+    ("command_type", "roles"),
+    [
+        (
+            CommandType.EXECUTE_PIPELINE,
+            {OperatorRole.EXECUTOR, OperatorRole.ADMIN},
+        ),
+        (
+            CommandType.PROPOSAL_STATUS,
+            {OperatorRole.VIEWER, OperatorRole.PROPOSER, OperatorRole.ADMIN},
+        ),
+    ],
 )
-def test_proposal_status_excludes_approvers_and_executors(
-    role: OperatorRole,
+def test_required_roles_are_reported(
+    command_type: CommandType,
+    roles: set[OperatorRole],
 ) -> None:
     policy = AuthorizationPolicy()
 
-    assert not policy.can_issue({role}, CommandType.PROPOSAL_STATUS)
+    assert policy.required_roles(command_type) == roles
