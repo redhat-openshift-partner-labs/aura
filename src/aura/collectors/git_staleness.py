@@ -158,16 +158,23 @@ class ProposalStalenessCollector:
     def _proposals(self) -> list[Proposal]:
         try:
             proposal_ids = self._proposal_ids or self._store.record_ids()
-        except ValueError as error:
+        except FileNotFoundError as error:
             raise ProposalRecordUnreadable(
-                f"proposal record is unreadable: {error}"
+                f"proposal store does not exist: {self._store.root}"
             ) from error
-        return [self._load(proposal_id) for proposal_id in proposal_ids]
+        except (OSError, ValueError) as error:
+            raise ProposalRecordUnreadable(
+                f"proposal store is unreadable: {error}"
+            ) from error
+        return [
+            self._load(proposal_id)
+            for proposal_id in dict.fromkeys(proposal_ids)
+        ]
 
     def _load(self, proposal_id: UUID) -> Proposal:
         try:
             return self._store.load(proposal_id)
-        except ValueError as error:
+        except (OSError, ValueError) as error:
             raise ProposalRecordUnreadable(
                 f"proposal record is unreadable: {proposal_id}.json"
             ) from error

@@ -96,6 +96,7 @@ def test_cli_proposal_status_authorizes_viewer_proposer_and_admin(
     expected_exit_code,
 ) -> None:
     fleet_clusters(tmp_path)
+    (tmp_path / "proposals").mkdir()
 
     exit_code = run_status(status_arguments(tmp_path, *roles))
     captured = capsys.readouterr()
@@ -147,6 +148,45 @@ def test_cli_proposal_status_fails_for_tampered_proposal(
     assert capsys.readouterr().err == (
         f"aura: proposal record is unreadable: {path.name}\n"
     )
+    command = JsonCommandStore(tmp_path / "commands").load("status-key")
+    assert command.status is CommandState.FAILED
+
+
+def test_cli_proposal_status_fails_for_unreadable_record(
+    tmp_path,
+    capsys,
+) -> None:
+    _, base = fleet_clusters(tmp_path)
+    path = JsonProposalStore(tmp_path / "proposals").save(
+        deprovision_proposal(base)
+    )
+    path.chmod(0o000)
+
+    exit_code = run_status(status_arguments(tmp_path))
+
+    assert exit_code == 2
+    assert capsys.readouterr().err == (
+        f"aura: proposal record is unreadable: {path.name}\n"
+    )
+    command = JsonCommandStore(tmp_path / "commands").load("status-key")
+    assert command.status is CommandState.FAILED
+
+
+def test_cli_proposal_status_fails_for_missing_store(
+    tmp_path,
+    capsys,
+) -> None:
+    fleet_clusters(tmp_path)
+
+    exit_code = run_status(status_arguments(tmp_path))
+
+    assert exit_code == 2
+    assert capsys.readouterr().err == (
+        "aura: proposal store does not exist: "
+        f"{tmp_path / 'proposals'}\n"
+    )
+    command = JsonCommandStore(tmp_path / "commands").load("status-key")
+    assert command.status is CommandState.FAILED
 
 
 def test_cli_proposal_status_rejects_invalid_proposal_id(tmp_path) -> None:

@@ -215,15 +215,61 @@ def test_staleness_collector_selects_requested_proposals(
     ]
 
 
-def test_staleness_collector_reports_no_items_without_proposals(
+def test_staleness_collector_reports_no_items_for_empty_store(
     repository,
     tmp_path,
 ) -> None:
     root, base = repository
+    (tmp_path / "proposals").mkdir()
 
-    snapshot = collect_staleness(root, tmp_path / "missing")
+    snapshot = collect_staleness(root, tmp_path / "proposals")
 
     assert (snapshot.items, snapshot.source_version) == ([], base)
+
+
+def test_staleness_collector_rejects_missing_store(
+    repository,
+    tmp_path,
+) -> None:
+    root, _ = repository
+
+    with pytest.raises(
+        ProposalRecordUnreadable,
+        match="proposal store does not exist: .*missing",
+    ):
+        collect_staleness(root, tmp_path / "missing")
+
+
+def test_staleness_collector_rejects_unreadable_store(
+    repository,
+    tmp_path,
+) -> None:
+    root, base = repository
+    store = JsonProposalStore(tmp_path / "proposals")
+    store.save(deprovision_proposal(base))
+    store.root.chmod(0o000)
+    try:
+        with pytest.raises(
+            ProposalRecordUnreadable,
+            match="proposal store is unreadable: .*Permission denied",
+        ):
+            collect_staleness(root, store.root)
+    finally:
+        store.root.chmod(0o700)
+
+
+def test_staleness_collector_checks_repeated_ids_once(
+    repository,
+    tmp_path,
+) -> None:
+    root, base = repository
+    JsonProposalStore(tmp_path / "proposals").save(deprovision_proposal(base))
+
+    snapshot = collect_staleness(
+        root, tmp_path / "proposals", [UUID(int=500), UUID(int=500)]
+    )
+
+    assert len(snapshot.items) == 1
 
 
 def test_staleness_collector_rejects_missing_requested_proposal(
@@ -236,32 +282,51 @@ def test_staleness_collector_rejects_missing_requested_proposal(
         collect_staleness(root, tmp_path / "proposals", [UUID(int=9)])
 
 
+def _tamper(path: Path) -> None:
+    path.chmod(0o600)
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "chore: deprovision example", "chore: deprovision example!"
+        ),
+        encoding="utf-8",
+    )
+
+
+def _replace_with_directory(path: Path) -> None:
+    path.unlink()
+    path.mkdir()
+
+
 @pytest.mark.parametrize(
-    ("name", "content"),
+    ("damage", "message"),
     [
-        (f"{UUID(int=500)}.json", None),
-        ("notes.json", "{}"),
+        (_tamper, f"proposal record is unreadable: {UUID(int=500)}.json"),
+        (
+            lambda path: path.chmod(0o000),
+            f"proposal record is unreadable: {UUID(int=500)}.json",
+        ),
+        (
+            _replace_with_directory,
+            f"proposal record is unreadable: {UUID(int=500)}.json",
+        ),
+        (
+            lambda path: (path.parent / "notes.json").write_text("{}"),
+            "proposal store is unreadable: "
+            "record name is not an ID: notes.json",
+        ),
     ],
 )
 def test_staleness_collector_rejects_unreadable_records(
     repository,
     tmp_path,
-    name,
-    content,
+    damage,
+    message,
 ) -> None:
     root, base = repository
-    store = JsonProposalStore(tmp_path / "proposals")
-    store.save(deprovision_proposal(base))
-    path = tmp_path / "proposals" / name
-    if content is None:
-        path.chmod(0o600)
-        content = path.read_text(encoding="utf-8").replace(
-            "chore: deprovision example", "chore: deprovision example!"
-        )
-    path.write_text(content, encoding="utf-8")
+    path = JsonProposalStore(tmp_path / "proposals").save(
+        deprovision_proposal(base)
+    )
+    damage(path)
 
-    with pytest.raises(
-        ProposalRecordUnreadable,
-        match=rf"proposal record is unreadable: .*{name}",
-    ):
+    with pytest.raises(ProposalRecordUnreadable, match=message):
         collect_staleness(root, tmp_path / "proposals")

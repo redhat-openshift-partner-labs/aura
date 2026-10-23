@@ -94,10 +94,15 @@ class JsonRecordStore(Generic[R]):
         return cast(R, self.record_type.model_validate_json(value))
 
     def record_ids(self) -> list[UUID]:
-        """Return stored record IDs in ascending order."""
+        """Return stored record IDs in ascending order.
+
+        Unlike glob, iterdir raises when the store is missing or unreadable.
+        """
 
         record_ids: list[UUID] = []
-        for path in self.root.glob("*.json"):
+        for path in self.root.iterdir():
+            if path.suffix != ".json":
+                continue
             try:
                 record_ids.append(UUID(path.stem))
             except ValueError as error:
