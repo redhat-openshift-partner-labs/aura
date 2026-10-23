@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 1 is implemented, validated, and published. The [Phase 2](05-phase-2-proposals.md) plan is approved, and its prerequisites P0 and P1 are implemented. [Phase 3](06-phase-3-approved-execution.md) is a draft aligned with Phase 2 and awaits approval.
+Phase 1 is implemented, validated, and published. The [Phase 2](05-phase-2-proposals.md) plan is approved; its prerequisites P0, P1, P3, and P4 are implemented, and deprovision proposals are generated. [Phase 3](06-phase-3-approved-execution.md) is a draft aligned with Phase 2 and awaits approval.
 
 ## Objective
 

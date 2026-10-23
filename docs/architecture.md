@@ -117,6 +117,10 @@ Model output is untrusted data. Pydantic validates the exact response shape, con
 
 The command exits with code `2`. Evidence, CWA snapshot, CWA trace, and audit records are still preserved.
 
+## Proposals
+
+`propose deprovision` turns the same cluster-state evidence into a deterministic, digest-verified `Proposal` that adds `deprovision/<id>-archive`. Aura stores the proposal and never applies it, commits it, or pushes it. Unmet preconditions refuse the command with every reason, and the evidence, CWA, and audit records are preserved.
+
 ## Failure Model
 
 | Failure | Current behavior |
@@ -124,6 +128,7 @@ The command exits with code `2`. Evidence, CWA snapshot, CWA trace, and audit re
 | Missing flag | CLI error, exit code `2` |
 | Unauthorized role | Service error, exit code `2` |
 | Missing diagnosis evidence | Refusal, exit code `2`, records preserved |
+| Unmet proposal precondition | Refusal, exit code `2`, no proposal stored, other records preserved |
 | Duplicate immutable record | Store error, exit code `2` |
 | External `oc` failure | Converted to `OpenShiftCLIError`; CLI reports a concise error and exits `2` without partial JSON |
 | Model unavailable | Generic diagnosis service falls back deterministically |

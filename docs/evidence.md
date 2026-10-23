@@ -157,7 +157,7 @@ The CWA assembler emits all required slots:
 - Assembler version and assembly timestamp.
 - Optional model provider, model name, and response digest.
 
-The trace is stored even when diagnosis is refused.
+The trace is stored even when diagnosis or a proposal is refused. For a stored proposal, the trace records provider `aura`, the generator name as model name, and the `proposal_digest` as response digest.
 
 ## Diagnosis Response
 
@@ -237,6 +237,31 @@ Patches must be Git-format diffs. Every proposal names exactly one cluster, and 
 
 `GitProposalStaleness` reports a Git proposal as stale when its `base_commit` is not an ancestor of `fleet-clusters` `HEAD`, or when any commit since `base_commit` changed `provision/<id>`, `archive/<id>`, `deprovision/<id>`, or `deprovision/<id>-archive`. Changes to other clusters do not make it stale. Post-provision reruns have no base commit; their evidence is rechecked when they are generated or executed.
 
+### Deprovision Proposal
+
+`DeprovisionProposalGenerator` (`deprovision-sentinel-deterministic`, version `0.1.0`) consumes a cluster-state CWA snapshot. Every text field comes from a fixed template; no model writes any part of it.
+
+| Field | Value |
+| --- | --- |
+| `proposal_id` | UUIDv5 of the command ID and CWA snapshot ID |
+| `base_commit` | Pinned `fleet-clusters` revision from the evidence `git=` source version |
+| `patch` | Adds the empty file `deprovision/<id>-archive` |
+| `commit_message` | Names the cluster, says the commit is standalone and adds only the sentinel, and ends with `Aura-Proposal: <proposal_id>` |
+| `risks` | Cluster destruction on merge, the one-cluster-per-push trigger rule, and a failed pipeline leaving `provision/<id>` in place |
+| `rollback` | Discard before merge; none once the pipeline starts |
+
+Refusal reasons, all reported together:
+
+| Unmet precondition | Reason |
+| --- | --- |
+| No correlation item | `no cluster state correlation in evidence` |
+| No Git definition | `no Git cluster definition for <id>` |
+| Active and archived definitions | `conflicting Git cluster definitions for <id>` |
+| Definition outside `provision/` | `cluster <id> is defined at <path>, not provision/<id>` |
+| Existing sentinel | `deprovision sentinel already exists: <path>` |
+| No OpenShift resources | `no OpenShift resources for cluster <id>` |
+| No pinned revision | `no pinned Git base commit in evidence` |
+
 ## Audit Events
 
 Audit events are immutable and reference the previous event where applicable:
@@ -247,5 +272,6 @@ Audit events are immutable and reference the previous event where applicable:
 | `evidence_collected` | Snapshot ID, digest, collector, source, source version, persistence flag |
 | `context_assembled` | CWA snapshot and trace IDs, evidence digest, assembler version |
 | `model_called` | Diagnosis ID, response digest, provider, model, fallback flag, trace ID |
+| `proposal_created` | Proposal ID, digest, type, cluster, base commit, CWA snapshot and trace IDs, generator and version |
 | `command_failed` | Terminal failure reason |
 | `command_refused` | Terminal refusal reason |

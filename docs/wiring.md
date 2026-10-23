@@ -9,6 +9,7 @@
 | `inventory list --source combined` | `inventory.list` | `InventoryService` | `ClusterInventoryCollector` |
 | `workflow inspect` | `workflow.inspect` | `WorkflowService` | `WorkflowInventoryCollector` |
 | `diagnose state` | `diagnose.state` | `ClusterStateService` | `ClusterStateCollector` |
+| `propose deprovision` | `propose.patch` | `ProposalService` | `ClusterStateCollector` |
 
 All services extend `EvidenceCommandService`. Before collection they:
 
@@ -104,6 +105,17 @@ Process error contracts:
 | Stores | Operating-system write failure | Exit `2`; `failed` terminal record stored when the command store is writable |
 | Command store | Unreadable record or lock failure | Exit `2` before collection |
 
+### Deprovision proposals
+
+`propose deprovision` collects evidence with `ClusterStateCollector` for the requested cluster, then assembles a CWA snapshot with output contract `proposal`. `DeprovisionProposalGenerator` reads only that CWA snapshot:
+
+1. It takes the cluster from the `cluster_state_correlation` item.
+2. It takes `base_commit` from the `git=` revision in the evidence source version.
+3. It refuses with every unmet precondition: one definition at `provision/<id>`, no existing sentinel, OpenShift resources present, and a pinned base commit.
+4. Otherwise it returns a deterministic `Proposal` whose ID derives from the command and CWA snapshot.
+
+The CLI stores the CWA snapshot, the proposal, and then the CWA trace. The trace records provider `aura`, model name `deprovision-sentinel-deterministic`, and the proposal digest as its response digest. Incomplete and invalid definitions do not block a deprovision proposal, because deprovision acts on the cluster name.
+
 ### Proposal staleness
 
 `GitProposalStaleness` resolves `HEAD`, runs `git merge-base --is-ancestor BASE HEAD`, and then `git diff --name-only BASE HEAD` limited to the target cluster's paths. All three commands are read-only.
@@ -118,7 +130,7 @@ Process error contracts:
 | `--cwa-dir DIR` | `JsonCWASnapshotStore` | `DIR/snapshots/SNAPSHOT_ID.json` |
 | `--cwa-dir DIR` | `JsonCWATraceStore` | `DIR/traces/TRACE_ID.json` |
 | `--diagnosis-dir DIR` | `JsonDiagnosisStore` | `DIR/CWA_SNAPSHOT_ID.json` |
-| Not yet wired | `JsonProposalStore` | `DIR/PROPOSAL_ID.json` |
+| `--proposal-dir DIR` | `JsonProposalStore` | `DIR/PROPOSAL_ID.json` |
 
 Stores create restricted parent directories, write and `fsync` private temporary files, and atomically link them into final names. Existing IDs or terminal command keys are treated as errors rather than overwrites, and failed writes leave no partial final records.
 
@@ -132,10 +144,11 @@ The CLI locks `--command-dir`, checks the requested idempotency key, executes th
 | `evidence_collected` | A collector returns a snapshot |
 | `context_assembled` | A CWA snapshot and trace are stored |
 | `model_called` | A diagnosis is produced |
+| `proposal_created` | A proposal is stored |
 | `command_failed` | A command reaches the terminal failed state |
-| `command_refused` | A diagnosis command reaches the terminal refused state |
+| `command_refused` | A diagnosis or proposal command reaches the terminal refused state |
 
-Context and model events reference the previous event ID, forming an audit chain for one command.
+Context, model, proposal, and refusal events reference the previous event ID, forming an audit chain for one command.
 
 ## Extension Points
 
@@ -145,4 +158,5 @@ Context and model events reference the previous event ID, forming an audit chain
 | New external model | Implement `DiagnosisModel` and pass it through `_diagnosis_record` |
 | New record backend | Replace the JSON store while preserving load/save contracts |
 | New read-only command | Add `CommandType`, service spec, collector, parser, and tests |
+| New proposal type | Add a generator that consumes a `CWASnapshot` and returns a `Proposal`, a `propose` subcommand, and tests |
 | Execution adapter | Add a separate Phase 3 guard path; do not extend evidence collectors with writes |

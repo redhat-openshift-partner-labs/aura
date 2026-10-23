@@ -30,7 +30,7 @@ Git evidence resolves `HEAD` once and reads the tree listing and blobs from that
 
 ## Operator Identity
 
-Phase 1 accepts a non-empty, self-asserted `--operator` value. That value is the audit actor and CWA user identifier; it is not authentication and must not be treated as proof that a person holds the supplied roles. `--role` values are equally self-asserted: authorization evaluates only the supplied roles, defaulting to `viewer` when none are given, but does not verify them. Operator authentication can be added later without changing the evidence contracts.
+Phase 1 accepts a non-empty, self-asserted `--operator` value. That value is the audit actor and CWA user identifier; it is not authentication and must not be treated as proof that a person holds the supplied roles. `--role` values are equally self-asserted: authorization evaluates only the supplied roles, defaulting to `viewer` when none are given, but does not verify them. This includes `proposer`: a stored proposal does not prove its operator holds that role, and Phase 3 approval must not rely on it. Operator authentication can be added later without changing the evidence contracts.
 
 ## Service Account
 

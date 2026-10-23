@@ -17,10 +17,11 @@ Aura is a sidecar to the existing lifecycle systems. It does not replace RabbitM
 - Freeze evidence and CWA snapshots with SHA-256 digests.
 - Store immutable JSON evidence, CWA, audit, and diagnosis records, and record a `failed` command when a write fails.
 - Redact secret fields across case and separator spellings before storage.
+- Generate deterministic, evidence-linked deprovision proposals for `proposer` or `admin` without writing Git.
 
 ## Non-Goals
 
-- Patch generation and pull requests.
+- Applying patches, creating commits, and opening pull requests.
 - Pipeline execution.
 - Deprovisioning.
 - Portal writes.
@@ -88,7 +89,7 @@ See [`docs/cli.md`](docs/cli.md) for every flag, default, and required value.
 | [`docs/architecture.md`](docs/architecture.md) | Implemented architecture and boundaries |
 | [`docs/wiring.md`](docs/wiring.md) | CLI, service, collector, and store wiring |
 | [`docs/cli.md`](docs/cli.md) | Command and flag reference |
-| [`docs/evidence.md`](docs/evidence.md) | Evidence, CWA, audit, and diagnosis records |
+| [`docs/evidence.md`](docs/evidence.md) | Evidence, CWA, audit, diagnosis, and proposal records |
 | [`docs/security.md`](docs/security.md) | Read-only access, RBAC, and secret handling |
 | [`docs/validation.md`](docs/validation.md) | Test, fixture, and live validation procedures |
 | [`docs/plans/readme.md`](docs/plans/readme.md) | Original planning documents |
@@ -105,6 +106,7 @@ Agent guidance is in [`AGENTS.md`](AGENTS.md). Claude-specific guidance is in [`
 | `src/aura/contracts.py` | Typed command and evidence contracts |
 | `src/aura/cwa.py` | CWA snapshot and trace contracts |
 | `src/aura/diagnosis.py` | Diagnosis response and record contracts |
+| `src/aura/proposals.py` | Proposal contract |
 | `src/aura/*_store.py` | Append-only JSON stores |
 | `tests/` | Contract, collector, service, CLI, and fixture tests |
 | `docs/plans/` | Architecture and phased implementation plans |

@@ -20,7 +20,7 @@ All successful commands print JSON to standard output.
 | `--snapshot-dir` | No | None | Writable directory | Store the evidence snapshot |
 | `--audit-dir` | No | None | Writable directory | Store audit events |
 
-Phase 1 commands are authorized for `viewer` or `admin`. A command whose supplied roles include neither is rejected before evidence collection.
+Phase 1 commands are authorized for `viewer` or `admin`. `propose` commands are authorized for `proposer` or `admin`, so the default `viewer` role is rejected. A command whose supplied roles include none of its allowed roles is rejected before evidence collection.
 
 Every command stores one terminal idempotency-key record in `--command-dir`: `succeeded`, `failed`, or `refused`. Reusing the same key for the same request exits with code `2` before evidence collection and reports the prior terminal state. Reusing it for a different request is rejected as belonging to a different request. A new attempt requires a new key. Concurrent uses of the same key are serialized by the command store, and only one execution collects evidence.
 
@@ -163,12 +163,48 @@ If required evidence is missing, the command exits with code `2`, prints `diagno
 
 PipelineRun selection uses the latest matching run by `start_time` by default. Pass `--pipeline-run NAME_OR_UID` to select a specific run; if that run is absent, diagnosis is refused with `Selected Tekton PipelineRun`.
 
+## `propose deprovision`
+
+| Flag | Required | Default | Acceptable values |
+| --- | --- | --- | --- |
+| `--cluster` | Yes | None | DNS-1123 label |
+| `--fleet-clusters` | Yes | None | Path to a local `fleet-clusters` checkout |
+| `--openshift-kubeconfig` | Yes | None | Path to a read-only kubeconfig |
+| `--snapshot-dir` | Yes | None | Writable directory |
+| `--audit-dir` | Yes | None | Writable directory |
+| `--cwa-dir` | Yes | None | Writable directory |
+| `--proposal-dir` | Yes | None | Writable directory |
+| `--query` | No | `propose deprovision` | Any string |
+
+Supply `--role proposer` or `--role admin`.
+
+Example:
+
+```bash
+UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura propose deprovision \
+  --cluster 0171d46a-scopedaws \
+  --fleet-clusters ../fleet-clusters \
+  --openshift-kubeconfig "$HOME/.kube/aura-readonly" \
+  --snapshot-dir ./local/snapshots \
+  --audit-dir ./local/audit \
+  --cwa-dir ./local/cwa \
+  --proposal-dir ./local/proposals \
+  --role proposer \
+  --operator operator@example.com \
+  --idempotency-key propose-deprovision-001 \
+  --command-dir ./local/commands
+```
+
+The command prints the stored `Proposal`. Its `patch` adds only the empty file `deprovision/<id>-archive`, and its `commit_message` must be used for a standalone commit. Aura writes nothing to `fleet-clusters`; merging the commit is the execution step and starts the deprovision pipeline.
+
+If a precondition is unmet, the command exits with code `2`, prints `proposal refused:` and every unmet precondition to standard error, stores no proposal, and still stores evidence, CWA, and audit records. A `--cluster` value that is not a DNS-1123 label is rejected before collection.
+
 ## Output and Exit Codes
 
 | Exit code | Meaning |
 | --- | --- |
 | `0` | Success |
-| `2` | Argument error, unauthorized command, execution failure, diagnosis refusal, duplicate record, or idempotency-key reuse |
+| `2` | Argument error, unauthorized command, execution failure, diagnosis or proposal refusal, duplicate record, or idempotency-key reuse |
 | Other non-zero | Unhandled collector or process failure |
 
 An `oc` failure is reported as a concise CLI error with exit code `2`; no partial JSON is printed.

@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-335 passed
+368 passed
 ```
 
 Run diff hygiene:
@@ -50,6 +50,8 @@ The test suite covers:
 - Immutable JSON stores, record write failures, and unreadable command records.
 - CLI argument combinations and output.
 - Proposal contract invariants, the proposal store, and Git proposal staleness.
+- Deprovision proposal generation over real temporary Git trees, including `git apply --check` against the base commit and every refusal reason.
+- `propose deprovision` authorization, stored records, audit chain, refusal, and argument validation.
 - Fixture validity and secret redaction, including field spelling variants.
 
 ## Local Fixture

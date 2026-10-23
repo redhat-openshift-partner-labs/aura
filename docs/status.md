@@ -30,7 +30,7 @@ Validation summary, recorded at Aura commit `6dc0eb3`:
 
 ## Phase 2 Prerequisites
 
-Prerequisites P0, P1, and P3 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`; it is local and needs no cluster access. Automated tests at `ec84fd4`: 335 passed, with zero gating quality findings. Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
+Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented; P2 remains. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`. P4 adds `propose deprovision`, authorized for `proposer` and `admin`, which generates the deprovision sentinel proposal type. Automated tests at `c5abafb`: 368 passed, with zero gating quality findings. `propose deprovision` has not been validated against the live hub. Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
 
 | Check | Result |
 | --- | --- |
@@ -69,8 +69,9 @@ Prerequisites P0, P1, and P3 of the approved [Phase 2](plans/05-phase-2-proposal
 | Stores | Uses atomically published, append-only JSON records for evidence, CWA, audit, and diagnosis data; write failures become `failed` commands |
 | Redaction | Matches secret field names across case and separator variants |
 | Idempotency | Binds keys to one request and suppresses concurrent or sequential terminal-key reuse |
-| Authorization | Allows Phase 1 commands for `viewer` and `admin` roles; supplied `--role` values replace the `viewer` default |
-| CLI | Provides `inventory list`, `workflow inspect`, and `diagnose state` |
+| Deprovision proposals | Generates a deterministic, digest-verified proposal that adds only `deprovision/<id>-archive` as a standalone commit, or refuses with every unmet precondition; stores proposal, CWA, and `proposal_created` audit records and writes nothing to Git |
+| Authorization | Allows Phase 1 commands for `viewer` and `admin`, and `propose` commands for `proposer` and `admin`; supplied `--role` values replace the `viewer` default |
+| CLI | Provides `inventory list`, `workflow inspect`, `diagnose state`, and `propose deprovision` |
 
 ## Current Model Behavior
 
@@ -87,7 +88,8 @@ The model protocol remains provider-independent. A future provider must consume 
 
 - External model provider integration.
 - Natural-language chat interface.
-- Patch or PR generation.
+- Scaffold, cluster-edit, and post-provision rerun proposals.
+- Applying patches, creating commits, or opening pull requests.
 - Pipeline or Git execution.
 - Portal integration.
 - RabbitMQ integration or replacement.
@@ -98,6 +100,8 @@ The model protocol remains provider-independent. A future provider must consume 
 
 | Commit | Change |
 | --- | --- |
+| `c5abafb` | Added the `propose deprovision` command |
+| `b8f20fa` | Generated deprovision sentinel proposals |
 | `ec84fd4` | Acknowledged store exception false positives |
 | `bdb5864` | Shared JSON record store behavior |
 | `cbd7b2f` | Reported stale Git proposals |
@@ -148,4 +152,5 @@ The model protocol remains provider-independent. A future provider must consume 
 Phase 1 is published. Remaining work:
 
 1. `fleet-clusters` owners backfill `metadata.yaml` and its `platform` key for the definitions listed in [Open Questions](plans/08-open-questions.md#fleet-clusters-data), pushing any added `metadata.yaml` with `[skip-provision]` in the head commit message, and decide how to remediate the stranded deprovision sentinels.
-2. Implement the remaining [Phase 2](plans/05-phase-2-proposals.md) prerequisites P4 and P2, then the proposal types. P0, P1, and P3 are done.
+2. Validate `propose deprovision` against the live hub with operator approval. The `0171d46a-scopedaws` test cluster is deprovisioned, so a live cluster is needed for the positive case; `0171d46a-scopedaws` now exercises refusal.
+3. Implement the remaining [Phase 2](plans/05-phase-2-proposals.md) prerequisite P2, then the scaffold, cluster-edit, and post-provision rerun proposal types. P0, P1, P3, and P4 are done.
