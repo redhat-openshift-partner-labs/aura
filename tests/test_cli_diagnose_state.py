@@ -21,17 +21,22 @@ from test_cluster_state_collector import (
 
 @final
 class FakeClusterStateCollector:
-    def __init__(self, *, complete: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        complete: bool = True,
+        git_collector: object | None = None,
+    ) -> None:
+        self.calls = 0
         if complete:
-            git_collector = FakeGitCollector()
             openshift_collector = FakeOpenShiftCollector()
             tekton_collector = FakeTektonCollector()
         else:
-            git_collector = EmptyCollector()
             openshift_collector = EmptyCollector()
             tekton_collector = EmptyCollector()
         self._collector = ClusterStateCollector(
-            git_collector=git_collector,
+            git_collector=git_collector
+            or (FakeGitCollector() if complete else EmptyCollector()),
             openshift_collector=openshift_collector,
             tekton_collector=tekton_collector,
             cluster_name="example",
@@ -46,6 +51,7 @@ class FakeClusterStateCollector:
         collected_at: datetime | None = None,
         source_version: str | None = None,
     ) -> EvidenceSnapshot:
+        self.calls += 1
         return self._collector.collect(
             command_id=command_id,
             snapshot_id=snapshot_id or UUID(int=40),

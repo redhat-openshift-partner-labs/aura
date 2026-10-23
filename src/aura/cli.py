@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
+from typing import TypeVar
 from uuid import UUID, uuid4, uuid5
 
 from aura.audit_store import (
@@ -61,6 +64,8 @@ from aura.evidence_store import (
     EvidenceSnapshotAlreadyStored,
     JsonEvidenceSnapshotStore,
 )
+from aura.proposal_store import JsonProposalStore, ProposalAlreadyStored
+from aura.proposals import CLUSTER_NAME_PATTERN, Proposal, ProposalType
 from aura.services.cwa import (
     CWAAssemblyResult,
     CWAAssemblyPolicy,
@@ -79,6 +84,13 @@ from aura.services.cluster_state import (
     InvalidClusterStateCommand,
     UnauthorizedClusterStateCommand,
 )
+from aura.services.proposal import (
+    DeprovisionProposalGenerator,
+    InvalidProposalCommand,
+    ProposalRefused,
+    ProposalService,
+    UnauthorizedProposalCommand,
+)
 from aura.services.inventory import (
     EvidenceCollector,
     InventoryService,
@@ -93,26 +105,54 @@ from aura.services.workflow import (
 from aura.state import CommandStateMachine, InvalidCommandTransition
 
 
-def _add_evidence_output_arguments(
+T = TypeVar("T")
+
+
+_FLEET_CLUSTERS = (
+    "--fleet-clusters",
+    "Path to the fleet-clusters Git checkout",
+)
+_KUBECONFIG = (
+    "--openshift-kubeconfig",
+    "Path to a read-only OpenShift kubeconfig",
+)
+_SNAPSHOT_DIR = (
+    "--snapshot-dir",
+    "Directory in which to store the evidence snapshot",
+)
+_AUDIT_DIR = ("--audit-dir", "Directory in which to store audit events")
+_CWA_DIR = (
+    "--cwa-dir",
+    "Directory in which to store CWA snapshots and traces",
+)
+_DIAGNOSIS_DIR = (
+    "--diagnosis-dir",
+    "Directory in which to store diagnosis responses",
+)
+_PROPOSAL_DIR = ("--proposal-dir", "Directory in which to store proposals")
+
+
+def _add_path_arguments(
     parser: argparse.ArgumentParser,
+    *arguments: tuple[str, str],
+    required: bool = False,
 ) -> None:
-    parser.add_argument(
-        "--snapshot-dir",
-        type=Path,
-        required=False,
-        help="Directory in which to store the evidence snapshot",
-    )
-    parser.add_argument(
-        "--audit-dir",
-        type=Path,
-        required=False,
-        help="Directory in which to store audit events",
-    )
+    for flag, help_text in arguments:
+        parser.add_argument(
+            flag,
+            type=Path,
+            required=required,
+            help=help_text,
+        )
 
 
 def _add_operator_arguments(
     parser: argparse.ArgumentParser,
+    query: str,
+    *,
+    query_help: str = "Operator query used for CWA assembly",
 ) -> None:
+    parser.add_argument("--query", default=query, help=query_help)
     parser.add_argument(
         "--command-dir",
         type=Path,
@@ -138,88 +178,40 @@ def _add_inventory_list_arguments(
         default="git",
         help="Inventory source to query",
     )
-    parser.add_argument(
-        "--fleet-clusters",
-        type=Path,
-        required=False,
-        help="Path to the fleet-clusters Git checkout",
+    _add_path_arguments(
+        parser,
+        _FLEET_CLUSTERS,
+        _KUBECONFIG,
+        _SNAPSHOT_DIR,
+        _AUDIT_DIR,
+        _CWA_DIR,
+        _DIAGNOSIS_DIR,
     )
-    parser.add_argument(
-        "--openshift-kubeconfig",
-        type=Path,
-        required=False,
-        help="Path to a read-only OpenShift kubeconfig",
-    )
-    _add_evidence_output_arguments(parser)
-    parser.add_argument(
-        "--cwa-dir",
-        type=Path,
-        required=False,
-        help="Directory in which to store CWA snapshots and traces",
-    )
-    parser.add_argument(
-        "--diagnosis-dir",
-        type=Path,
-        required=False,
-        help="Directory in which to store diagnosis responses",
-    )
-    parser.add_argument(
-        "--query",
-        default="list inventory",
-        help="Operator query used for CWA assembly",
-    )
-    _add_operator_arguments(parser)
+    _add_operator_arguments(parser, "list inventory")
 
 
 def _add_workflow_inspect_arguments(
     parser: argparse.ArgumentParser,
 ) -> None:
-    parser.add_argument(
-        "--openshift-kubeconfig",
-        type=Path,
-        required=True,
-        help="Path to a read-only OpenShift kubeconfig",
-    )
-    parser.add_argument(
-        "--fleet-clusters",
-        type=Path,
-        required=False,
-        help="Path to the fleet-clusters Git checkout",
-    )
+    _add_path_arguments(parser, _KUBECONFIG, required=True)
+    _add_path_arguments(parser, _FLEET_CLUSTERS, _SNAPSHOT_DIR, _AUDIT_DIR)
     parser.add_argument(
         "--namespace",
         required=False,
         help="Tekton namespace to inspect; omit for all namespaces",
     )
-    _add_evidence_output_arguments(parser)
-    parser.add_argument(
-        "--query",
-        default="inspect workflows",
-        help="Operator query recorded with the command",
+    _add_operator_arguments(
+        parser,
+        "inspect workflows",
+        query_help="Operator query recorded with the command",
     )
-    _add_operator_arguments(parser)
 
 
 def _add_diagnose_state_arguments(
     parser: argparse.ArgumentParser,
 ) -> None:
-    parser.add_argument(
-        "--cluster",
-        required=True,
-        help="Cluster name to diagnose",
-    )
-    parser.add_argument(
-        "--fleet-clusters",
-        type=Path,
-        required=True,
-        help="Path to the fleet-clusters Git checkout",
-    )
-    parser.add_argument(
-        "--openshift-kubeconfig",
-        type=Path,
-        required=True,
-        help="Path to a read-only OpenShift kubeconfig",
-    )
+    parser.add_argument("--cluster", required=True, help="Cluster name")
+    _add_path_arguments(parser, _FLEET_CLUSTERS, _KUBECONFIG, required=True)
     parser.add_argument(
         "--pipeline-run",
         required=False,
@@ -227,25 +219,31 @@ def _add_diagnose_state_arguments(
             "PipelineRun name or UID; omit to select the latest run"
         ),
     )
-    _add_evidence_output_arguments(parser)
-    parser.add_argument(
-        "--cwa-dir",
-        type=Path,
-        required=False,
-        help="Directory in which to store CWA snapshots and traces",
+    _add_path_arguments(
+        parser,
+        _SNAPSHOT_DIR,
+        _AUDIT_DIR,
+        _CWA_DIR,
+        _DIAGNOSIS_DIR,
     )
-    parser.add_argument(
-        "--diagnosis-dir",
-        type=Path,
-        required=False,
-        help="Directory in which to store diagnosis responses",
+    _add_operator_arguments(parser, "diagnose cluster state")
+
+
+def _add_propose_deprovision_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    parser.add_argument("--cluster", required=True, help="Cluster name")
+    _add_path_arguments(
+        parser,
+        _FLEET_CLUSTERS,
+        _KUBECONFIG,
+        _SNAPSHOT_DIR,
+        _AUDIT_DIR,
+        _CWA_DIR,
+        _PROPOSAL_DIR,
+        required=True,
     )
-    parser.add_argument(
-        "--query",
-        default="diagnose cluster state",
-        help="Operator query used for CWA assembly",
-    )
-    _add_operator_arguments(parser)
+    _add_operator_arguments(parser, "propose deprovision")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -274,6 +272,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     state_parser = diagnose_command_parser.add_parser("state")
     _add_diagnose_state_arguments(state_parser)
+
+    propose_parser = command_parser.add_parser("propose")
+    propose_command_parser = propose_parser.add_subparsers(
+        dest="propose_command",
+        required=True,
+    )
+    deprovision_parser = propose_command_parser.add_parser("deprovision")
+    _add_propose_deprovision_arguments(deprovision_parser)
     return parser
 
 
@@ -315,6 +321,12 @@ def _diagnose_state_argument_error(args: argparse.Namespace) -> str | None:
     return None
 
 
+def _propose_argument_error(args: argparse.Namespace) -> str | None:
+    if re.fullmatch(CLUSTER_NAME_PATTERN, args.cluster) is None:
+        return f"--cluster must be a DNS-1123 label: {args.cluster}"
+    return None
+
+
 def _record_directory_argument_error(
     args: argparse.Namespace,
 ) -> str | None:
@@ -324,6 +336,7 @@ def _record_directory_argument_error(
         ("audit_dir", "--audit-dir"),
         ("cwa_dir", "--cwa-dir"),
         ("diagnosis_dir", "--diagnosis-dir"),
+        ("proposal_dir", "--proposal-dir"),
     )
     for attribute, flag in directory_arguments:
         directory = getattr(args, attribute, None)
@@ -348,6 +361,8 @@ def _argument_error(args: argparse.Namespace) -> str | None:
         return _workflow_argument_error(args)
     if args.command == "diagnose":
         return _diagnose_state_argument_error(args)
+    if args.command == "propose":
+        return _propose_argument_error(args)
     return None
 
 
@@ -770,7 +785,7 @@ def _selected_cluster_state_collector(
             )
         ),
         cluster_name=args.cluster,
-        pipeline_run=args.pipeline_run,
+        pipeline_run=getattr(args, "pipeline_run", None),
     )
 
 
@@ -838,21 +853,15 @@ def _diagnosis_record(
     )
 
 
-def _diagnosis_or_refusal(
-    command_id: UUID,
-    snapshot: CWASnapshot,
-    diagnosed_at: datetime,
-    model: DiagnosisModel | None,
-) -> tuple[DiagnosisRecord | None, str | None]:
+def _result_or_refusal(
+    action: Callable[[], T],
+    refusal: type[Exception],
+    label: str,
+) -> tuple[T | None, str | None]:
     try:
-        return _diagnosis_record(
-            command_id,
-            snapshot,
-            diagnosed_at,
-            model=model,
-        ), None
-    except DiagnosisEvidenceUnavailable as error:
-        return None, f"diagnosis refused: {error}"
+        return action(), None
+    except refusal as error:
+        return None, f"{label} refused: {error}"
 
 
 def _model_audit_event(
@@ -927,11 +936,16 @@ def _diagnose_and_trace(
     if not always_diagnose and args.diagnosis_dir is None:
         return None, None, assembly.trace
 
-    diagnosis_record, refusal_error = _diagnosis_or_refusal(
-        command_id,
-        assembly.snapshot,
-        clock(),
-        diagnosis_model,
+    diagnosed_at = clock()
+    diagnosis_record, refusal_error = _result_or_refusal(
+        lambda: _diagnosis_record(
+            command_id,
+            assembly.snapshot,
+            diagnosed_at,
+            model=diagnosis_model,
+        ),
+        DiagnosisEvidenceUnavailable,
+        "diagnosis",
     )
     trace = _diagnosis_trace(assembly, diagnosis_record)
     if args.diagnosis_dir is not None and diagnosis_record is not None:
@@ -993,19 +1007,35 @@ def _persist_command_received(
     return event, None
 
 
+def _chained_audit_event(
+    command: CommandEnvelope,
+    event_type: AuditEventType,
+    subject_id: UUID,
+    *,
+    occurred_at: datetime,
+    data: dict[str, object],
+    previous_event_id: UUID,
+) -> AuditEvent:
+    return _audit_event(
+        command,
+        event_id=uuid5(command.command_id, f"{event_type.value}:{subject_id}"),
+        event_type=event_type,
+        occurred_at=occurred_at,
+        data=data,
+        previous_event_id=previous_event_id,
+    )
+
+
 def _context_audit_event(
     command: CommandEnvelope,
     assembly: CWAAssemblyResult,
     evidence_snapshot: EvidenceSnapshot,
     previous_event_id: UUID,
 ) -> AuditEvent:
-    return _audit_event(
+    return _chained_audit_event(
         command,
-        event_id=uuid5(
-            command.command_id,
-            f"context_assembled:{assembly.snapshot.snapshot_id}",
-        ),
-        event_type=AuditEventType.CONTEXT_ASSEMBLED,
+        AuditEventType.CONTEXT_ASSEMBLED,
+        assembly.snapshot.snapshot_id,
         occurred_at=assembly.snapshot.assembled_at,
         data={
             "cwa_snapshot_id": str(assembly.snapshot.snapshot_id),
@@ -1148,35 +1178,29 @@ def _assembled_command(
 
 def _assemble_records(
     args: argparse.Namespace,
-    result: EvidenceCommandResult,
     assembly_request: CWAAssemblyRequest,
-    diagnosis_model: DiagnosisModel | None,
-    always_diagnose: bool,
-    clock: Callable[[], datetime],
-) -> tuple[CWAAssemblyResult, DiagnosisRecord | None, str | None] | str:
+    respond: Callable[
+        [CWAAssemblyResult],
+        tuple[T | None, str | None, CWATrace],
+    ],
+) -> tuple[CWAAssemblyResult, T | None, str | None] | str:
     try:
         assembly = CWAAssembler().assemble(assembly_request)
         JsonCWASnapshotStore(args.cwa_dir / "snapshots").save(
             assembly.snapshot
         )
-        diagnosis_record, refusal_error, trace = _diagnose_and_trace(
-            args,
-            result.command.command_id,
-            assembly,
-            diagnosis_model,
-            always_diagnose,
-            clock,
-        )
+        response, refusal_error, trace = respond(assembly)
         JsonCWATraceStore(args.cwa_dir / "traces").save(trace)
     except (
         InvalidCWAAssembly,
         CWASnapshotAlreadyStored,
         CWATraceAlreadyStored,
         DiagnosisAlreadyStored,
+        ProposalAlreadyStored,
         OSError,
     ) as error:
         return str(error)
-    return assembly, diagnosis_record, refusal_error
+    return assembly, response, refusal_error
 
 
 def _persist_assembly_events(
@@ -1258,11 +1282,15 @@ def _assemble_and_diagnose(
 
     records = _assemble_records(
         args,
-        result,
         assembly_request,
-        diagnosis_model,
-        always_diagnose,
-        clock,
+        lambda assembly: _diagnose_and_trace(
+            args,
+            result.command.command_id,
+            assembly,
+            diagnosis_model,
+            always_diagnose,
+            clock,
+        ),
     )
     if isinstance(records, str):
         return None, records
@@ -1307,34 +1335,23 @@ def _assemble_and_diagnose(
     )
 
 
-def _run_diagnose_state(
+def _execute_new_command(
     args: argparse.Namespace,
+    command_type: CommandType,
+    command_input: dict[str, object],
+    run: Callable[[CommandEnvelope], int],
     *,
-    collector: EvidenceCollector | None,
     command_id_factory: Callable[[], UUID],
     clock: Callable[[], datetime],
 ) -> int:
     command = _make_command(
         args,
-        CommandType.DIAGNOSE_STATE,
-        command_input={
-            "query": args.query,
-            "cluster_name": args.cluster,
-            "pipeline_run": args.pipeline_run,
-            "history": [],
-        },
-        command_id_factory=command_id_factory,
-        clock=clock,
+        command_type,
+        command_input,
+        command_id_factory,
+        clock,
     )
-
-    def run_diagnosis() -> int:
-        return _run_diagnosis(args, command, collector, clock)
-
-    return _execute_command(
-        args,
-        command,
-        run_diagnosis,
-    )
+    return _execute_command(args, command, lambda: run(command))
 
 
 def _run_diagnosis(
@@ -1415,6 +1432,184 @@ def _run_diagnosis(
     return 2
 
 
+def _run_proposal(
+    args: argparse.Namespace,
+    command: CommandEnvelope,
+    collector: EvidenceCollector | None,
+    clock: Callable[[], datetime],
+) -> int:
+    service = ProposalService(
+        collector=_selected_cluster_state_collector(args, collector)
+    )
+    roles = {OperatorRole(role) for role in args.role}
+    collected = _collect_evidence(
+        args,
+        command,
+        lambda: service.run(command, roles),
+        (
+            UnauthorizedProposalCommand,
+            InvalidProposalCommand,
+            InvalidCommandTransition,
+            OpenShiftCLIError,
+            GitInventoryError,
+        ),
+        clock,
+    )
+    if isinstance(collected, int):
+        return collected
+
+    result = collected.result
+    proposed = _assemble_and_propose(
+        args,
+        result,
+        roles,
+        collected.audit_event,
+        clock,
+    )
+    if isinstance(proposed, str):
+        return _fail_assembly(
+            args,
+            result,
+            proposed,
+            collected.audit_event,
+            clock,
+        )
+    final_command, proposal, refusal_error = proposed
+    if proposal is None:
+        command_store_error = _store_terminal_command(args, final_command)
+        print(
+            f"aura: {command_store_error or refusal_error}",
+            file=sys.stderr,
+        )
+        return 2
+    return _complete_command(
+        args,
+        final_command,
+        proposal.model_dump_json(indent=2),
+    )
+
+
+_AUDITED_PROPOSAL = frozenset(
+    {
+        "proposal_id",
+        "proposal_digest",
+        "proposal_type",
+        "cluster_name",
+        "base_commit",
+        "cwa_snapshot_id",
+        "cwa_trace_id",
+        "generator",
+        "generator_version",
+    }
+)
+
+
+def _assemble_and_propose(
+    args: argparse.Namespace,
+    result: EvidenceCommandResult,
+    roles: set[OperatorRole],
+    evidence_event: AuditEvent | None,
+    clock: Callable[[], datetime],
+) -> tuple[CommandEnvelope, Proposal | None, str | None] | str:
+    if evidence_event is None:
+        return "audit event is required for CWA assembly"
+    records = _assemble_records(
+        args,
+        _assembly_request(result, roles, evidence_event, "proposal", clock),
+        lambda assembly: _propose_and_trace(args, assembly, clock),
+    )
+    if isinstance(records, str):
+        return records
+    assembly, proposal, refusal_error = records
+
+    context_event = _context_audit_event(
+        result.command,
+        assembly,
+        result.snapshot,
+        evidence_event.event_id,
+    )
+    terminal_event = (
+        _proposal_created_audit_event(
+            result.command,
+            proposal,
+            context_event.event_id,
+        )
+        if proposal is not None
+        else _command_terminal_audit_event(
+            result.command,
+            AuditEventType.COMMAND_REFUSED,
+            str(refusal_error),
+            previous_event_id=context_event.event_id,
+            occurred_at=clock(),
+        )
+    )
+    audit_store = JsonAuditEventStore(args.audit_dir)
+    for event in (context_event, terminal_event):
+        error = _record_store_error(
+            partial(audit_store.save, event),
+            (AuditEventAlreadyStored,),
+        )
+        if error is not None:
+            return error
+
+    terminal_state = (
+        CommandState.SUCCEEDED
+        if proposal is not None
+        else CommandState.REFUSED
+    )
+    final_command = result.command.with_status(
+        CommandStateMachine().transition(
+            result.command.status,
+            terminal_state,
+        )
+    )
+    return final_command, proposal, refusal_error
+
+
+def _propose_and_trace(
+    args: argparse.Namespace,
+    assembly: CWAAssemblyResult,
+    clock: Callable[[], datetime],
+) -> tuple[Proposal | None, str | None, CWATrace]:
+    generator = DeprovisionProposalGenerator()
+    created_at = clock()
+    proposal, refusal_error = _result_or_refusal(
+        lambda: generator.generate(
+            assembly.snapshot,
+            cwa_trace_id=assembly.trace.trace_id,
+            created_at=created_at,
+        ),
+        ProposalRefused,
+        "proposal",
+    )
+    if proposal is None:
+        return None, refusal_error, assembly.trace
+    JsonProposalStore(args.proposal_dir).save(proposal)
+    return proposal, None, assembly.trace.model_copy(
+        update={
+            "model_provider": generator.provider_name,
+            "model_name": generator.generator,
+            "response_digest": proposal.proposal_digest,
+        }
+    )
+
+
+def _proposal_created_audit_event(
+    command: CommandEnvelope,
+    proposal: Proposal,
+    previous_event_id: UUID,
+) -> AuditEvent:
+    recorded = proposal.model_dump(mode="json", include=_AUDITED_PROPOSAL)
+    return _chained_audit_event(
+        command,
+        AuditEventType.PROPOSAL_CREATED,
+        proposal.proposal_id,
+        occurred_at=proposal.created_at,
+        data={**recorded, "persisted": True},
+        previous_event_id=previous_event_id,
+    )
+
+
 def _dispatch_command(
     args: argparse.Namespace,
     *,
@@ -1432,9 +1627,30 @@ def _dispatch_command(
             assemble=False,
         )
     if args.command == "diagnose":
-        return _run_diagnose_state(
+        return _execute_new_command(
             args,
-            collector=collector,
+            CommandType.DIAGNOSE_STATE,
+            {
+                "query": args.query,
+                "cluster_name": args.cluster,
+                "pipeline_run": args.pipeline_run,
+                "history": [],
+            },
+            lambda command: _run_diagnosis(args, command, collector, clock),
+            command_id_factory=command_id_factory,
+            clock=clock,
+        )
+    if args.command == "propose":
+        return _execute_new_command(
+            args,
+            CommandType.PROPOSE_PATCH,
+            {
+                "query": args.query,
+                "proposal_type": ProposalType.DEPROVISION.value,
+                "cluster_name": args.cluster,
+                "history": [],
+            },
+            lambda command: _run_proposal(args, command, collector, clock),
             command_id_factory=command_id_factory,
             clock=clock,
         )

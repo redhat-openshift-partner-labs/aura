@@ -25,6 +25,7 @@ SKIP_PROVISION = "[skip-provision]"
 SKIP_DEPROVISION = "[skip-deprovision]"
 RERUN_NAMESPACE = "openshift-pipelines"
 RERUN_PIPELINE = "post-provision"
+CLUSTER_NAME_PATTERN = r"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
 
 
 class ProposalType(StrEnum):
@@ -100,7 +101,7 @@ class Proposal(BaseModel):
     proposal_id: UUID
     command_id: UUID
     proposal_type: ProposalType
-    cluster_name: str = Field(pattern=r"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$")
+    cluster_name: str = Field(pattern=CLUSTER_NAME_PATTERN)
     status: ProposalStatus = ProposalStatus.PROPOSAL_READY
     created_at: AwareDatetime
     base_commit: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
@@ -313,6 +314,7 @@ def _validate_rerun_proposal(proposal: Proposal) -> None:
 
 
 __all__ = [
+    "CLUSTER_NAME_PATTERN",
     "EXPECTED_REVERSIBILITY",
     "EXPECTED_TRIGGER_EFFECTS",
     "GIT_PROPOSAL_TYPES",
