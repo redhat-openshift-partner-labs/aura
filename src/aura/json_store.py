@@ -50,7 +50,12 @@ def save_private_json(
         raise duplicate_error(duplicate_message) from error
     finally:
         temporary_path.unlink(missing_ok=True)
-    _fsync_directory(root)
+    try:
+        _fsync_directory(root)
+    except OSError:
+        # Callers treat a raised write as not stored; keep that true.
+        path.unlink(missing_ok=True)
+        raise
     return path
 
 

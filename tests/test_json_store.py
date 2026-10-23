@@ -80,3 +80,25 @@ def test_save_private_json_leaves_no_partial_record_on_failure(
         )
 
     assert list(tmp_path.iterdir()) == []
+
+
+def test_save_private_json_removes_record_when_directory_sync_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    def failing_sync(path: Path) -> None:
+        raise OSError(5, "directory sync failed")
+
+    monkeypatch.setattr(json_store, "_fsync_directory", failing_sync)
+    path = tmp_path / "record.json"
+
+    with pytest.raises(OSError, match="directory sync failed"):
+        save_private_json(
+            tmp_path,
+            path,
+            Record(value="new"),
+            duplicate,
+            "record already stored",
+        )
+
+    assert list(tmp_path.iterdir()) == []
