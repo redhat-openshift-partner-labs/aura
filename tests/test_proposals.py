@@ -172,6 +172,24 @@ def test_proposal_rejects_changed_content_under_old_digest() -> None:
         ),
         (
             "deprovision",
+            {
+                "patch": added_file(
+                    f"deprovision/{CLUSTER}-archive", "unexpected"
+                )
+            },
+            f"must add deprovision/{CLUSTER}-archive as an empty regular file",
+        ),
+        (
+            "deprovision",
+            {
+                "patch": added_file(f"deprovision/{CLUSTER}-archive").replace(
+                    "100644", "120000"
+                )
+            },
+            f"must add deprovision/{CLUSTER}-archive as an empty regular file",
+        ),
+        (
+            "deprovision",
             {"commit_message": f"chore: deprovision {CLUSTER} [skip-deprovision]"},
             "must not contain [skip-deprovision]",
         ),

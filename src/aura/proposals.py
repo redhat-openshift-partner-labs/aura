@@ -93,6 +93,17 @@ EXPECTED_REVERSIBILITY: dict[ProposalType, Reversibility] = {
 _DIFF_HEADER = re.compile(r"^diff --git a/(\S+) b/(\S+)$")
 
 
+def deprovision_sentinel_patch(cluster_name: str) -> str:
+    """Return the Git patch that adds an empty deprovision sentinel."""
+
+    sentinel = f"deprovision/{cluster_name}{ARCHIVE_SUFFIX}"
+    return (
+        f"diff --git a/{sentinel} b/{sentinel}\n"
+        "new file mode 100644\n"
+        "index 0000000..e69de29\n"
+    )
+
+
 class Proposal(BaseModel):
     """Immutable, evidence-linked proposal that Phase 2 never executes."""
 
@@ -236,6 +247,11 @@ def _validate_patch_scope(
             raise ValueError(
                 f"deprovision proposal must add only {sentinel}"
             )
+        if proposal.patch != deprovision_sentinel_patch(cluster):
+            raise ValueError(
+                f"deprovision proposal must add {sentinel} "
+                "as an empty regular file"
+            )
         return
     prefix = f"provision/{cluster}/"
     outside = [path for path, _ in changes if not path.startswith(prefix)]
@@ -326,5 +342,6 @@ __all__ = [
     "SKIP_PROVISION",
     "TriggerEffect",
     "compute_proposal_digest",
+    "deprovision_sentinel_patch",
     "patch_changes",
 ]

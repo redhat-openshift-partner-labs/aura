@@ -12,6 +12,7 @@ from aura.proposals import (
     EXPECTED_TRIGGER_EFFECTS,
     Proposal,
     ProposalType,
+    deprovision_sentinel_patch,
 )
 from aura.services.diagnosis import cwa_evidence_items
 from aura.services.evidence import (
@@ -159,11 +160,7 @@ def _deprovision_text(cluster: str, proposal_id: UUID) -> dict[str, object]:
             "Discard the proposal before merge. Once the deprovision "
             "pipeline starts, no rollback exists."
         ),
-        "patch": (
-            f"diff --git a/{sentinel} b/{sentinel}\n"
-            "new file mode 100644\n"
-            "index 0000000..e69de29\n"
-        ),
+        "patch": deprovision_sentinel_patch(cluster),
     }
 
 def _pinned_git_revision(snapshot: CWASnapshot) -> str | None:
