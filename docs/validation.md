@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-434 passed
+480 passed
 ```
 
 Run diff hygiene:
@@ -56,7 +56,7 @@ The test classes every change must include are defined in [Development Workflow]
 - `proposal status` authorization for `viewer`, `proposer`, and `admin`, output, and failure records, including missing and unreadable stores.
 - Write order: a failed trace, audit, or proposal write leaves no proposal file, and `command_failed` links to the last stored audit event.
 - Deprovision contract rejection of non-empty or non-regular sentinel files.
-- The failure-injection matrix: every command's documented write order, a failure of each write in turn, and a failed evidence read, with invariants I1–I4 checked after every run.
+- The failure-injection matrix: every command's documented write order, a failure of each write in turn before writing and after linking, and each route's read errors, with invariants I1–I4 checked after every run.
 - Fixture validity and secret redaction, including field spelling variants.
 
 ## Local Fixture

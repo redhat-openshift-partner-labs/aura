@@ -127,7 +127,7 @@ Every command must preserve these. A change that touches an invariant must have 
 | I1 | A command that passes argument validation and the idempotency check stores exactly one terminal record: `succeeded`, `failed`, or `refused`. The only exception is a command store that cannot be written. |
 | I2 | A command's audit events form a linear chain. Every `previous_event_id` names a stored event of the same command, no two events share a predecessor, and `command_failed` or `command_refused` names the last event actually stored. |
 | I3 | Actionable artifacts are written last. A stored proposal always has its CWA trace and `proposal_created` event, with matching IDs and digests. Phase 3 approval records follow the same rule. |
-| I4 | Stores are append-only and leave no partial final record. |
+| I4 | Stores are append-only and leave no partial or empty final record. A write that raises leaves no final record, including when the directory sync fails after the record is linked. |
 | I5 | Aura writes nothing to Git, Kubernetes, Portal, or RabbitMQ in Phases 1 and 2, and never modifies a protected repository. |
 | I6 | Stored records contain no secret values. |
 | I7 | Expected failures (argument, authorization, Git, `oc`, store, and filesystem errors) exit `2` with a concise message and no traceback. A traceback is a bug. |
@@ -138,7 +138,7 @@ Every command must preserve these. A change that touches an invariant must have 
 
 For each command, list every step that reads external state or writes a record, force each one to fail, and assert the outcome. Template:
 
-| Step that fails | Exit | Terminal record | Artifacts left | `command_failed` links to |
+| Step that fails | Exit | Terminal record | Actionable artifacts left | `command_failed` links to |
 | --- | --- | --- | --- | --- |
 | `command_received` audit write | `2` | `failed` | None | None |
 | Evidence collection (Git, `oc`, store read) | `2` | `failed` | None | `command_received` |
@@ -149,18 +149,28 @@ For each command, list every step that reads external state or writes a record, 
 | Proposal write | `2` | `failed` | No proposal | `proposal_created` |
 | Terminal command record write | `2` | None | Prior records only | Not applicable |
 
-Rows that do not apply to a command are omitted from its matrix. A new command or write step adds rows.
+Rows that do not apply to a command are omitted from its matrix. A new command or write step adds rows. Actionable artifacts are records a later phase could act on, currently proposals. Evidence snapshots, CWA snapshots and traces, and diagnosis records written before the failure may remain as provenance.
 
 ### Shared Harness
 
 `tests/test_failure_matrix.py` applies the matrix to every command automatically:
 
 1. It runs each scenario once and records every store write. All writes go through `save_private_json`, which `tests/failure_injection.py` intercepts.
-2. It asserts that the recorded write labels equal the scenario's documented write order. This pins the order in `docs/wiring.md`, so moving a write is a visible, reviewed change.
-3. It reruns the scenario once per write, failing only that write with the `OSError` a full disk raises. Each run must exit `2`, print nothing to standard output, and store a `failed` record. The exception is a failure of the final terminal-record write, which leaves no record by design. No proposal from that command may remain, and `command_failed` must link to the last audit event stored before the failure.
-4. It replaces the collector with one that raises `GitInventoryError` and asserts the chain `command_received` then `command_failed`.
+2. It asserts that the recorded write labels equal the scenario's documented write order. This pins the order in `docs/wiring.md`, so moving a write is a visible, reviewed change. It also asserts that every record file the run created was recorded, so a write that bypasses `save_private_json` fails the test.
+3. It reruns the scenario once per write, failing only that write with an `OSError`, in two phases: before anything is written, and after the record is linked into place when the directory sync fails. Each run must exit `2`, print nothing to standard output, and store a `failed` record. The writes after the failure must be exactly the `failed` terminal record and, when audited, `command_failed`. The exception is a failure of the final terminal-record write, which leaves no record and is followed by no write. No proposal from that command may remain, and `command_failed` must link to the last audit event stored before the failure.
+4. For each error type a command's route handles, it replaces the collector with one that raises it and asserts a `failed` record and the chain `command_received` then `command_failed`.
 
-`tests/invariants.py` provides `assert_command_invariants`, which checks I1–I4 on the records a command left, and `command_chain`, which returns a command's audit events in chain order after asserting I2. Every matrix run calls it. Other CLI tests may call it too.
+`tests/invariants.py` provides:
+
+- `assert_command_invariants`, which checks the records a command left:
+  - I1: exactly one terminal record for the command;
+  - I2: a linear audit chain whose last event matches the record, and at least one event when an audit directory is in use;
+  - I3: provenance for every proposal written during the run, and no proposal left by a failed or refused command;
+  - I4: no partial or empty record, and every record that existed before the run unchanged.
+- `record_files`, which snapshots records before a run.
+- `command_chain`, which returns a command's audit events in chain order after asserting I2.
+
+Every matrix run calls the invariant check. Other CLI tests may call it too.
 
 To cover a new command, or a new outcome of an existing command, add a `Scenario` with its builder and its documented write order. Rows for new write steps are then tested without further code.
 
@@ -191,7 +201,7 @@ Adopted on 2026-10-23.
 
 | Practice | Status |
 | --- | --- |
-| Failure-injection harness | In place. It covers every command, including refusals: inventory list with and without record directories, workflow inspect, diagnose state, propose deprovision, and proposal status. Against the CLI from before the review fixes, it fails 8 of its 17 matrix tests. |
+| Failure-injection harness | In place, with 14 scenarios: inventory list with no record directories, audit only, through CWA, and through diagnosis; workflow inspect with none or with snapshot and audit; diagnose state succeeded and refused; propose deprovision succeeded and refused; proposal status with none or with snapshot and audit. Against the CLI from commit `0416058`, before the review fixes, 19 of its 62 matrix tests fail. It found a store defect, fixed in `17b06d3`: a directory sync failure after linking left records that callers treated as unwritten. |
 | Invariant check for I1–I4 | In place. It runs after every matrix run. Existing per-command CLI tests do not call it yet. |
 | Mutation testing | Not adopted. When adopted, run it periodically on changed modules to confirm that tests constrain the code. |
 

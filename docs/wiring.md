@@ -137,7 +137,7 @@ The CLI stores the CWA snapshot, the CWA trace, the `context_assembled` and `pro
 | `--diagnosis-dir DIR` | `JsonDiagnosisStore` | `DIR/CWA_SNAPSHOT_ID.json` |
 | `--proposal-dir DIR` | `JsonProposalStore` | `DIR/PROPOSAL_ID.json` |
 
-Stores create restricted parent directories, write and `fsync` private temporary files, and atomically link them into final names. Existing IDs or terminal command keys are treated as errors rather than overwrites, and failed writes leave no partial final records.
+Stores create restricted parent directories, write and `fsync` private temporary files, and atomically link them into final names. Existing IDs or terminal command keys are treated as errors rather than overwrites, and failed writes leave no partial final records. If the directory sync fails after the record is linked, the store removes the record before raising, so a raised write is never stored.
 
 The CLI locks `--command-dir`, checks the requested idempotency key, executes the command, and writes the terminal record while holding the lock. A terminal key with the same request digest exits with code `2` before collection. A terminal key with a different request digest is rejected. Failed and refused commands are terminal; a new attempt requires a new key.
 
