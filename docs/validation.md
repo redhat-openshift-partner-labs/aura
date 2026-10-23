@@ -38,7 +38,7 @@ ripwire . --quality-delta=adb2c2b..HEAD \
 
 The current ledger acknowledges the store exception classes, which `JsonRecordStore` references as class attributes and `cli.py` catches by name, and the evidence route properties and collector selectors, which `cli.py` reads as attributes or references as `_EVIDENCE_ROUTES` values; ripwire counts only direct construction or calls as use.
 
-The test suite covers:
+The test classes every change must include are defined in [Development Workflow](development.md). The test suite covers:
 
 - Command and state contracts.
 - Authorization.

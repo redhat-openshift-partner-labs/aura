@@ -86,6 +86,7 @@ See [`docs/cli.md`](docs/cli.md) for every flag, default, and required value.
 
 | Document | Purpose |
 | --- | --- |
+| [`docs/development.md`](docs/development.md) | Required workflow, project invariants, and failure-mode matrix |
 | [`docs/status.md`](docs/status.md) | Implemented capabilities and remaining gaps |
 | [`docs/architecture.md`](docs/architecture.md) | Implemented architecture and boundaries |
 | [`docs/wiring.md`](docs/wiring.md) | CLI, service, collector, and store wiring |

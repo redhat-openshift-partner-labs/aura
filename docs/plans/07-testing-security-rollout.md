@@ -70,6 +70,15 @@ Required cases:
 | EventListener as the execution path | Reject |
 | Proposal with invalid schema | Reject |
 
+### Failure-Mode and Invariant Tests
+
+Every command follows the [development workflow](../development.md). Required:
+
+- A failure test for each row of the command's failure-mode matrix, asserting the exit code, the terminal record, that no actionable artifact remains, and the `command_failed` link.
+- Tests for each project invariant the command touches, including the linear audit chain and artifacts-written-last rules.
+- Negative tests against the contract for every rule that says only, exactly, empty, must, must not, or never.
+- Input edge tests for missing, unreadable, duplicate, misnamed, and tampered inputs.
+
 ### Adapter Tests
 
 Use local fake Git and Tekton servers.

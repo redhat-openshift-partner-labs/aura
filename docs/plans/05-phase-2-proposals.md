@@ -172,6 +172,16 @@ A proposal is stale when `fleet-clusters` `HEAD` moves past `base_commit` and to
 - No Git write, Kubernetes write, or pipeline start occurs.
 - No protected repository is modified.
 
+Failure-mode criteria, added on 2026-10-23 under the [development workflow](../development.md):
+
+- Each contract rule that says only, exactly, or empty is enforced by the `Proposal` contract itself and has a negative test against it; for example, a deprovision patch that adds a non-empty or non-regular sentinel is rejected.
+- A proposal file is written only after its CWA trace and `proposal_created` audit event; a failure at any earlier write leaves no proposal file.
+- Every `propose` and `proposal` command that fails after the idempotency check stores a `failed` terminal record, and `command_failed` links to the last audit event stored.
+- `proposal status` fails, rather than reporting no proposals, when the proposal store is missing or unreadable or a record is misnamed, unreadable, or tampered.
+- Each proposal type has failure tests for every row of its failure-mode matrix.
+
+The deprovision type meets these except full matrix coverage: it has failure tests for the trace, `proposal_created`, and proposal writes, and the shared failure-injection harness will cover the remaining rows.
+
 ## Out of Scope
 
 - Model-generated proposals or explanations.

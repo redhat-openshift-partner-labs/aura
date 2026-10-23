@@ -35,21 +35,26 @@ Read only inside the provided parent repository unless the user explicitly grant
 
 ## Development Process
 
-1. Write a failing test.
-2. Make the smallest correct implementation.
-3. Run the focused test.
-4. Run the full suite.
-5. Run `git diff --check`.
-6. Create an incremental conventional commit.
+Follow [`docs/development.md`](docs/development.md) for every behavior change. In summary:
+
+1. Read the governing spec and contract docs; ask the operator when behavior is unspecified.
+2. Write a test plan before any test or code, covering behavior, contract negatives, failure modes, invariants, and input edges.
+3. Write failing tests and confirm each fails for the right reason.
+4. Make the smallest correct implementation.
+5. Run the focused tests, the full suite, `git diff --check`, and the quality gate, all before the commit is final.
+6. Update affected docs in the same commit series.
+7. Create an incremental conventional commit.
+8. Get an independent review of each feature, reproduce every finding, and fix confirmed findings test-first.
 
 Useful commands:
 
 ```bash
 UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 git diff --check
+ripwire . --quality-delta=adb2c2b..HEAD
 ```
 
-Run live cluster validation only when explicitly approved by the operator.
+Run live cluster validation only when explicitly approved by the operator. By default, give the operator the commands and expected results to run.
 
 ## Commit Rules
 
@@ -83,6 +88,7 @@ docs(phase-1): record validation
 - Update `docs/evidence.md` when evidence, CWA, audit, or diagnosis contracts change.
 - Update `docs/wiring.md` when command wiring changes.
 - Update `docs/validation.md` when validation procedures or expected results change.
+- Update `docs/development.md` when the workflow, project invariants, or failure-mode matrix change.
 - Use raw Mermaid blocks for diagrams.
 
 ## Local Artifacts
@@ -102,6 +108,10 @@ Leave these untracked local artifacts alone unless the user explicitly asks othe
 - Contract tests use Pydantic validation.
 - Store tests assert exclusive-create behavior.
 - Fixture tests must not contain secrets.
+- Every spec rule that says only, exactly, empty, must, must not, or never has a negative test against the contract or validator, not only the generator.
+- Every command has failure tests for each record write and external read in its failure-mode matrix, asserting the terminal record, absent artifacts, and the `command_failed` link.
+- Tests force failures deterministically, for example by pre-creating a record at its deterministic ID, and restore any permissions they change.
+- A change that touches a project invariant in `docs/development.md` has a test asserting it.
 
 ## Security Guidance
 
@@ -112,8 +122,14 @@ Leave these untracked local artifacts alone unless the user explicitly asks othe
 
 ## Definition of Done
 
+- A test plan covering all five classes in `docs/development.md` existed before the tests.
+- Every spec rule the change implements maps to at least one test.
 - Full test suite passes.
 - Diff hygiene passes.
+- The quality gate reports zero gating findings; only confirmed false positives are acknowledged, with a reason.
 - Affected documentation is current.
 - Protected repositories have no tracked changes.
 - The change is committed with a conventional commit and sign-off.
+- The feature has had an independent review, and every confirmed finding is fixed test-first.
+
+A completed task or checklist item does not mean the work is done; this list does.
