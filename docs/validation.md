@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-387 passed
+401 passed
 ```
 
 Run diff hygiene:
@@ -53,10 +53,14 @@ The test suite covers:
 - Deprovision proposal generation over real temporary Git trees, including `git apply --check` against the base commit and every refusal reason.
 - `propose deprovision` authorization, stored records, audit chain, refusal, and argument validation.
 - Proposal staleness collection against one pinned `HEAD`, requested-ID selection, and rejection of missing, misnamed, or tampered records.
-- `proposal status` authorization for `viewer`, `proposer`, and `admin`, output, and failure records.
+- `proposal status` authorization for `viewer`, `proposer`, and `admin`, output, and failure records, including missing and unreadable stores.
+- Write order: a failed trace, audit, or proposal write leaves no proposal file, and `command_failed` links to the last stored audit event.
+- Deprovision contract rejection of non-empty or non-regular sentinel files.
 - Fixture validity and secret redaction, including field spelling variants.
 
 ## Local Fixture
+
+This procedure is pinned to the `fleet-clusters` commit below; `0171d46a-scopedaws` has since been deprovisioned, so current `HEAD` no longer matches these results. The automated tests use a static copy of this fixture.
 
 Fixture cluster:
 
@@ -154,11 +158,11 @@ Latest validation observed:
 
 ## Live Diagnosis Validation
 
-Validate the scoped-AWS fixture:
+Validate a cluster that has a definition, OpenShift resources, and a retained PipelineRun:
 
 ```bash
 UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura diagnose state \
-  --cluster 0171d46a-scopedaws \
+  --cluster <cluster> \
   --fleet-clusters ../fleet-clusters \
   --openshift-kubeconfig "$AURA_KUBECONFIG" \
   --snapshot-dir ./local/snapshots \
@@ -170,7 +174,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura diagnose state \
   --command-dir ./local/commands
 ```
 
-Run the same command with these clusters and new idempotency keys to validate refusals:
+The cluster results below are historical, recorded before `0171d46a-scopedaws` was deprovisioned; current cluster states differ. Run the same command with new idempotency keys against clusters in comparable states to validate refusals:
 
 | Cluster | Expected result |
 | --- | --- |
@@ -182,7 +186,7 @@ Run the same command with these clusters and new idempotency keys to validate re
 | `264c5202-codvoqs` | Exit code `0`; stranded deprovision summary stating `no PipelineRun is retained for it`, confidence `0.6` |
 | `f6f3eba2-redisvirt` | Exit code `2`; leftover sentinel, refused with `Git cluster definition files` and `OpenShift actual state` |
 
-Latest validation observed:
+Historical validation observed:
 
 | Check | Result |
 | --- | --- |
@@ -226,7 +230,7 @@ jq -r .patch "$OUT/proposal.json" | git -C ../fleet-clusters apply --check -v -
 UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync python -c 'import sys; from pathlib import Path; from aura.proposals import Proposal, patch_changes; from aura.collectors.git_staleness import GitProposalStaleness; p = Proposal.model_validate_json(Path(sys.argv[1]).read_text()); print(patch_changes(p.patch), [str(e) for e in p.trigger_effect]); print(GitProposalStaleness(Path(sys.argv[2])).check(p))' "$OUT/proposal.json" ../fleet-clusters
 ```
 
-Then rerun the command with new idempotency keys for a deprovisioned cluster, such as `0171d46a-scopedaws`, and with `--role viewer`.
+Then rerun the command with new idempotency keys for a deprovisioned cluster (`--cluster <deprovisioned-cluster>`), and with `--role viewer`.
 
 | Check | Expected result |
 | --- | --- |

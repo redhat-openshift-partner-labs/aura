@@ -141,7 +141,7 @@ Example:
 
 ```bash
 UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura diagnose state \
-  --cluster 0171d46a-scopedaws \
+  --cluster <cluster> \
   --fleet-clusters ../fleet-clusters \
   --openshift-kubeconfig "$HOME/.kube/aura-readonly" \
   --snapshot-dir ./local/snapshots \
@@ -182,7 +182,7 @@ Example:
 
 ```bash
 UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura propose deprovision \
-  --cluster 0171d46a-scopedaws \
+  --cluster <cluster> \
   --fleet-clusters ../fleet-clusters \
   --openshift-kubeconfig "$HOME/.kube/aura-readonly" \
   --snapshot-dir ./local/snapshots \
@@ -219,7 +219,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura proposal status \
   --command-dir ./local/commands
 ```
 
-The command prints an evidence snapshot with one `proposal_staleness` item per proposal, ordered by proposal ID, all checked against one pinned `fleet-clusters` `HEAD`. A stale proposal is a successful result, not an error; the command exits `0`. A missing requested proposal, a malformed record file name, or a record whose digest no longer matches exits `2` and stores a `failed` command record.
+The command prints an evidence snapshot with one `proposal_staleness` item per proposal, ordered by proposal ID, all checked against one pinned `fleet-clusters` `HEAD`. A stale proposal is a successful result, not an error; the command exits `0`. A missing or unreadable `--proposal-dir`, a missing requested proposal, a `.json` file whose name is not a proposal ID, a record that cannot be read, and a record whose digest no longer matches each exit `2` and store a `failed` command record. Repeated `--proposal-id` values are checked once.
 
 The check is Git-only: it does not detect live OpenShift or Tekton state that has changed since the proposal's evidence was collected.
 

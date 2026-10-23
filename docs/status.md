@@ -30,7 +30,7 @@ Validation summary, recorded at Aura commit `6dc0eb3`:
 
 ## Phase 2 Prerequisites
 
-Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented; P2 remains. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`. P4 adds `propose deprovision`, authorized for `proposer` and `admin`, which generates the deprovision sentinel proposal type. `proposal status` reports Git staleness of stored proposals for `viewer`, `proposer`, and `admin`. Automated tests at `69a3c80`: 387 passed, with zero gating quality findings. The operator validated `propose deprovision` against the live hub on 2026-10-23 with `virt-cookbook`; see [Live Proposal Validation](validation.md#live-proposal-validation). Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
+Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented; P2 remains. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`. P4 adds `propose deprovision`, authorized for `proposer` and `admin`, which generates the deprovision sentinel proposal type. `proposal status` reports Git staleness of stored proposals for `viewer`, `proposer`, and `admin`. Automated tests at `5465797`: 401 passed, with zero gating quality findings. The operator validated `propose deprovision` against the live hub on 2026-10-23 with `virt-cookbook`; see [Live Proposal Validation](validation.md#live-proposal-validation). Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
 
 | Check | Result |
 | --- | --- |
@@ -101,6 +101,9 @@ The model protocol remains provider-independent. A future provider must consume 
 
 | Commit | Change |
 | --- | --- |
+| `5465797` | Stored proposals last and linked failures to stored audit events |
+| `554b1c6` | Required an empty regular-file deprovision sentinel |
+| `d81056b` | Failed proposal status on unreadable stores |
 | `cfaba98` | Acknowledged evidence route false positives |
 | `69a3c80` | Added the `proposal status` command |
 | `b4be1f7` | Collected staleness of stored proposals |

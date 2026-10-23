@@ -115,13 +115,13 @@ Process error contracts:
 3. It refuses with every unmet precondition: one definition at `provision/<id>`, no existing sentinel, OpenShift resources present, and a pinned base commit.
 4. Otherwise it returns a deterministic `Proposal` whose ID derives from the command and CWA snapshot.
 
-The CLI stores the CWA snapshot, the proposal, and then the CWA trace. The trace records provider `aura`, model name `deprovision-sentinel-deterministic`, and the proposal digest as its response digest. Incomplete and invalid definitions do not block a deprovision proposal, because deprovision acts on the cluster name.
+The CLI stores the CWA snapshot, the CWA trace, the `context_assembled` and `proposal_created` audit events, and only then the proposal. If any earlier write fails, the command fails and no proposal file exists, so a stored proposal always has its trace and audit events. The trace records provider `aura`, model name `deprovision-sentinel-deterministic`, and the proposal digest as its response digest. Incomplete and invalid definitions do not block a deprovision proposal, because deprovision acts on the cluster name.
 
 ### Proposal staleness
 
 `GitProposalStaleness` resolves `HEAD`, runs `git merge-base --is-ancestor BASE HEAD`, and then `git diff --name-only BASE HEAD` limited to the target cluster's paths. All three commands are read-only.
 
-`ProposalStalenessCollector` resolves `HEAD` once and checks every requested proposal, or every `*.json` record in `--proposal-dir` in ID order, against that revision. Loading a record re-verifies its `proposal_digest`; a malformed or tampered record raises `ProposalRecordUnreadable` and fails the command instead of being skipped.
+`ProposalStalenessCollector` resolves `HEAD` once and checks every requested proposal, or every `*.json` record in `--proposal-dir` in ID order, against that revision. Loading a record re-verifies its `proposal_digest`. A missing or unreadable store, a misnamed record, an unreadable record, or a tampered record raises `ProposalRecordUnreadable` and fails the command instead of being skipped. Repeated IDs are checked once.
 
 `inventory list`, `workflow inspect`, and `proposal status` are entries in `_EVIDENCE_ROUTES`. Each entry names its service, extra command input, collector selector, and source errors; the service spec supplies the authorization and command-type errors.
 
@@ -153,7 +153,7 @@ The CLI locks `--command-dir`, checks the requested idempotency key, executes th
 | `command_failed` | A command reaches the terminal failed state |
 | `command_refused` | A diagnosis or proposal command reaches the terminal refused state |
 
-Context, model, proposal, and refusal events reference the previous event ID, forming an audit chain for one command.
+Context, model, proposal, and refusal events reference the previous event ID, forming an audit chain for one command. `command_failed` references the last event that was actually stored, so a failed write never forks the chain.
 
 ## Extension Points
 
