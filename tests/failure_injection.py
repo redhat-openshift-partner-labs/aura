@@ -18,6 +18,7 @@ from aura.contracts import AuditEvent
 
 
 _SAVE = json_store.save_private_json
+WRITE_PHASES = ("before_write", "after_link")
 
 
 @dataclass(frozen=True)
@@ -46,12 +47,14 @@ def write_label(record: object) -> str:
 def install_write_faults(
     monkeypatch,
     fail_at: int | None = None,
+    phase: str = WRITE_PHASES[0],
 ) -> list[RecordWrite]:
     """Route every store write through a recorder that can fail one write.
 
-    Writes are numbered from zero in call order. The write at fail_at raises
-    the same OSError a full disk would; later writes succeed, so the
-    command's own failure handling runs normally.
+    Writes are numbered from zero in call order. The write at fail_at fails
+    with an OSError, either before anything is written or after the record
+    is linked into place, when the directory sync fails. Later writes
+    succeed, so the command's own failure handling runs normally.
     """
 
     writes: list[RecordWrite] = []
@@ -59,9 +62,22 @@ def install_write_faults(
     def save(root, path, record, duplicate_error, duplicate_message):
         index = len(writes)
         writes.append(RecordWrite(write_label(record), path))
-        if index == fail_at:
-            raise OSError(errno.ENOSPC, "injected write failure", str(path))
-        return _SAVE(root, path, record, duplicate_error, duplicate_message)
+        arguments = (root, path, record, duplicate_error, duplicate_message)
+        if index != fail_at:
+            return _SAVE(*arguments)
+        failure = OSError(errno.EIO, "injected write failure", str(path))
+        if phase == "before_write":
+            raise failure
+        sync = json_store._fsync_directory
+
+        def failing_sync(directory: Path) -> None:
+            raise failure
+
+        json_store._fsync_directory = failing_sync
+        try:
+            return _SAVE(*arguments)
+        finally:
+            json_store._fsync_directory = sync
 
     monkeypatch.setattr(json_store, "save_private_json", save)
     monkeypatch.setattr(command_store, "save_private_json", save)
@@ -76,10 +92,11 @@ def run_cli(
     command_id: UUID,
     clock: Callable[[], datetime],
     fail_at: int | None = None,
+    phase: str = WRITE_PHASES[0],
 ) -> CliRun:
     """Run the CLI with recorded writes and captured output."""
 
-    writes = install_write_faults(monkeypatch, fail_at)
+    writes = install_write_faults(monkeypatch, fail_at, phase)
     stdout, stderr = io.StringIO(), io.StringIO()
     with redirect_stdout(stdout), redirect_stderr(stderr):
         exit_code = main(

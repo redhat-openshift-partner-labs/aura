@@ -26,13 +26,20 @@ TERMINAL_EVENTS = {
 
 
 def _record_paths(directory: Path | None) -> list[Path]:
-    # Zero-byte files are blockers that tests pre-create; stores never
-    # publish an empty record.
     if directory is None or not directory.is_dir():
         return []
-    return sorted(
-        path for path in directory.glob("*.json") if path.stat().st_size
-    )
+    return sorted(directory.glob("*.json"))
+
+
+def record_files(*directories: Path) -> dict[Path, bytes]:
+    """Return the content of every record under the given directories."""
+
+    return {
+        path: path.read_bytes()
+        for directory in directories
+        if directory.is_dir()
+        for path in sorted(directory.rglob("*.json"))
+    }
 
 
 def audit_events(audit_dir: Path | None) -> list[AuditEvent]:
@@ -79,13 +86,29 @@ def assert_command_invariants(
     cwa_dir: Path | None = None,
     proposal_dir: Path | None = None,
     expect_record: bool = True,
+    before: dict[Path, bytes] | None = None,
 ) -> CommandEnvelope | None:
-    """Assert I1-I4 and return the terminal command record, if any."""
+    """Assert I1-I4 and return the terminal command record, if any.
 
-    for directory in (command_dir, audit_dir, cwa_dir, proposal_dir):
-        if directory is not None and directory.is_dir():
-            partial = sorted(directory.rglob(".*.tmp"))
-            assert not partial, f"partial record left behind: {partial}"
+    before holds records that existed before the command ran; they must be
+    unchanged, and only records written after them are held to I3.
+    """
+
+    before = before or {}
+    directories = [
+        directory
+        for directory in (command_dir, audit_dir, cwa_dir, proposal_dir)
+        if directory is not None and directory.is_dir()
+    ]
+    for directory in directories:
+        partial = sorted(directory.rglob(".*.tmp"))
+        assert not partial, f"partial record left behind: {partial}"
+        empty = [p for p in directory.rglob("*.json") if not p.stat().st_size]
+        assert not empty, f"empty record left behind: {empty}"
+    for path, content in before.items():
+        assert path.exists() and path.read_bytes() == content, (
+            f"record changed or removed: {path}"
+        )
 
     record = _terminal_record(command_dir, idempotency_key)
     if expect_record:
@@ -93,6 +116,8 @@ def assert_command_invariants(
             f"no terminal command record for {idempotency_key}"
         )
         assert record.status in TERMINAL_STATES, record.status
+    if record is not None:
+        _assert_single_record(command_dir, record)
 
     events = audit_events(audit_dir)
     chains = {
@@ -101,11 +126,20 @@ def assert_command_invariants(
         )
         for command_id in {event.command_id for event in events}
     }
-    if record is not None and chains.get(record.command_id):
+    if record is not None and audit_dir is not None and audit_dir.is_dir():
+        assert chains.get(record.command_id), (
+            f"command {record.command_id} has no audit events"
+        )
         _assert_chain_matches_record(chains[record.command_id], record)
 
-    owners = set(chains) | ({record.command_id} if record else set())
-    for proposal in _record_proposals(proposal_dir, owners):
+    for path in _record_paths(proposal_dir):
+        if path in before:
+            continue
+        proposal = Proposal.model_validate_json(path.read_text("utf-8"))
+        if record is not None and proposal.command_id == record.command_id:
+            assert record.status is CommandState.SUCCEEDED, (
+                f"proposal left by a failed command: {proposal.proposal_id}"
+            )
         _assert_proposal_provenance(
             proposal,
             cwa_dir,
@@ -122,6 +156,23 @@ def _terminal_record(
         return JsonCommandStore(command_dir).load(idempotency_key)
     except CommandNotFound:
         return None
+
+
+def _assert_single_record(
+    command_dir: Path,
+    record: CommandEnvelope,
+) -> None:
+    matching = [
+        path
+        for path in _record_paths(command_dir)
+        if CommandEnvelope.model_validate_json(path.read_text("utf-8"))
+        .command_id
+        == record.command_id
+    ]
+    assert len(matching) == 1, (
+        f"command {record.command_id} must have exactly one terminal "
+        f"record, found {len(matching)}"
+    )
 
 
 def _linear_chain(events: list[AuditEvent]) -> list[AuditEvent]:
@@ -168,17 +219,6 @@ def _assert_chain_matches_record(
         TERMINAL_EVENTS.values()
     )
     assert not terminal, f"succeeded command has {terminal}"
-
-
-def _record_proposals(
-    proposal_dir: Path | None,
-    owners: set[UUID],
-) -> list[Proposal]:
-    return [
-        proposal
-        for command_id in owners
-        for proposal in proposals_of(proposal_dir, command_id)
-    ]
 
 
 def _assert_proposal_provenance(

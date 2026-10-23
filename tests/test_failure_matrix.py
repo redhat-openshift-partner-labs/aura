@@ -9,13 +9,16 @@ from uuid import UUID
 import pytest
 
 from aura.collectors.git_inventory import GitInventoryError
+from aura.collectors.git_staleness import ProposalRecordUnreadable
+from aura.collectors.oc_cli import OpenShiftCLIError
 from aura.contracts import AuditEventType, CommandState, EvidenceSnapshot
-from aura.proposal_store import JsonProposalStore
-from failure_injection import run_cli
+from aura.proposal_store import JsonProposalStore, ProposalNotFound
+from failure_injection import WRITE_PHASES, run_cli
 from invariants import (
     assert_command_invariants,
     command_chain,
     proposals_of,
+    record_files,
 )
 from test_cli_diagnose_state import FakeClusterStateCollector
 from test_cli_propose import cluster_state_collector, fleet_clusters
@@ -25,6 +28,16 @@ from test_git_staleness import deprovision_proposal
 
 COMMAND_ID = UUID(int=7)
 KEY = "matrix-key"
+RECORD_DIRS = (
+    "commands",
+    "snapshot",
+    "audit",
+    "cwa",
+    "diagnosis",
+    "proposal",
+)
+SOURCE_ERRORS = (GitInventoryError, OpenShiftCLIError)
+STORE_ERRORS = (GitInventoryError, ProposalNotFound, ProposalRecordUnreadable)
 RECEIVED = "AuditEvent:command_received"
 EVIDENCE = ("EvidenceSnapshot", "AuditEvent:evidence_collected")
 ASSEMBLED = ("CWASnapshot",)
@@ -54,6 +67,7 @@ class Scenario:
     build: Callable[[Path], tuple[list[str], object | None]]
     writes: tuple[str, ...]
     status: CommandState = CommandState.SUCCEEDED
+    read_errors: tuple[type[Exception], ...] = SOURCE_ERRORS
 
     @property
     def exit_code(self) -> int:
@@ -93,39 +107,38 @@ def cluster(root: Path) -> list[str]:
     ]
 
 
-def inventory_minimal(root: Path):
-    return (
-        ["inventory", "list", "--fleet-clusters", str(root), *operator(root)],
-        FakeClusterStateCollector(),
-    )
+def inventory(*names: str):
+    def build(root: Path):
+        return (
+            [
+                "inventory",
+                "list",
+                "--fleet-clusters",
+                str(root),
+                *records(root, *names),
+                *operator(root),
+            ],
+            FakeClusterStateCollector(),
+        )
+
+    return build
 
 
-def inventory_assembled(root: Path):
-    return (
-        [
-            "inventory",
-            "list",
-            "--fleet-clusters",
-            str(root),
-            *records(root, "snapshot", "audit", "cwa", "diagnosis"),
-            *operator(root),
-        ],
-        FakeClusterStateCollector(),
-    )
+def workflow(*names: str):
+    def build(root: Path):
+        return (
+            [
+                "workflow",
+                "inspect",
+                "--openshift-kubeconfig",
+                str(root / "kubeconfig"),
+                *records(root, *names),
+                *operator(root),
+            ],
+            FakeClusterStateCollector(),
+        )
 
-
-def workflow(root: Path):
-    return (
-        [
-            "workflow",
-            "inspect",
-            "--openshift-kubeconfig",
-            str(root / "kubeconfig"),
-            *records(root, "snapshot", "audit"),
-            *operator(root),
-        ],
-        FakeClusterStateCollector(),
-    )
+    return build
 
 
 def diagnose(complete: bool):
@@ -163,31 +176,49 @@ def propose(sentinel: str | None):
     return build
 
 
-def proposal_status(root: Path):
-    fleet = root / "fleet-clusters"
-    write_cluster(fleet)
-    JsonProposalStore(root / "proposal").save(
-        deprovision_proposal(commit_repository(fleet))
-    )
-    return (
-        [
-            "proposal",
-            "status",
-            "--fleet-clusters",
-            str(fleet),
-            *records(root, "proposal", "snapshot", "audit"),
-            *operator(root),
-        ],
-        None,
-    )
+def proposal_status(*names: str):
+    def build(root: Path):
+        fleet = root / "fleet-clusters"
+        write_cluster(fleet)
+        JsonProposalStore(root / "proposal").save(
+            deprovision_proposal(commit_repository(fleet))
+        )
+        return (
+            [
+                "proposal",
+                "status",
+                "--fleet-clusters",
+                str(fleet),
+                *records(root, "proposal", *names),
+                *operator(root),
+            ],
+            None,
+        )
+
+    return build
 
 
 SCENARIOS = [
-    Scenario("inventory-minimal", inventory_minimal, ("CommandEnvelope",)),
-    Scenario("inventory-assembled", inventory_assembled, DIAGNOSED),
+    Scenario("inventory-minimal", inventory(), ("CommandEnvelope",)),
+    Scenario(
+        "inventory-audited",
+        inventory("audit"),
+        (RECEIVED, "AuditEvent:evidence_collected", "CommandEnvelope"),
+    ),
+    Scenario(
+        "inventory-context",
+        inventory("snapshot", "audit", "cwa"),
+        (RECEIVED, *EVIDENCE, *ASSEMBLED, *CONTEXT, "CommandEnvelope"),
+    ),
+    Scenario(
+        "inventory-diagnosed",
+        inventory("snapshot", "audit", "cwa", "diagnosis"),
+        DIAGNOSED,
+    ),
+    Scenario("workflow-minimal", workflow(), ("CommandEnvelope",)),
     Scenario(
         "workflow",
-        workflow,
+        workflow("snapshot", "audit"),
         (RECEIVED, *EVIDENCE, "CommandEnvelope"),
     ),
     Scenario("diagnose", diagnose(True), DIAGNOSED),
@@ -217,19 +248,38 @@ SCENARIOS = [
         CommandState.REFUSED,
     ),
     Scenario(
-        "proposal-status",
-        proposal_status,
-        (RECEIVED, *EVIDENCE, "CommandEnvelope"),
+        "proposal-status-minimal",
+        proposal_status(),
+        ("CommandEnvelope",),
+        read_errors=STORE_ERRORS,
     ),
+    Scenario(
+        "proposal-status",
+        proposal_status("snapshot", "audit"),
+        (RECEIVED, *EVIDENCE, "CommandEnvelope"),
+        read_errors=STORE_ERRORS,
+    ),
+]
+READ_FAILURES = [
+    (scenario, error)
+    for scenario in SCENARIOS
+    for error in scenario.read_errors
 ]
 
 
 class FailingReadCollector:
+    def __init__(self, error: type[Exception]) -> None:
+        self._error = error
+
     def collect(self, **_: object) -> EvidenceSnapshot:
-        raise GitInventoryError("injected read failure")
+        raise self._error("injected read failure")
 
 
-def check(root: Path, *, expect_record: bool = True):
+def stored(root: Path) -> dict[Path, bytes]:
+    return record_files(*(root / name for name in RECORD_DIRS))
+
+
+def check(root: Path, before: dict[Path, bytes], *, expect_record=True):
     return assert_command_invariants(
         command_dir=root / "commands",
         idempotency_key=KEY,
@@ -237,56 +287,84 @@ def check(root: Path, *, expect_record: bool = True):
         cwa_dir=root / "cwa",
         proposal_dir=root / "proposal",
         expect_record=expect_record,
+        before=before,
     )
 
 
-def execute(scenario: Scenario, root: Path, monkeypatch, fail_at=None):
-    arguments, collector = scenario.build(root)
-    return run_cli(
+def execute(
+    scenario: Scenario,
+    root: Path,
+    monkeypatch,
+    *,
+    collector: object | None = None,
+    fail_at: int | None = None,
+    phase: str = WRITE_PHASES[0],
+):
+    arguments, built_collector = scenario.build(root)
+    before = stored(root)
+    run = run_cli(
         arguments,
         monkeypatch,
-        collector=collector,
+        collector=collector or built_collector,
         command_id=COMMAND_ID,
         clock=lambda: datetime(2026, 1, 1, tzinfo=UTC),
         fail_at=fail_at,
+        phase=phase,
     )
+    return run, before
 
 
-@pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda item: item.name)
+def scenario_id(item: object) -> str:
+    return item.name if isinstance(item, Scenario) else item.__name__
+
+
+@pytest.mark.parametrize("scenario", SCENARIOS, ids=scenario_id)
 def test_clean_run_writes_in_documented_order(
     tmp_path,
     monkeypatch,
     scenario,
 ) -> None:
-    run = execute(scenario, tmp_path, monkeypatch)
+    run, before = execute(scenario, tmp_path, monkeypatch)
 
     assert run.exit_code == scenario.exit_code, run.stderr
     assert [write.label for write in run.writes] == list(scenario.writes)
-    assert check(tmp_path).status is scenario.status
+    assert set(stored(tmp_path)) - set(before) == {
+        write.path for write in run.writes
+    }, "a record was written without passing through the recorder"
+    assert check(tmp_path, before).status is scenario.status
 
 
-@pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda item: item.name)
+@pytest.mark.parametrize("phase", WRITE_PHASES)
+@pytest.mark.parametrize("scenario", SCENARIOS, ids=scenario_id)
 def test_each_write_failure_fails_closed(
     tmp_path,
     monkeypatch,
     scenario,
+    phase,
 ) -> None:
+    failure_writes = ["CommandEnvelope"]
+    if scenario.audited:
+        failure_writes.append("AuditEvent:command_failed")
     for index, label in enumerate(scenario.writes):
-        case = f"{scenario.name}: write {index} ({label}) fails"
+        case = f"{scenario.name}: write {index} ({label}) fails {phase}"
         root = tmp_path / str(index)
         root.mkdir()
 
-        run = execute(scenario, root, monkeypatch, fail_at=index)
+        run, before = execute(
+            scenario, root, monkeypatch, fail_at=index, phase=phase
+        )
 
         assert run.exit_code == 2, case
         assert run.stdout == "", case
         assert "injected write failure" in run.stderr, case
         final_write = index == len(scenario.writes) - 1
-        record = check(root, expect_record=not final_write)
+        record = check(root, before, expect_record=not final_write)
+        after = [write.label for write in run.writes[index + 1 :]]
         if final_write:
-            assert record is None, case
+            assert (record, after) == (None, []), case
             continue
         assert record.status is CommandState.FAILED, case
+        assert after == failure_writes, case
         assert proposals_of(root / "proposal", COMMAND_ID) == [], case
         if scenario.audited:
             stored_before = [
@@ -301,25 +379,23 @@ def test_each_write_failure_fails_closed(
             ), case
 
 
-@pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda item: item.name)
+@pytest.mark.parametrize(("scenario", "error"), READ_FAILURES, ids=scenario_id)
 def test_evidence_read_failure_fails_closed(
     tmp_path,
     monkeypatch,
     scenario,
+    error,
 ) -> None:
-    arguments, _ = scenario.build(tmp_path)
-
-    run = run_cli(
-        arguments,
+    run, before = execute(
+        scenario,
+        tmp_path,
         monkeypatch,
-        collector=FailingReadCollector(),
-        command_id=COMMAND_ID,
-        clock=lambda: datetime(2026, 1, 1, tzinfo=UTC),
+        collector=FailingReadCollector(error),
     )
 
     assert run.exit_code == 2
     assert run.stderr == "aura: injected read failure\n"
-    assert check(tmp_path).status is CommandState.FAILED
+    assert check(tmp_path, before).status is CommandState.FAILED
     if scenario.audited:
         assert [
             event.event_type
