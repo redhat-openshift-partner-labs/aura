@@ -30,7 +30,7 @@ Validation summary, recorded at Aura commit `6dc0eb3`:
 
 ## Phase 2 Prerequisites
 
-Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented; P2 remains. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`. P4 adds `propose deprovision`, authorized for `proposer` and `admin`, which generates the deprovision sentinel proposal type. Automated tests at `c5abafb`: 368 passed, with zero gating quality findings. The operator validated `propose deprovision` against the live hub on 2026-10-23 with `virt-cookbook`; see [Live Proposal Validation](validation.md#live-proposal-validation). Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
+Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented; P2 remains. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`. P4 adds `propose deprovision`, authorized for `proposer` and `admin`, which generates the deprovision sentinel proposal type. `proposal status` reports Git staleness of stored proposals for `viewer`, `proposer`, and `admin`. Automated tests at `69a3c80`: 387 passed, with zero gating quality findings. The operator validated `propose deprovision` against the live hub on 2026-10-23 with `virt-cookbook`; see [Live Proposal Validation](validation.md#live-proposal-validation). Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
 
 | Check | Result |
 | --- | --- |
@@ -70,8 +70,9 @@ Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-prop
 | Redaction | Matches secret field names across case and separator variants |
 | Idempotency | Binds keys to one request and suppresses concurrent or sequential terminal-key reuse |
 | Deprovision proposals | Generates a deterministic, digest-verified proposal that adds only `deprovision/<id>-archive` as a standalone commit, or refuses with every unmet precondition; stores proposal, CWA, and `proposal_created` audit records and writes nothing to Git |
-| Authorization | Allows Phase 1 commands for `viewer` and `admin`, and `propose` commands for `proposer` and `admin`; supplied `--role` values replace the `viewer` default |
-| CLI | Provides `inventory list`, `workflow inspect`, `diagnose state`, and `propose deprovision` |
+| Proposal staleness | Checks stored proposals against one pinned `fleet-clusters` `HEAD` and fails on tampered or malformed records; Git-only |
+| Authorization | Allows Phase 1 commands for `viewer` and `admin`, `propose` commands for `proposer` and `admin`, and `proposal status` for `viewer`, `proposer`, and `admin`; supplied `--role` values replace the `viewer` default |
+| CLI | Provides `inventory list`, `workflow inspect`, `diagnose state`, `propose deprovision`, and `proposal status` |
 
 ## Current Model Behavior
 
@@ -100,6 +101,9 @@ The model protocol remains provider-independent. A future provider must consume 
 
 | Commit | Change |
 | --- | --- |
+| `cfaba98` | Acknowledged evidence route false positives |
+| `69a3c80` | Added the `proposal status` command |
+| `b4be1f7` | Collected staleness of stored proposals |
 | `c5abafb` | Added the `propose deprovision` command |
 | `b8f20fa` | Generated deprovision sentinel proposals |
 | `ec84fd4` | Acknowledged store exception false positives |

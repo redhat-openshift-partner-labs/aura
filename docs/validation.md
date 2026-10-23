@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-368 passed
+387 passed
 ```
 
 Run diff hygiene:
@@ -36,7 +36,7 @@ ripwire . --quality-delta=adb2c2b..HEAD \
   --ack-only=SUBSTRING
 ```
 
-The current ledger acknowledges the store exception classes, which `JsonRecordStore` references as class attributes and `cli.py` catches by name; ripwire counts only direct construction as use.
+The current ledger acknowledges the store exception classes, which `JsonRecordStore` references as class attributes and `cli.py` catches by name, and the evidence route properties and collector selectors, which `cli.py` reads as attributes or references as `_EVIDENCE_ROUTES` values; ripwire counts only direct construction or calls as use.
 
 The test suite covers:
 
@@ -52,6 +52,8 @@ The test suite covers:
 - Proposal contract invariants, the proposal store, and Git proposal staleness.
 - Deprovision proposal generation over real temporary Git trees, including `git apply --check` against the base commit and every refusal reason.
 - `propose deprovision` authorization, stored records, audit chain, refusal, and argument validation.
+- Proposal staleness collection against one pinned `HEAD`, requested-ID selection, and rejection of missing, misnamed, or tampered records.
+- `proposal status` authorization for `viewer`, `proposer`, and `admin`, output, and failure records.
 - Fixture validity and secret redaction, including field spelling variants.
 
 ## Local Fixture

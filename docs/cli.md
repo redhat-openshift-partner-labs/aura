@@ -20,7 +20,7 @@ All successful commands print JSON to standard output.
 | `--snapshot-dir` | No | None | Writable directory | Store the evidence snapshot |
 | `--audit-dir` | No | None | Writable directory | Store audit events |
 
-Phase 1 commands are authorized for `viewer` or `admin`. `propose` commands are authorized for `proposer` or `admin`, so the default `viewer` role is rejected. A command whose supplied roles include none of its allowed roles is rejected before evidence collection.
+Phase 1 commands are authorized for `viewer` or `admin`. `propose` commands are authorized for `proposer` or `admin`, so the default `viewer` role is rejected. `proposal status` is authorized for `viewer`, `proposer`, or `admin`. A command whose supplied roles include none of its allowed roles is rejected before evidence collection.
 
 Every command stores one terminal idempotency-key record in `--command-dir`: `succeeded`, `failed`, or `refused`. Reusing the same key for the same request exits with code `2` before evidence collection and reports the prior terminal state. Reusing it for a different request is rejected as belonging to a different request. A new attempt requires a new key. Concurrent uses of the same key are serialized by the command store, and only one execution collects evidence.
 
@@ -198,6 +198,30 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura propose deprovisio
 The command prints the stored `Proposal`. Its `patch` adds only the empty file `deprovision/<id>-archive`, and its `commit_message` must be used for a standalone commit. Aura writes nothing to `fleet-clusters`; merging the commit is the execution step and starts the deprovision pipeline.
 
 If a precondition is unmet, the command exits with code `2`, prints `proposal refused:` and every unmet precondition to standard error, stores no proposal, and still stores evidence, CWA, and audit records. A `--cluster` value that is not a DNS-1123 label is rejected before collection.
+
+## `proposal status`
+
+| Flag | Required | Default | Acceptable values |
+| --- | --- | --- | --- |
+| `--fleet-clusters` | Yes | None | Path to a local `fleet-clusters` checkout |
+| `--proposal-dir` | Yes | None | Directory of stored proposals |
+| `--proposal-id` | No | All stored proposals | Proposal UUID; may be repeated |
+| `--query` | No | `check proposal staleness` | Any string |
+
+Example:
+
+```bash
+UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura proposal status \
+  --fleet-clusters ../fleet-clusters \
+  --proposal-dir ./local/proposals \
+  --operator operator@example.com \
+  --idempotency-key proposal-status-001 \
+  --command-dir ./local/commands
+```
+
+The command prints an evidence snapshot with one `proposal_staleness` item per proposal, ordered by proposal ID, all checked against one pinned `fleet-clusters` `HEAD`. A stale proposal is a successful result, not an error; the command exits `0`. A missing requested proposal, a malformed record file name, or a record whose digest no longer matches exits `2` and stores a `failed` command record.
+
+The check is Git-only: it does not detect live OpenShift or Tekton state that has changed since the proposal's evidence was collected.
 
 ## Output and Exit Codes
 

@@ -31,6 +31,7 @@ An `EvidenceSnapshot` is the frozen result of one collector invocation.
 | `cluster_inventory` | Combined correlator | Desired state, actual state, latest run, and drift |
 | `workflow_view` | Workflow correlator | Operator-facing PipelineRun view |
 | `cluster_state_correlation` | Cluster-state correlator | Per-cluster evidence links and missing evidence |
+| `proposal_staleness` | Proposal staleness collector | Git staleness of one stored proposal |
 
 ## Cluster Inventory Fields
 
@@ -261,6 +262,17 @@ Refusal reasons, all reported together:
 | Existing sentinel | `deprovision sentinel already exists: <path>` |
 | No OpenShift resources | `no OpenShift resources for cluster <id>` |
 | No pinned revision | `no pinned Git base commit in evidence` |
+
+### Proposal Staleness Fields
+
+| Field | Meaning |
+| --- | --- |
+| `proposal_id`, `proposal_type`, `cluster_name`, `proposal_digest` | Copied from the verified stored proposal |
+| `base_commit` | Proposal base commit; `null` for post-provision reruns |
+| `head` | Pinned `fleet-clusters` `HEAD`, also the snapshot `source_version` |
+| `git_checked` | `false` when the proposal has no base commit, so Git staleness does not apply |
+| `stale` | Whether `HEAD` moved past `base_commit` and touched the cluster, or `base_commit` is not an ancestor of `HEAD` |
+| `reasons` | Changed cluster paths or the history problem |
 
 ## Audit Events
 

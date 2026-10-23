@@ -10,6 +10,7 @@
 | `workflow inspect` | `workflow.inspect` | `WorkflowService` | `WorkflowInventoryCollector` |
 | `diagnose state` | `diagnose.state` | `ClusterStateService` | `ClusterStateCollector` |
 | `propose deprovision` | `propose.patch` | `ProposalService` | `ClusterStateCollector` |
+| `proposal status` | `proposal.status` | `ProposalStatusService` | `ProposalStalenessCollector` |
 
 All services extend `EvidenceCommandService`. Before collection they:
 
@@ -119,6 +120,10 @@ The CLI stores the CWA snapshot, the proposal, and then the CWA trace. The trace
 ### Proposal staleness
 
 `GitProposalStaleness` resolves `HEAD`, runs `git merge-base --is-ancestor BASE HEAD`, and then `git diff --name-only BASE HEAD` limited to the target cluster's paths. All three commands are read-only.
+
+`ProposalStalenessCollector` resolves `HEAD` once and checks every requested proposal, or every `*.json` record in `--proposal-dir` in ID order, against that revision. Loading a record re-verifies its `proposal_digest`; a malformed or tampered record raises `ProposalRecordUnreadable` and fails the command instead of being skipped.
+
+`inventory list`, `workflow inspect`, and `proposal status` are entries in `_EVIDENCE_ROUTES`. Each entry names its service, extra command input, collector selector, and source errors; the service spec supplies the authorization and command-type errors.
 
 ## Record Wiring
 

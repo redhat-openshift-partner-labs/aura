@@ -18,6 +18,7 @@ Aura is a sidecar to the existing lifecycle systems. It does not replace RabbitM
 - Store immutable JSON evidence, CWA, audit, and diagnosis records, and record a `failed` command when a write fails.
 - Redact secret fields across case and separator spellings before storage.
 - Generate deterministic, evidence-linked deprovision proposals for `proposer` or `admin` without writing Git.
+- Report whether stored proposals are stale against `fleet-clusters` `HEAD`.
 
 ## Non-Goals
 
