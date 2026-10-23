@@ -42,6 +42,13 @@ class AuthorizationPolicy:
             CommandType.PROPOSE_PIPELINE: frozenset(
                 {OperatorRole.PROPOSER, OperatorRole.ADMIN}
             ),
+            CommandType.PROPOSAL_STATUS: frozenset(
+                {
+                    OperatorRole.VIEWER,
+                    OperatorRole.PROPOSER,
+                    OperatorRole.ADMIN,
+                }
+            ),
             CommandType.EXECUTE_PATCH: frozenset(
                 {OperatorRole.EXECUTOR, OperatorRole.ADMIN}
             ),

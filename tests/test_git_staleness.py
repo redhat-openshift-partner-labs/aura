@@ -1,23 +1,35 @@
 from __future__ import annotations
 
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
-from aura.collectors.git_staleness import GitProposalStaleness
+from aura.collectors.git_staleness import (
+    GitProposalStaleness,
+    ProposalRecordUnreadable,
+    ProposalStalenessCollector,
+)
+from aura.proposal_store import JsonProposalStore, ProposalNotFound
 from aura.proposals import Proposal
 from test_git_inventory_collector import commit_repository, write_cluster
 from test_proposals import added_file, make_proposal
 
 
-def deprovision_proposal(base_commit: str) -> Proposal:
+def deprovision_proposal(
+    base_commit: str,
+    cluster: str = "example",
+    proposal_id: UUID = UUID(int=500),
+) -> Proposal:
     return make_proposal(
         "deprovision",
-        cluster_name="example",
+        proposal_id=proposal_id,
+        cluster_name=cluster,
         base_commit=base_commit,
-        patch=added_file("deprovision/example-archive"),
-        commit_message="chore: deprovision example",
+        patch=added_file(f"deprovision/{cluster}-archive"),
+        commit_message=f"chore: deprovision {cluster}",
     )
 
 
@@ -103,3 +115,153 @@ def test_staleness_skips_git_check_for_reruns(repository) -> None:
     )
 
     assert (result.stale, result.head, result.reasons) == (False, base, ())
+
+
+def collect_staleness(
+    root: Path,
+    proposal_dir: Path,
+    proposal_ids: list[UUID] | None = None,
+):
+    return ProposalStalenessCollector(
+        proposal_store=JsonProposalStore(proposal_dir),
+        staleness=GitProposalStaleness(root),
+        proposal_ids=proposal_ids,
+    ).collect(
+        command_id=UUID(int=1),
+        collected_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+
+def test_staleness_collector_reports_each_stored_proposal(
+    repository,
+    tmp_path,
+) -> None:
+    root, base = repository
+    store = JsonProposalStore(tmp_path / "proposals")
+    store.save(deprovision_proposal(base))
+    store.save(deprovision_proposal(base, "other", UUID(int=501)))
+    rerun = make_proposal("post_provision_rerun", proposal_id=UUID(int=502))
+    store.save(rerun)
+    (root / "provision" / "example" / "metadata.yaml").write_text(
+        "changed\n", encoding="utf-8"
+    )
+    head = commit_repository(root)
+
+    snapshot = collect_staleness(root, tmp_path / "proposals")
+
+    assert snapshot.collector == "proposal_staleness"
+    assert snapshot.source == "fleet-clusters"
+    assert snapshot.source_version == head
+    assert [item.kind for item in snapshot.items] == [
+        "proposal_staleness"
+    ] * 3
+    assert [item.data for item in snapshot.items] == [
+        {
+            "proposal_id": str(UUID(int=500)),
+            "proposal_type": "deprovision",
+            "cluster_name": "example",
+            "proposal_digest": deprovision_proposal(base).proposal_digest,
+            "base_commit": base,
+            "head": head,
+            "git_checked": True,
+            "stale": True,
+            "reasons": [
+                "provision/example/metadata.yaml changed since base "
+                f"commit {base}"
+            ],
+        },
+        {
+            "proposal_id": str(UUID(int=501)),
+            "proposal_type": "deprovision",
+            "cluster_name": "other",
+            "proposal_digest": deprovision_proposal(
+                base, "other", UUID(int=501)
+            ).proposal_digest,
+            "base_commit": base,
+            "head": head,
+            "git_checked": True,
+            "stale": False,
+            "reasons": [],
+        },
+        {
+            "proposal_id": str(UUID(int=502)),
+            "proposal_type": "post_provision_rerun",
+            "cluster_name": rerun.cluster_name,
+            "proposal_digest": rerun.proposal_digest,
+            "base_commit": None,
+            "head": head,
+            "git_checked": False,
+            "stale": False,
+            "reasons": [],
+        },
+    ]
+
+
+def test_staleness_collector_selects_requested_proposals(
+    repository,
+    tmp_path,
+) -> None:
+    root, base = repository
+    store = JsonProposalStore(tmp_path / "proposals")
+    store.save(deprovision_proposal(base))
+    store.save(deprovision_proposal(base, "other", UUID(int=501)))
+
+    snapshot = collect_staleness(
+        root, tmp_path / "proposals", [UUID(int=501)]
+    )
+
+    assert [item.data["cluster_name"] for item in snapshot.items] == [
+        "other"
+    ]
+
+
+def test_staleness_collector_reports_no_items_without_proposals(
+    repository,
+    tmp_path,
+) -> None:
+    root, base = repository
+
+    snapshot = collect_staleness(root, tmp_path / "missing")
+
+    assert (snapshot.items, snapshot.source_version) == ([], base)
+
+
+def test_staleness_collector_rejects_missing_requested_proposal(
+    repository,
+    tmp_path,
+) -> None:
+    root, _ = repository
+
+    with pytest.raises(ProposalNotFound):
+        collect_staleness(root, tmp_path / "proposals", [UUID(int=9)])
+
+
+@pytest.mark.parametrize(
+    ("name", "content"),
+    [
+        (f"{UUID(int=500)}.json", None),
+        ("notes.json", "{}"),
+    ],
+)
+def test_staleness_collector_rejects_unreadable_records(
+    repository,
+    tmp_path,
+    name,
+    content,
+) -> None:
+    root, base = repository
+    store = JsonProposalStore(tmp_path / "proposals")
+    store.save(deprovision_proposal(base))
+    path = tmp_path / "proposals" / name
+    if content is None:
+        path.chmod(0o600)
+        content = path.read_text(encoding="utf-8").replace(
+            "chore: deprovision example", "chore: deprovision example!"
+        )
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(
+        ProposalRecordUnreadable,
+        match=rf"proposal record is unreadable: .*{name}",
+    ):
+        collect_staleness(root, tmp_path / "proposals")

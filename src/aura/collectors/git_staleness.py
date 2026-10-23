@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import final
+from uuid import UUID, uuid5
 
 from aura.collectors.git_inventory import GitInventoryError, read_git
-from aura.contracts import ARCHIVE_SUFFIX
+from aura.contracts import ARCHIVE_SUFFIX, EvidenceItem, EvidenceSnapshot
+from aura.proposal_store import JsonProposalStore
 from aura.proposals import Proposal
+
+
+class ProposalRecordUnreadable(Exception):
+    """Raised when a stored proposal record is malformed or tampered."""
 
 
 @dataclass(frozen=True)
@@ -41,8 +48,15 @@ class GitProposalStaleness:
     def __init__(self, root: Path) -> None:
         self.root = root
 
-    def check(self, proposal: Proposal) -> ProposalStaleness:
-        head = read_git(self.root, ["rev-parse", "HEAD"]).strip()
+    def head(self) -> str:
+        return read_git(self.root, ["rev-parse", "HEAD"]).strip()
+
+    def check(
+        self,
+        proposal: Proposal,
+        head: str | None = None,
+    ) -> ProposalStaleness:
+        head = head or self.head()
         base = proposal.base_commit
         if base is None or base == head:
             return ProposalStaleness(stale=False, head=head, reasons=())
@@ -95,4 +109,99 @@ class GitProposalStaleness:
         return f"base commit {base} is not in the checkout history"
 
 
-__all__ = ["GitProposalStaleness", "ProposalStaleness", "cluster_paths"]
+@final
+class ProposalStalenessCollector:
+    """Reports Git staleness of stored proposals against one pinned HEAD."""
+
+    collector_version = "0.1.0"
+
+    def __init__(
+        self,
+        *,
+        proposal_store: JsonProposalStore,
+        staleness: GitProposalStaleness,
+        proposal_ids: list[UUID] | None = None,
+    ) -> None:
+        self._store = proposal_store
+        self._staleness = staleness
+        self._proposal_ids = proposal_ids
+
+    def collect(
+        self,
+        *,
+        command_id: UUID,
+        snapshot_id: UUID | None = None,
+        collected_at: datetime | None = None,
+        source_version: str | None = None,
+    ) -> EvidenceSnapshot:
+        head = self._staleness.head()
+        items = [
+            _staleness_item(
+                command_id,
+                proposal,
+                self._staleness.check(proposal, head),
+            )
+            for proposal in self._proposals()
+        ]
+        return EvidenceSnapshot(
+            snapshot_id=snapshot_id or uuid5(command_id, "proposal-staleness"),
+            command_id=command_id,
+            collector="proposal_staleness",
+            collector_version=self.collector_version,
+            collected_at=collected_at or datetime.now(UTC),
+            source="fleet-clusters",
+            source_version=source_version or head,
+            items=items,
+            redactions=[],
+        )
+
+    def _proposals(self) -> list[Proposal]:
+        try:
+            proposal_ids = self._proposal_ids or self._store.record_ids()
+        except ValueError as error:
+            raise ProposalRecordUnreadable(
+                f"proposal record is unreadable: {error}"
+            ) from error
+        return [self._load(proposal_id) for proposal_id in proposal_ids]
+
+    def _load(self, proposal_id: UUID) -> Proposal:
+        try:
+            return self._store.load(proposal_id)
+        except ValueError as error:
+            raise ProposalRecordUnreadable(
+                f"proposal record is unreadable: {proposal_id}.json"
+            ) from error
+
+
+def _staleness_item(
+    command_id: UUID,
+    proposal: Proposal,
+    staleness: ProposalStaleness,
+) -> EvidenceItem:
+    return EvidenceItem(
+        item_id=uuid5(
+            command_id,
+            f"proposal-staleness:{proposal.proposal_id}",
+        ),
+        kind="proposal_staleness",
+        data={
+            "proposal_id": str(proposal.proposal_id),
+            "proposal_type": proposal.proposal_type.value,
+            "cluster_name": proposal.cluster_name,
+            "proposal_digest": proposal.proposal_digest,
+            "base_commit": proposal.base_commit,
+            "head": staleness.head,
+            "git_checked": proposal.base_commit is not None,
+            "stale": staleness.stale,
+            "reasons": list(staleness.reasons),
+        },
+    )
+
+
+__all__ = [
+    "GitProposalStaleness",
+    "ProposalRecordUnreadable",
+    "ProposalStaleness",
+    "ProposalStalenessCollector",
+    "cluster_paths",
+]

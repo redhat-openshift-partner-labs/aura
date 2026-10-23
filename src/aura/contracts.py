@@ -30,6 +30,7 @@ class CommandType(StrEnum):
     DIAGNOSE_STATE = "diagnose.state"
     PROPOSE_PATCH = "propose.patch"
     PROPOSE_PIPELINE = "propose.pipeline"
+    PROPOSAL_STATUS = "proposal.status"
     EXECUTE_PATCH = "execute.patch"
     EXECUTE_PIPELINE = "execute.pipeline"
 

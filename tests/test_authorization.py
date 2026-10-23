@@ -12,6 +12,7 @@ from aura.contracts import CommandType
         CommandType.INVENTORY_LIST,
         CommandType.WORKFLOW_INSPECT,
         CommandType.DIAGNOSE_STATE,
+        CommandType.PROPOSAL_STATUS,
     ],
 )
 def test_viewer_can_issue_read_only_commands(command_type: CommandType) -> None:
@@ -40,6 +41,7 @@ def test_viewer_cannot_issue_mutating_commands(command_type: CommandType) -> Non
     [
         CommandType.PROPOSE_PATCH,
         CommandType.PROPOSE_PIPELINE,
+        CommandType.PROPOSAL_STATUS,
     ],
 )
 def test_proposer_can_issue_proposals(command_type: CommandType) -> None:
@@ -101,3 +103,14 @@ def test_required_roles_are_reported() -> None:
         OperatorRole.ADMIN,
     }
 
+
+@pytest.mark.parametrize(
+    "role",
+    [OperatorRole.APPROVER, OperatorRole.EXECUTOR],
+)
+def test_proposal_status_excludes_approvers_and_executors(
+    role: OperatorRole,
+) -> None:
+    policy = AuthorizationPolicy()
+
+    assert not policy.can_issue({role}, CommandType.PROPOSAL_STATUS)

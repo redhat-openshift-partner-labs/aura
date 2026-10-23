@@ -93,6 +93,19 @@ class JsonRecordStore(Generic[R]):
             ) from error
         return cast(R, self.record_type.model_validate_json(value))
 
+    def record_ids(self) -> list[UUID]:
+        """Return stored record IDs in ascending order."""
+
+        record_ids: list[UUID] = []
+        for path in self.root.glob("*.json"):
+            try:
+                record_ids.append(UUID(path.stem))
+            except ValueError as error:
+                raise ValueError(
+                    f"record name is not an ID: {path.name}"
+                ) from error
+        return sorted(record_ids)
+
     def _path(self, record_id: UUID) -> Path:
         return self.root / f"{record_id}.json"
 
