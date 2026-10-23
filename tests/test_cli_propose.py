@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid5
 
 import pytest
 
@@ -21,6 +21,11 @@ from aura.proposals import Proposal
 from test_cli_diagnose_state import FakeClusterStateCollector
 from test_cluster_state_collector import write_deprovisioned_cluster
 from test_git_inventory_collector import commit_repository, write_cluster
+
+
+COMMAND_ID = UUID(int=1)
+CWA_SNAPSHOT_ID = uuid5(COMMAND_ID, f"cwa-snapshot:{UUID(int=40)}")
+PROPOSAL_ID = uuid5(COMMAND_ID, f"proposal:{CWA_SNAPSHOT_ID}")
 
 
 def cluster_state_collector(root: Path) -> FakeClusterStateCollector:
@@ -87,6 +92,7 @@ def audit_events(tmp_path: Path) -> dict[AuditEventType, AuditEvent]:
     events = [
         AuditEvent.model_validate_json(path.read_text())
         for path in (tmp_path / "audit").glob("*.json")
+        if path.stat().st_size
     ]
     return {event.event_type: event for event in events}
 
@@ -284,3 +290,44 @@ def test_cli_propose_deprovision_rejects_reused_idempotency_key(
     assert json.loads(
         next((tmp_path / "proposals").glob("*.json")).read_text()
     )["cluster_name"] == "example"
+
+
+@pytest.mark.parametrize(
+    ("blocked", "failed_after"),
+    [
+        (Path("cwa") / "traces", AuditEventType.EVIDENCE_COLLECTED),
+        (
+            Path("audit")
+            / f"{uuid5(COMMAND_ID, f'proposal_created:{PROPOSAL_ID}')}.json",
+            AuditEventType.CONTEXT_ASSEMBLED,
+        ),
+        (
+            Path("proposals") / f"{PROPOSAL_ID}.json",
+            AuditEventType.PROPOSAL_CREATED,
+        ),
+    ],
+)
+def test_cli_propose_deprovision_stores_proposal_after_provenance(
+    tmp_path,
+    capsys,
+    blocked,
+    failed_after,
+) -> None:
+    collector = cluster_state_collector(fleet_clusters(tmp_path))
+    (tmp_path / blocked).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / blocked).write_text("", encoding="utf-8")
+
+    exit_code = run_propose(propose_arguments(tmp_path, "proposer"), collector)
+
+    assert exit_code == 2
+    assert capsys.readouterr().out == ""
+    assert all(
+        path.stat().st_size == 0
+        for path in (tmp_path / "proposals").glob("*.json")
+    )
+    command = JsonCommandStore(tmp_path / "commands").load("propose-key")
+    assert command.status is CommandState.FAILED
+    events = audit_events(tmp_path)
+    assert events[AuditEventType.COMMAND_FAILED].previous_event_id == (
+        events[failed_after].event_id
+    )

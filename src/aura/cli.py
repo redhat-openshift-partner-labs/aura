@@ -584,6 +584,12 @@ class AssembledCommandResult:
 
 
 @dataclass(frozen=True)
+class AssemblyFailure:
+    error: str
+    last_event: AuditEvent | None
+
+
+@dataclass(frozen=True)
 class CollectedEvidence:
     result: EvidenceCommandResult
     audit_event: AuditEvent | None
@@ -645,7 +651,7 @@ def _run_simple_command(
     final_command = result.command
 
     if assemble and args.cwa_dir is not None:
-        assembled, assembly_error = _assemble_and_diagnose(
+        assembled = _assemble_and_diagnose(
             args,
             result,
             roles,
@@ -655,22 +661,8 @@ def _run_simple_command(
             always_diagnose=False,
             clock=clock,
         )
-        if assembly_error is not None:
-            return _fail_assembly(
-                args,
-                result,
-                assembly_error,
-                evidence_event,
-                clock,
-            )
-        if assembled is None:
-            return _fail_assembly(
-                args,
-                result,
-                "CWA assembly did not return a command",
-                evidence_event,
-                clock,
-            )
+        if isinstance(assembled, AssemblyFailure):
+            return _fail_assembly(args, result, assembled, clock)
         final_command = assembled.command
 
     return _complete_command(
@@ -726,7 +718,7 @@ def _collect_evidence(
             result.command,
             persistence_error,
             previous_event_id=(
-                evidence_event.event_id if evidence_event else None
+                received_event.event_id if received_event else None
             ),
             clock=clock,
         )
@@ -737,19 +729,35 @@ def _collect_evidence(
 def _fail_assembly(
     args: argparse.Namespace,
     result: EvidenceCommandResult,
-    error: str,
-    evidence_event: AuditEvent | None,
+    failure: AssemblyFailure,
     clock: Callable[[], datetime],
 ) -> int:
     return _fail_command(
         args,
         result.command,
-        error,
+        failure.error,
         previous_event_id=(
-            evidence_event.event_id if evidence_event else None
+            failure.last_event.event_id if failure.last_event else None
         ),
         clock=clock,
     )
+
+
+def _save_audit_chain(
+    audit_dir: Path,
+    events: Sequence[AuditEvent],
+) -> tuple[AuditEvent | None, str | None]:
+    store = JsonAuditEventStore(audit_dir)
+    stored: AuditEvent | None = None
+    for event in events:
+        error = _record_store_error(
+            partial(store.save, event),
+            (AuditEventAlreadyStored,),
+        )
+        if error is not None:
+            return stored, error
+        stored = event
+    return stored, None
 
 
 def _selected_collector(
@@ -1236,7 +1244,6 @@ def _assemble_records(
         CWASnapshotAlreadyStored,
         CWATraceAlreadyStored,
         DiagnosisAlreadyStored,
-        ProposalAlreadyStored,
         OSError,
     ) as error:
         return str(error)
@@ -1249,53 +1256,47 @@ def _persist_assembly_events(
     assembly: CWAAssemblyResult,
     diagnosis_record: DiagnosisRecord | None,
     refusal_error: str | None,
-    evidence_event_id: UUID,
+    evidence_event: AuditEvent,
     clock: Callable[[], datetime],
-) -> tuple[AuditEvent, AuditEvent | None, AuditEvent | None] | str:
+) -> tuple[AuditEvent, AuditEvent | None, AuditEvent | None] | AssemblyFailure:
     context_event = _context_audit_event(
         result.command,
         assembly,
         result.snapshot,
-        evidence_event_id,
+        evidence_event.event_id,
     )
-    error = _record_store_error(
-        lambda: JsonAuditEventStore(args.audit_dir).save(context_event),
-        (AuditEventAlreadyStored,),
-    )
-    if error is not None:
-        return error
-
-    model_event = None
-    if diagnosis_record is not None:
-        model_event = _model_audit_event(
+    model_event = (
+        _model_audit_event(
             result.command,
             diagnosis_record,
             assembly.trace.trace_id,
             context_event.event_id,
             args.diagnosis_dir is not None,
         )
-        error = _record_store_error(
-            lambda: JsonAuditEventStore(args.audit_dir).save(model_event),
-            (AuditEventAlreadyStored,),
-        )
-        if error is not None:
-            return error
-
-    refusal_event = None
-    if refusal_error is not None:
-        refusal_event = _command_terminal_audit_event(
+        if diagnosis_record is not None
+        else None
+    )
+    refusal_event = (
+        _command_terminal_audit_event(
             result.command,
             AuditEventType.COMMAND_REFUSED,
             refusal_error,
             previous_event_id=context_event.event_id,
             occurred_at=clock(),
         )
-        error = _record_store_error(
-            lambda: JsonAuditEventStore(args.audit_dir).save(refusal_event),
-            (AuditEventAlreadyStored,),
-        )
-        if error is not None:
-            return error
+        if refusal_error is not None
+        else None
+    )
+    stored, error = _save_audit_chain(
+        args.audit_dir,
+        [
+            event
+            for event in (context_event, model_event, refusal_event)
+            if event is not None
+        ],
+    )
+    if error is not None:
+        return AssemblyFailure(error, stored or evidence_event)
     return context_event, model_event, refusal_event
 
 
@@ -1309,9 +1310,12 @@ def _assemble_and_diagnose(
     diagnosis_model: DiagnosisModel | None,
     always_diagnose: bool,
     clock: Callable[[], datetime],
-) -> tuple[AssembledCommandResult | None, str | None]:
+) -> AssembledCommandResult | AssemblyFailure:
     if evidence_audit_event is None:
-        return None, "audit event is required for CWA assembly"
+        return AssemblyFailure(
+            "audit event is required for CWA assembly",
+            None,
+        )
     assembly_request = _assembly_request(
         result,
         roles,
@@ -1333,7 +1337,7 @@ def _assemble_and_diagnose(
         ),
     )
     if isinstance(records, str):
-        return None, records
+        return AssemblyFailure(records, evidence_audit_event)
     assembly, diagnosis_record, refusal_error = records
 
     events = _persist_assembly_events(
@@ -1342,11 +1346,11 @@ def _assemble_and_diagnose(
         assembly,
         diagnosis_record,
         refusal_error,
-        evidence_audit_event.event_id,
+        evidence_audit_event,
         clock,
     )
-    if isinstance(events, str):
-        return None, events
+    if isinstance(events, AssemblyFailure):
+        return events
     context_event, model_event, refusal_event = events
 
     diagnosis_answer = (
@@ -1364,14 +1368,11 @@ def _assemble_and_diagnose(
         refusal_error,
     )
 
-    return (
-        AssembledCommandResult(
-            command=final_command,
-            answer=diagnosis_answer,
-            refusal_error=refusal_error,
-            last_event=refusal_event or model_event or context_event,
-        ),
-        None,
+    return AssembledCommandResult(
+        command=final_command,
+        answer=diagnosis_answer,
+        refusal_error=refusal_error,
+        last_event=refusal_event or model_event or context_event,
     )
 
 
@@ -1423,7 +1424,7 @@ def _run_diagnosis(
     evidence_event = collected.audit_event
 
     if args.cwa_dir is not None:
-        assembled, assembly_error = _assemble_and_diagnose(
+        assembled = _assemble_and_diagnose(
             args,
             result,
             roles,
@@ -1433,30 +1434,26 @@ def _run_diagnosis(
             always_diagnose=True,
             clock=clock,
         )
-        if assembly_error is not None:
-            return _fail_assembly(
+        if isinstance(assembled, AssemblyFailure):
+            return _fail_assembly(args, result, assembled, clock)
+        if assembled.refusal_error:
+            command_store_error = _store_terminal_command(
                 args,
-                result,
-                assembly_error,
-                evidence_event,
-                clock,
+                assembled.command,
             )
-        if assembled is None or assembled.answer is None:
-            if assembled is not None and assembled.refusal_error:
-                command_store_error = _store_terminal_command(
-                    args,
-                    assembled.command,
-                )
-                print(
-                    f"aura: {command_store_error or assembled.refusal_error}",
-                    file=sys.stderr,
-                )
-                return 2
+            print(
+                f"aura: {command_store_error or assembled.refusal_error}",
+                file=sys.stderr,
+            )
+            return 2
+        if assembled.answer is None:
             return _fail_assembly(
                 args,
                 result,
-                "CWA assembly did not return a diagnosis",
-                evidence_event,
+                AssemblyFailure(
+                    "CWA assembly did not return a diagnosis",
+                    assembled.last_event,
+                ),
                 clock,
             )
         return _complete_command(
@@ -1506,14 +1503,8 @@ def _run_proposal(
         collected.audit_event,
         clock,
     )
-    if isinstance(proposed, str):
-        return _fail_assembly(
-            args,
-            result,
-            proposed,
-            collected.audit_event,
-            clock,
-        )
+    if isinstance(proposed, AssemblyFailure):
+        return _fail_assembly(args, result, proposed, clock)
     final_command, proposal, refusal_error = proposed
     if proposal is None:
         command_store_error = _store_terminal_command(args, final_command)
@@ -1550,16 +1541,19 @@ def _assemble_and_propose(
     roles: set[OperatorRole],
     evidence_event: AuditEvent | None,
     clock: Callable[[], datetime],
-) -> tuple[CommandEnvelope, Proposal | None, str | None] | str:
+) -> tuple[CommandEnvelope, Proposal | None, str | None] | AssemblyFailure:
     if evidence_event is None:
-        return "audit event is required for CWA assembly"
+        return AssemblyFailure(
+            "audit event is required for CWA assembly",
+            None,
+        )
     records = _assemble_records(
         args,
         _assembly_request(result, roles, evidence_event, "proposal", clock),
-        lambda assembly: _propose_and_trace(args, assembly, clock),
+        lambda assembly: _propose_and_trace(assembly, clock),
     )
     if isinstance(records, str):
-        return records
+        return AssemblyFailure(records, evidence_event)
     assembly, proposal, refusal_error = records
 
     context_event = _context_audit_event(
@@ -1583,14 +1577,19 @@ def _assemble_and_propose(
             occurred_at=clock(),
         )
     )
-    audit_store = JsonAuditEventStore(args.audit_dir)
-    for event in (context_event, terminal_event):
+    stored, error = _save_audit_chain(
+        args.audit_dir,
+        (context_event, terminal_event),
+    )
+    if error is not None:
+        return AssemblyFailure(error, stored or evidence_event)
+    if proposal is not None:
         error = _record_store_error(
-            partial(audit_store.save, event),
-            (AuditEventAlreadyStored,),
+            partial(JsonProposalStore(args.proposal_dir).save, proposal),
+            (ProposalAlreadyStored,),
         )
         if error is not None:
-            return error
+            return AssemblyFailure(error, terminal_event)
 
     terminal_state = (
         CommandState.SUCCEEDED
@@ -1607,7 +1606,6 @@ def _assemble_and_propose(
 
 
 def _propose_and_trace(
-    args: argparse.Namespace,
     assembly: CWAAssemblyResult,
     clock: Callable[[], datetime],
 ) -> tuple[Proposal | None, str | None, CWATrace]:
@@ -1624,7 +1622,6 @@ def _propose_and_trace(
     )
     if proposal is None:
         return None, refusal_error, assembly.trace
-    JsonProposalStore(args.proposal_dir).save(proposal)
     return proposal, None, assembly.trace.model_copy(
         update={
             "model_provider": generator.provider_name,
@@ -1645,7 +1642,7 @@ def _proposal_created_audit_event(
         AuditEventType.PROPOSAL_CREATED,
         proposal.proposal_id,
         occurred_at=proposal.created_at,
-        data={**recorded, "persisted": True},
+        data=recorded,
         previous_event_id=previous_event_id,
     )
 

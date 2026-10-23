@@ -4,7 +4,9 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import final
-from uuid import UUID
+from uuid import UUID, uuid5
+
+import pytest
 
 from aura.cli import main
 from aura.cli import build_parser
@@ -275,3 +277,44 @@ def test_cli_diagnose_state_suppresses_duplicate_idempotency_key(
         "aura: idempotency key already succeeded: test-key\n"
     )
     assert second_captured.out == ""
+
+
+DIAGNOSIS_ID = uuid5(
+    UUID(int=1),
+    f"diagnosis:{uuid5(UUID(int=1), f'cwa-snapshot:{UUID(int=40)}')}",
+)
+
+
+@pytest.mark.parametrize(
+    ("blocked_event", "failed_after"),
+    [
+        (f"evidence_collected:{UUID(int=40)}", "command_received"),
+        (f"model_called:{DIAGNOSIS_ID}", "context_assembled"),
+    ],
+)
+def test_cli_diagnose_state_links_failure_to_last_stored_event(
+    tmp_path: Path,
+    capsys,
+    blocked_event: str,
+    failed_after: str,
+) -> None:
+    audit_dir = tmp_path / "audit"
+    audit_dir.mkdir()
+    blocked = audit_dir / f"{uuid5(UUID(int=1), blocked_event)}.json"
+    blocked.write_text("", encoding="utf-8")
+
+    exit_code, *_ = run_diagnose_state(tmp_path, FakeClusterStateCollector())
+
+    assert exit_code == 2
+    assert capsys.readouterr().out == ""
+    events = {
+        event["event_type"]: event
+        for event in (
+            json.loads(path.read_text())
+            for path in audit_dir.glob("*.json")
+            if path.stat().st_size
+        )
+    }
+    assert events["command_failed"]["previous_event_id"] == (
+        events[failed_after]["event_id"]
+    )
