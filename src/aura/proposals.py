@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
@@ -263,6 +264,34 @@ def _validate_patch_scope(
     if kinds - {"added", "modified"}:
         raise ValueError(
             "cluster_edit proposal may not delete or rename files"
+        )
+    if proposal.proposal_type is ProposalType.CLUSTER_EDIT:
+        _validate_metadata_edit(proposal.patch or "", f"{prefix}metadata.yaml")
+
+
+def _validate_metadata_edit(patch: str, metadata: str) -> None:
+    others = [path for path, _ in patch_changes(patch) if path != metadata]
+    if others:
+        raise ValueError(
+            f"cluster_edit proposal may change only {metadata}: {others}"
+        )
+    removed: Counter[str] = Counter()
+    added: Counter[str] = Counter()
+    in_hunk = False
+    for line in patch.splitlines():
+        if line.startswith("diff --git "):
+            in_hunk = False
+        elif line.startswith("@@"):
+            in_hunk = True
+        elif in_hunk and line.startswith("-"):
+            removed[line[1:]] += 1
+        elif in_hunk and line.startswith("+"):
+            added[line[1:]] += 1
+    # A removed line re-added unchanged only gains a final newline.
+    if removed - added:
+        raise ValueError(
+            "cluster_edit proposal may not change existing lines in "
+            f"{metadata}"
         )
 
 

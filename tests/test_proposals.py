@@ -40,6 +40,30 @@ def modified_file(path: str) -> str:
     ) + "\n"
 
 
+def appended_file(
+    path: str,
+    last_line: str,
+    *added: str,
+    newline_at_end: bool = True,
+) -> str:
+    lines = [
+        f"diff --git a/{path} b/{path}",
+        "index 1111111..2222222 100644",
+        f"--- a/{path}",
+        f"+++ b/{path}",
+    ]
+    if newline_at_end:
+        lines += [f"@@ -1 +1,{len(added) + 1} @@", f" {last_line}"]
+    else:
+        lines += [
+            f"@@ -1 +1,{len(added) + 1} @@",
+            f"-{last_line}",
+            "\\ No newline at end of file",
+            f"+{last_line}",
+        ]
+    return "\n".join([*lines, *(f"+{line}" for line in added)]) + "\n"
+
+
 def deleted_file(path: str) -> str:
     return "\n".join(
         [
@@ -136,11 +160,19 @@ def test_proposal_accepts_each_type_and_round_trips(proposal_type: str) -> None:
     assert Proposal.model_validate_json(proposal.model_dump_json()) == proposal
 
 
-def test_proposal_accepts_cluster_edit_that_only_modifies_files() -> None:
+@pytest.mark.parametrize("newline_at_end", [True, False])
+def test_proposal_accepts_cluster_edit_that_only_appends_keys(
+    newline_at_end: bool,
+) -> None:
     proposal = make_proposal(
         "cluster_edit",
         commit_message=f"fix: set platform for {CLUSTER}",
-        patch=modified_file(f"provision/{CLUSTER}/metadata.yaml"),
+        patch=appended_file(
+            f"provision/{CLUSTER}/metadata.yaml",
+            "htpasswd-provider-name: Red Hat",
+            "platform: aws",
+            newline_at_end=newline_at_end,
+        ),
     )
 
     assert "[skip-provision]" not in proposal.commit_message
@@ -218,6 +250,23 @@ def test_proposal_rejects_changed_content_under_old_digest() -> None:
             "cluster_edit",
             {"patch": deleted_file(f"provision/{CLUSTER}/metadata.yaml")},
             "cluster_edit proposal may not delete",
+        ),
+        (
+            "cluster_edit",
+            {"patch": modified_file(f"provision/{CLUSTER}/metadata.yaml")},
+            "cluster_edit proposal may not change existing lines",
+        ),
+        (
+            "cluster_edit",
+            {
+                "patch": appended_file(
+                    f"provision/{CLUSTER}/hive/kustomization.yaml",
+                    "resources:",
+                    "- extra",
+                )
+            },
+            f"cluster_edit proposal may change only "
+            f"provision/{CLUSTER}/metadata.yaml",
         ),
         ("cluster_edit", {"patch": ""}, "patch must contain at least one file"),
         ("deprovision", {"commit_message": "chore: deprovision"}, "must name cluster"),
