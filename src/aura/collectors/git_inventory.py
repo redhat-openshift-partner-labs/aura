@@ -74,7 +74,7 @@ def read_git(root: Path, arguments: list[str]) -> str:
     try:
         return _run_git(root, arguments)
     except subprocess.CalledProcessError as error:
-        output = str(error.stderr or error.stdout or "").strip()
+        output = _decode(error.stderr or error.stdout or b"").strip()
         detail = output.splitlines()[-1] if output else "no output"
         raise GitInventoryError(
             f"git command failed for fleet-clusters "
@@ -93,9 +93,15 @@ def _run_git(root: Path, arguments: list[str]) -> str:
         ["git", "-C", str(root), *arguments],
         check=True,
         capture_output=True,
-        text=True,
     )
-    return result.stdout
+    return _decode(result.stdout)
+
+
+def _decode(output: bytes | str) -> str:
+    # Text mode would translate CRLF, so file content would not match Git.
+    if isinstance(output, str):
+        return output
+    return output.decode("utf-8", errors="replace")
 
 
 def _cluster_directories(
@@ -174,8 +180,13 @@ def _definition_data(
     *,
     status: str,
     tree: _GitTree,
+    has_metadata: bool = True,
 ) -> dict[str, Any]:
-    metadata = _load_mapping(tree, cluster_path, "metadata.yaml")
+    metadata = (
+        _load_mapping(tree, cluster_path, "metadata.yaml")
+        if has_metadata
+        else {}
+    )
     cluster_file = "hive/patches/clusterdeployment.yaml"
     managed_file = "hive/patches/managedcluster.yaml"
     cluster_patches = _load_patches(tree, cluster_path, cluster_file)
@@ -218,7 +229,11 @@ def _definition_data(
             "/spec/provisioning/imageSetRef/name",
         ),
         "patch_platform": _patch_platform(cluster_patches),
-        "metadata_text": tree.file(f"{cluster_path}/metadata.yaml"),
+        "metadata_text": (
+            tree.file(f"{cluster_path}/metadata.yaml")
+            if has_metadata
+            else None
+        ),
     }
 
 
@@ -253,7 +268,18 @@ def _incomplete_sources(
     sources: dict[str, str | None] = {
         "patch_platform": None,
         "crossplane_template": None,
+        "remaining_files_error": None,
     }
+    if missing_files == ["metadata.yaml"]:
+        try:
+            _definition_data(
+                cluster_path,
+                status="",
+                tree=tree,
+                has_metadata=False,
+            )
+        except _InvalidDefinition as error:
+            sources["remaining_files_error"] = str(error)
     cluster_file = "hive/patches/clusterdeployment.yaml"
     crossplane_file = "crossplane/kustomization.yaml"
     try:

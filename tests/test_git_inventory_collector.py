@@ -235,7 +235,23 @@ def test_git_inventory_collector_reports_incomplete_cluster(tmp_path: Path) -> N
         ],
         "patch_platform": None,
         "crossplane_template": None,
+        "remaining_files_error": None,
     }
+
+
+def test_git_inventory_collector_keeps_metadata_line_endings(
+    tmp_path: Path,
+) -> None:
+    write_cluster(tmp_path)
+    text = "platform: aws\r\nhtpasswd-provider-name: Red Hat\r\n"
+    (tmp_path / "provision" / "example" / "metadata.yaml").write_bytes(
+        text.encode()
+    )
+    commit_repository(tmp_path)
+
+    [item] = collect_snapshot(tmp_path).items
+
+    assert item.data["metadata_text"] == text
 
 
 def test_git_inventory_collector_reads_incomplete_definition_sources(
@@ -268,6 +284,10 @@ def test_git_inventory_collector_reads_incomplete_definition_sources(
         items["broken"]["patch_platform"],
         items["broken"]["crossplane_template"],
     ) == (None, None)
+    assert items["example"]["remaining_files_error"] is None
+    assert items["broken"]["remaining_files_error"].startswith(
+        "hive/patches/clusterdeployment.yaml: invalid YAML"
+    )
 
 
 def test_git_inventory_collector_names_definition_without_metadata(
@@ -289,6 +309,7 @@ def test_git_inventory_collector_names_definition_without_metadata(
                 "missing_files": ["metadata.yaml"],
                 "patch_platform": "aws",
                 "crossplane_template": "crossplane-scoped",
+                "remaining_files_error": None,
             },
         )
     ]
