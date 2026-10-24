@@ -120,6 +120,26 @@ flowchart LR
 | Commit message | Must contain `[skip-provision]` when the patch adds a file, and must be the push head commit |
 | Reversibility | Revert the commit |
 
+Scope decisions, 2026-10-23:
+
+| Decision | Position |
+| --- | --- |
+| Allow list now | Only backfill `platform` in an existing `metadata.yaml` under `provision/<id>`. The patch modifies one file and triggers nothing. |
+| `metadata.yaml` backfill | Deferred. `metadata.yaml` stays a required definition file, and definitions without it remain reported as incomplete; Aura proposes nothing for them for now. |
+| Archived definitions | Never edited; edits apply under `provision/` only. |
+| Credential-mode mismatch | When a `metadata.yaml` backfill is revisited, a definition without `aws-credentials-mode` whose evidence shows scoped credentials is refused, because the pipeline treats the missing key as `legacy`. |
+
+`metadata.yaml` keys read by `fleet` at commit `9464f0b`, with the value the pipeline uses when a key or the file is absent:
+
+| Key | Default | Read by | Written by the scaffold at `2f6c7b4` |
+| --- | --- | --- | --- |
+| `platform` | `aws` | `read-cluster-metadata`, pre-provision branching | Always |
+| `aws-credentials-mode` | `legacy` | Pre-provision credential workflow | `scoped` for new clusters, or `legacy` |
+| `htpasswd-provider-name` | `htpasswd` | Post-provision OAuth configuration | Only when supplied |
+| `openshift-ai-version` | `v3` | Post-provision AI workloads | Never |
+
+Because an absent key means its default, adding `platform: aws` where the ClusterDeployment platform is `aws` changes no pipeline behavior. A `metadata.yaml` backfill that writes only evidence-backed keys and omits the rest likewise preserves current behavior.
+
 ## Proposal Contract
 
 | Field | Purpose |

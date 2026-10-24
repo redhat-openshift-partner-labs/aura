@@ -30,7 +30,7 @@ Default: Aura may propose a PR but never merge it.
 
 ### Backfill `metadata.yaml` for definitions that predate it
 
-Status: open.
+Status: deferred on 2026-10-23. `metadata.yaml` stays required, these definitions stay reported as incomplete, and Aura proposes no backfill for them for now.
 
 `metadata.yaml` is a required definition file. At `fleet-clusters` commit `492bc8e07afddcd557441ddb7d72158de60ab8cb`, 14 of 26 committed definitions do not contain it because they were created before the file was introduced:
 
@@ -45,7 +45,7 @@ Warning: adding `metadata.yaml` adds a file under `provision/<id>`, which the `f
 
 ### Backfill `platform` in legacy `metadata.yaml` files
 
-Status: open.
+Status: open. On 2026-10-23 the operator chose to build `cluster_edit` proposals for this backfill, under `provision/` only.
 
 At the same commit, 11 of the 12 complete definitions have a `metadata.yaml` without `platform`; only `provision/0171d46a-scopedaws` declares it:
 
