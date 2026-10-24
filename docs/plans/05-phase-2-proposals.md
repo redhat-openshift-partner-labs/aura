@@ -33,6 +33,16 @@ Proposals must reflect how the existing systems act on Git. These behaviors were
 | A push that only modifies existing files | No pipeline runs. Argo CD syncs only `fleet/hub-config`, so nothing applies the change. |
 | An HTTP body with `action: post-provision` sent to the EventListener | `post-provision` starts. This trigger has no webhook-secret interceptor. |
 
+Re-verified on 2026-10-23 against `fleet` commit `9464f0b` and `fleet-clusters` commit `0453793`. The rows above still hold, and these also apply:
+
+| Event | Effect |
+| --- | --- |
+| A pull request is opened or updated | No Tekton pipeline starts: the `pre-provision` and `deprovision` triggers accept only `push` events, and GitHub pull request payloads never carry `action: post-provision`. The `check-new-overlays` Action runs read-only and checks only cluster directories the pull request adds. |
+| A push to any branch other than `main` | No pipeline starts; both push triggers require `refs/heads/main`. |
+| A merge to `main` whose commits only modify existing files, by any merge method | No pipeline starts, because no commit adds a file. A merged pull request must contain only the proposal's change: any commit in it that adds a file under `provision/` or `deprovision/` triggers a pipeline. |
+
+Disabling the webhook is not needed for modify-only changes, and it would drop every other push during the window.
+
 Consequences:
 
 1. Merging a `fleet-clusters` patch is the execution step. Phase 2 must state the trigger effect of every patch.
