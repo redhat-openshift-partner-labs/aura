@@ -141,11 +141,43 @@ class OpenShiftCLI:
         )
 
 
-class OpenShiftCLIResourceClient:
-    """Base client for a set of cached OpenShift resources."""
+def cli_resources(
+    kubeconfig_path: Path,
+    command_runner: CommandRunner | None,
+    specs: dict[str, dict[str, Any]],
+) -> dict[str, OpenShiftResource]:
+    """Build named resources from {name: OpenShiftCLI.resource options}."""
 
-    def __init__(self, resources: dict[str, OpenShiftResource]) -> None:
-        self._resources = resources
+    cli = OpenShiftCLI(
+        kubeconfig_path=kubeconfig_path,
+        command_runner=command_runner,
+    )
+    return {
+        name: cli.resource(name, **options)
+        for name, options in specs.items()
+    }
+
+
+class OpenShiftCLIResourceClient:
+    """Base client for a set of cached OpenShift resources.
+
+    Subclasses name their resources in resource_specs as
+    {name: OpenShiftCLI.resource options}.
+    """
+
+    resource_specs: dict[str, dict[str, Any]] = {}
+
+    def __init__(
+        self,
+        *,
+        kubeconfig_path: Path,
+        command_runner: CommandRunner | None = None,
+    ) -> None:
+        self._resources = cli_resources(
+            kubeconfig_path,
+            command_runner,
+            self.resource_specs,
+        )
 
     def resource_version(self) -> str:
         return ";".join(
@@ -163,4 +195,5 @@ __all__ = [
     "OpenShiftCLIError",
     "OpenShiftResource",
     "OpenShiftCLIResourceClient",
+    "cli_resources",
 ]

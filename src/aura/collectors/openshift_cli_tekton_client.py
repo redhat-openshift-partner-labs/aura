@@ -3,11 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, final
 
-from aura.collectors.oc_cli import (
-    CommandRunner,
-    OpenShiftCLI,
-    OpenShiftCLIResourceClient,
-)
+from aura.collectors.oc_cli import CommandRunner, OpenShiftCLIResourceClient
 
 
 @final
@@ -21,24 +17,14 @@ class OpenShiftCLITektonClient(OpenShiftCLIResourceClient):
         namespace: str | None = None,
         command_runner: CommandRunner | None = None,
     ) -> None:
-        cli = OpenShiftCLI(
+        scope = {
+            "namespace": namespace,
+            "all_namespaces": namespace is None,
+        }
+        self.resource_specs = {"pipelineruns": scope, "taskruns": scope}
+        super().__init__(
             kubeconfig_path=kubeconfig_path,
             command_runner=command_runner,
-        )
-        all_namespaces = namespace is None
-        super().__init__(
-            {
-                "pipelineruns": cli.resource(
-                    "pipelineruns",
-                    namespace=namespace,
-                    all_namespaces=all_namespaces,
-                ),
-                "taskruns": cli.resource(
-                    "taskruns",
-                    namespace=namespace,
-                    all_namespaces=all_namespaces,
-                ),
-            }
         )
 
     def list_pipeline_runs(self) -> list[dict[str, Any]]:
