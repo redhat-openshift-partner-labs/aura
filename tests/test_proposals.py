@@ -128,6 +128,20 @@ def rerun_with(**updates: Any) -> dict[str, Any]:
 
 
 SECRET_WORKSPACE = {"name": "keys", "secret": {"secretName": "keys"}}
+AURA_ANNOTATIONS = {
+    "aura.openshiftpartnerlabs.com/proposal-id": "x",
+    "aura.openshiftpartnerlabs.com/source-pipeline-run": "y",
+}
+
+
+def rerun_workspace(**workspace: Any) -> dict[str, Any]:
+    return rerun_with(spec={"workspaces": [{"name": "w", **workspace}]})
+
+
+def rerun_pod(**pod_template: Any) -> dict[str, Any]:
+    return rerun_with(
+        spec={"taskRunTemplate": {"podTemplate": pod_template}}
+    )
 
 
 BASE_FIELDS: dict[str, Any] = {
@@ -220,7 +234,10 @@ def test_proposal_accepts_cluster_edit_that_only_appends_keys(
 
 @pytest.mark.parametrize(
     "secret",
-    [{"secretName": "keys"}, {"secretName": "keys", "items": [{"key": "a"}]}],
+    [
+        {"secretName": "keys"},
+        {"secretName": "keys", "items": [{"key": "a", "path": "a"}]},
+    ],
 )
 def test_proposal_accepts_rerun_with_secret_workspace_by_name(
     secret: dict[str, Any],
@@ -228,7 +245,7 @@ def test_proposal_accepts_rerun_with_secret_workspace_by_name(
     proposal = make_proposal(
         "post_provision_rerun",
         pipeline_run=rerun_with(
-            metadata={"annotations": {"aura/proposal-id": "x"}},
+            metadata={"annotations": AURA_ANNOTATIONS},
             spec={
                 "workspaces": [{"name": "keys", "secret": secret}],
                 "taskRunTemplate": {
@@ -511,7 +528,103 @@ def test_proposal_rejects_changed_content_under_old_digest() -> None:
                     spec={"workspaces": [SECRET_WORKSPACE]},
                 )
             },
+            "pipeline_run annotations may contain only "
+            "aura.openshiftpartnerlabs.com/proposal-id, "
+            "aura.openshiftpartnerlabs.com/source-pipeline-run",
+        ),
+        (
+            "post_provision_rerun",
+            {"pipeline_run": rerun_pod(nodeSelector={"token": "abc"})},
             "must not contain secret material",
+        ),
+        (
+            "post_provision_rerun",
+            {
+                "pipeline_run": rerun_with(
+                    spec={
+                        "taskRunTemplate": {"computeResources": {"x": "1"}}
+                    }
+                )
+            },
+            "pipeline_run taskRunTemplate may contain only "
+            "serviceAccountName, podTemplate",
+        ),
+        (
+            "post_provision_rerun",
+            {"pipeline_run": rerun_pod(env=[{"name": "A", "value": "b"}])},
+            "pipeline_run podTemplate may contain only securityContext, "
+            "imagePullSecrets, nodeSelector, tolerations",
+        ),
+        (
+            "post_provision_rerun",
+            {
+                "pipeline_run": rerun_with(
+                    spec={
+                        "pipelineRef": {
+                            "name": "post-provision",
+                            "bundle": "x",
+                        }
+                    }
+                )
+            },
+            "pipeline_run pipelineRef may contain only name",
+        ),
+        (
+            "post_provision_rerun",
+            {"pipeline_run": rerun_workspace(csi={"driver": "x"})},
+            "pipeline_run workspace w needs exactly one supported source",
+        ),
+        (
+            "post_provision_rerun",
+            {
+                "pipeline_run": rerun_workspace(
+                    emptyDir={}, readOnly=True
+                )
+            },
+            "pipeline_run workspace w may contain only name, subPath, and "
+            "its source",
+        ),
+        (
+            "post_provision_rerun",
+            {
+                "pipeline_run": rerun_workspace(
+                    persistentVolumeClaim={
+                        "claimName": "c",
+                        "readOnly": True,
+                    }
+                )
+            },
+            "pipeline_run workspace w persistentVolumeClaim may contain "
+            "only claimName",
+        ),
+        (
+            "post_provision_rerun",
+            {
+                "pipeline_run": rerun_workspace(
+                    emptyDir={}, subPath="../other"
+                )
+            },
+            "pipeline_run workspace w subPath must be a relative path "
+            "inside the workspace",
+        ),
+        (
+            "post_provision_rerun",
+            {"pipeline_run": rerun_workspace(secret={"secretName": {"a": 1}})},
+            "workspace secret bindings need a non-empty secretName",
+        ),
+        (
+            "post_provision_rerun",
+            {
+                "pipeline_run": rerun_workspace(
+                    secret={
+                        "secretName": "k",
+                        "items": [
+                            {"key": "a", "path": "a", "password": "hunter2"}
+                        ],
+                    }
+                )
+            },
+            "workspace secret items may hold only key, path, and mode",
         ),
         (
             "post_provision_rerun",
@@ -520,9 +633,9 @@ def test_proposal_rejects_changed_content_under_old_digest() -> None:
         ),
         (
             "post_provision_rerun",
-            {"pipeline_run": rerun_with(metadata={"uid": "x"})},
+            {"pipeline_run": rerun_with(metadata={"labels": {"a": "b"}})},
             "pipeline_run metadata may contain only generateName, namespace, "
-            "labels, annotations",
+            "annotations",
         ),
         (
             "post_provision_rerun",

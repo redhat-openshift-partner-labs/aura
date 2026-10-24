@@ -15,6 +15,8 @@ from aura.proposals import (
     EXPECTED_TRIGGER_EFFECTS,
     RERUN_NAMESPACE,
     RERUN_PIPELINE,
+    RERUN_PROPOSAL_ANNOTATION,
+    RERUN_SOURCE_ANNOTATION,
     Proposal,
     ProposalType,
 )
@@ -31,7 +33,6 @@ from aura.services.proposal import (
 )
 
 
-ANNOTATION_PREFIX = "aura.openshiftpartnerlabs.com"
 FINISHED = frozenset({"Succeeded", "Failed"})
 REDACTED = "[REDACTED]"
 _WORKSPACE_SOURCES = {
@@ -282,8 +283,8 @@ def _manifest(
             "generateName": f"{RERUN_PIPELINE}-{cluster}-",
             "namespace": RERUN_NAMESPACE,
             "annotations": {
-                f"{ANNOTATION_PREFIX}/proposal-id": str(proposal_id),
-                f"{ANNOTATION_PREFIX}/source-pipeline-run": str(
+                RERUN_PROPOSAL_ANNOTATION: str(proposal_id),
+                RERUN_SOURCE_ANNOTATION: str(
                     source.data["pipeline_run_name"]
                 ),
             },

@@ -97,10 +97,27 @@ EXPECTED_REVERSIBILITY: dict[ProposalType, Reversibility] = {
     ProposalType.POST_PROVISION_RERUN: Reversibility.IRREVERSIBLE,
 }
 
+RERUN_PROPOSAL_ANNOTATION = "aura.openshiftpartnerlabs.com/proposal-id"
+RERUN_SOURCE_ANNOTATION = "aura.openshiftpartnerlabs.com/source-pipeline-run"
 _RERUN_KEYS = ("apiVersion", "kind", "metadata", "spec")
-_RERUN_METADATA_KEYS = ("generateName", "namespace", "labels", "annotations")
+_RERUN_METADATA_KEYS = ("generateName", "namespace", "annotations")
+_RERUN_ANNOTATIONS = (RERUN_PROPOSAL_ANNOTATION, RERUN_SOURCE_ANNOTATION)
 _RERUN_SPEC_KEYS = ("pipelineRef", "params", "workspaces", "taskRunTemplate")
-_NAMED_SECRET_KEYS = frozenset({"secretName", "items"})
+_RUN_TEMPLATE_KEYS = ("serviceAccountName", "podTemplate")
+_POD_TEMPLATE_KEYS = (
+    "securityContext",
+    "imagePullSecrets",
+    "nodeSelector",
+    "tolerations",
+)
+_WORKSPACE_SOURCES: dict[str, tuple[str, ...]] = {
+    "volumeClaimTemplate": ("spec",),
+    "persistentVolumeClaim": ("claimName",),
+    "secret": ("secretName", "items"),
+    "configMap": ("name",),
+    "emptyDir": (),
+}
+_SECRET_ITEM_KEYS = ("key", "path", "mode")
 _DIFF_HEADER = re.compile(r"^diff --git a/(\S+) b/(\S+)$")
 _HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@")
 _NO_NEWLINE = "\\ No newline at end of file"
@@ -440,6 +457,7 @@ def _validate_rerun_proposal(proposal: Proposal) -> None:
     _require_only(manifest, _RERUN_KEYS, "pipeline_run")
     _require_only(metadata, _RERUN_METADATA_KEYS, "pipeline_run metadata")
     _require_only(spec, _RERUN_SPEC_KEYS, "pipeline_run spec")
+    _validate_rerun_shape(metadata, spec)
     if (
         manifest.get("kind") != "PipelineRun"
         or not str(manifest.get("apiVersion", "")).startswith("tekton.dev/")
@@ -484,32 +502,98 @@ def _require_only(
         raise ValueError(f"{label} may contain only {', '.join(allowed)}")
 
 
-def _without_named_secrets(manifest: dict[str, Any]) -> dict[str, Any]:
-    """Drop workspace Secret bindings that reference a Secret by name only.
+def _validate_rerun_shape(
+    metadata: dict[str, Any],
+    spec: dict[str, Any],
+) -> None:
+    """Mirror the fields a rerun copies, so any producer is held to them."""
 
-    The redaction check would flag their `secret` key, but such a binding
-    holds a Secret's name, not its content.
+    _require_only(
+        metadata.get("annotations") or {},
+        _RERUN_ANNOTATIONS,
+        "pipeline_run annotations",
+    )
+    _require_only(
+        spec.get("pipelineRef") or {}, ("name",), "pipeline_run pipelineRef"
+    )
+    template = spec.get("taskRunTemplate") or {}
+    _require_only(template, _RUN_TEMPLATE_KEYS, "pipeline_run taskRunTemplate")
+    _require_only(
+        template.get("podTemplate") or {},
+        _POD_TEMPLATE_KEYS,
+        "pipeline_run podTemplate",
+    )
+    for workspace in spec.get("workspaces", []):
+        _validate_workspace(workspace)
+
+
+def _validate_workspace(workspace: dict[str, Any]) -> None:
+    label = f"pipeline_run workspace {workspace.get('name')}"
+    sources = [key for key in workspace if key in _WORKSPACE_SOURCES]
+    if len(sources) != 1:
+        raise ValueError(f"{label} needs exactly one supported source")
+    source = sources[0]
+    if set(workspace) - {"name", "subPath", source}:
+        raise ValueError(
+            f"{label} may contain only name, subPath, and its source"
+        )
+    sub_path = workspace.get("subPath")
+    if sub_path is not None and (
+        not isinstance(sub_path, str)
+        or sub_path.startswith("/")
+        or ".." in sub_path.split("/")
+    ):
+        raise ValueError(
+            f"{label} subPath must be a relative path inside the workspace"
+        )
+    details = workspace[source]
+    if source == "secret":
+        _validate_named_secret(details)
+    elif not isinstance(details, dict):
+        raise ValueError(f"{label} {source} must be a mapping")
+    else:
+        _require_only(details, _WORKSPACE_SOURCES[source], f"{label} {source}")
+
+
+def _validate_named_secret(details: object) -> None:
+    if not isinstance(details, dict) or set(details) - set(
+        _WORKSPACE_SOURCES["secret"]
+    ):
+        raise ValueError(
+            "workspace secret bindings may hold only secretName and items"
+        )
+    name = details.get("secretName")
+    if not isinstance(name, str) or not name:
+        raise ValueError(
+            "workspace secret bindings need a non-empty secretName"
+        )
+    for item in details.get("items", []):
+        if not isinstance(item, dict) or set(item) - set(_SECRET_ITEM_KEYS):
+            raise ValueError(
+                "workspace secret items may hold only key, path, and mode"
+            )
+
+
+def _without_named_secrets(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Drop validated workspace Secret bindings before the redaction check.
+
+    The redaction check would flag their `secret` key, but after
+    _validate_named_secret such a binding holds only a Secret's name and
+    key-to-path items, not its content.
     """
 
     spec = manifest.get("spec") or {}
-    workspaces = []
-    for workspace in spec.get("workspaces", []):
-        secret = workspace.get("secret")
-        if secret is None:
-            workspaces.append(workspace)
-            continue
-        if not isinstance(secret, dict) or set(secret) - _NAMED_SECRET_KEYS:
-            raise ValueError(
-                "workspace secret bindings may hold only secretName and items"
-            )
-        workspaces.append(
-            {key: item for key, item in workspace.items() if key != "secret"}
-        )
+    workspaces = [
+        {key: item for key, item in workspace.items() if key != "secret"}
+        for workspace in spec.get("workspaces", [])
+    ]
     return {**manifest, "spec": {**spec, "workspaces": workspaces}}
 
 
 __all__ = [
     "CLUSTER_NAME_PATTERN",
+    "RERUN_PROPOSAL_ANNOTATION",
+    "RERUN_SOURCE_ANNOTATION",
     "METADATA_KEYS",
     "EXPECTED_REVERSIBILITY",
     "EXPECTED_TRIGGER_EFFECTS",
