@@ -22,7 +22,7 @@ An `EvidenceSnapshot` is the frozen result of one collector invocation.
 | Kind | Producer | Meaning |
 | --- | --- | --- |
 | `cluster_definition` | Git | Complete active or archived desired-state definition. `patch_platform` is the cloud named by the first `/spec/platform/<cloud>` ClusterDeployment patch, and `metadata_text` is the raw `metadata.yaml` text |
-| `cluster_definition_incomplete` | Git | Definition directory with missing required files; `cluster_name` is the directory name. `patch_platform` and `crossplane_template` record what a present, readable ClusterDeployment patch and Crossplane kustomization declare, or `null` |
+| `cluster_definition_incomplete` | Git | Definition directory with missing required files; `cluster_name` is the directory name. `patch_platform` and `crossplane_template` record what a present, readable ClusterDeployment patch and Crossplane kustomization declare, or `null`. When `metadata.yaml` is the only missing file, the other files are validated as for a complete definition and `remaining_files_error` records the problem, or `null` |
 | `cluster_definition_invalid` | Git | Definition with all required files whose YAML or required patch paths cannot be interpreted; `cluster_name` is the directory name and `error` names the file and problem |
 | `deprovision_sentinel` | Git | File under `deprovision/`, other than `README.md`; `cluster_name` strips a `-archive` suffix and `archive_suffix` records whether it was present |
 | `cluster_actual_state` | OpenShift | Complete observed cluster state |
@@ -228,7 +228,7 @@ The contract enforces these invariants regardless of which generator produced th
 | --- | --- | --- | --- | --- |
 | Artifact | `patch` | `patch` | `patch` | `pipeline_run` |
 | `base_commit` | Required | Required | Required | Absent |
-| Patch scope | Adds only files under `provision/<id>/` | Adds only the empty regular file (mode `100644`) `deprovision/<id>-archive` | Adds or appends lines to only `provision/<id>/metadata.yaml`; a removed line must be re-added unchanged | None |
+| Patch scope | Adds only files under `provision/<id>/` | Adds only the empty regular file (mode `100644`) `deprovision/<id>-archive` | Adds `provision/<id>/metadata.yaml`, or appends to it in one hunk that starts at line 1 and covers the whole file; only keys the file lacks, from the four `fleet` keys, and the result declares all four | None |
 | Commit message | Names the cluster; no `[skip-provision]` | Names the cluster; no `[skip-deprovision]` | Names the cluster; contains `[skip-provision]` when a file is added | None |
 | `trigger_effect` | `pre-provision`, `provision`, `post-provision` | `deprovision`, `archive-cluster` | None | `post-provision` |
 | `reversibility` | `reversible_before_merge` | `reversible_before_merge` | `reversible` | `irreversible` |
@@ -269,18 +269,20 @@ Refusal reasons, all reported together:
 
 | Key | Value, in order of precedence |
 | --- | --- |
-| `platform` | The ClusterDeployment patch cloud; else the OpenShift ClusterDeployment platform; else `aws` |
+| `platform` | The ClusterDeployment patch cloud, which must match the OpenShift ClusterDeployment platform. A valid definition always has it; without it the proposal is refused. `fleet` `9464f0b` writes `platform` as a task result but no task reads it, so this key records the cloud without changing pipeline behavior. |
 | `aws-credentials-mode` | `legacy`, the value the pipeline uses when the key is absent |
 | `htpasswd-provider-name` | The latest `post-provision` run's parameter; else `htpasswd` |
 | `openshift-ai-version` | The latest `post-provision` run's parameter; else `v3` |
 
-Defaults are those of `read-cluster-metadata` at `fleet` commit `9464f0b`. A new file lists the keys in the order above. Appended keys follow the existing text, after a newline is added to an unterminated last line. The `summary` names each value's source.
+Defaults are those of `read-cluster-metadata` at `fleet` commit `9464f0b`. A new file lists the keys in the order above. Appended keys follow the existing text, after a newline is added to an unterminated last line, and the patch carries the whole existing file as context so the contract can check the result without the repository. The `summary` names each value's source.
 
 Refusal reasons, reported together with the shared live-cluster reasons (no definition, conflicting definitions, a definition outside `provision/`, an existing deprovision sentinel, no OpenShift resources, no pinned base commit):
 
 | Unmet precondition | Reason |
 | --- | --- |
-| Invalid definition | `definition for <id> is invalid: <error>` |
+| Invalid definition, or invalid other files when only `metadata.yaml` is missing | `definition for <id> is invalid: <error>` |
+| `metadata.yaml` uses CR line endings | `metadata.yaml for <id> has CR line endings` |
+| No ClusterDeployment platform patch | `no ClusterDeployment platform evidence for <id>` |
 | Other required files missing | `definition for <id> is missing files other than metadata.yaml: [...]` |
 | ClusterDeployment patch and OpenShift disagree | `platform evidence conflicts for <id>: ClusterDeployment patch <a>, OpenShift <b>` |
 | Existing `platform` disagrees with evidence | `metadata.yaml declares platform <a> but evidence shows <b>` |
@@ -290,6 +292,8 @@ Refusal reasons, reported together with the shared live-cluster reasons (no defi
 | Redacted run parameter | `PipelineRun <name> parameter <key> is redacted` |
 | Nothing missing | `metadata.yaml for <id> already declares every key` |
 | Appending would change the parsed file, such as after a flow mapping | `metadata.yaml for <id> cannot be extended by appending keys` |
+
+Scoped credentials are recognized only by the `crossplane-scoped` Crossplane template, which the scaffold writes for every scoped AWS cluster; the scaffold's other scoped markers are not checked.
 
 `metadata_text` is evidence, and redaction works on field names, so a secret value typed into `metadata.yaml` would not be redacted. The file holds only the four non-secret keys today.
 

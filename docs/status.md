@@ -30,7 +30,7 @@ Validation summary, recorded at Aura commit `6dc0eb3`:
 
 ## Phase 2 Prerequisites
 
-Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented; P2 remains. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`. P4 adds `propose deprovision`, authorized for `proposer` and `admin`, which generates the deprovision sentinel proposal type. `proposal status` reports Git staleness of stored proposals for `viewer`, `proposer`, and `admin`. The operator published through `4c2d2b5`, and CI run `40036888279` passed. `propose cluster-edit` generates `metadata.yaml` backfill proposals and is not yet validated live. Automated tests at `9ae9a18`: 526 passed locally and under `act`, with zero gating quality findings. The shared failure-injection matrix and invariant check cover every command. The operator validated `propose deprovision` against the live hub on 2026-10-23 with `virt-cookbook`; see [Live Proposal Validation](validation.md#live-proposal-validation). Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
+Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented; P2 remains. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`. P4 adds `propose deprovision`, authorized for `proposer` and `admin`, which generates the deprovision sentinel proposal type. `proposal status` reports Git staleness of stored proposals for `viewer`, `proposer`, and `admin`. The operator published through `4c2d2b5`, and CI run `40036888279` passed. `propose cluster-edit` generates `metadata.yaml` backfill proposals and is not yet validated live. Automated tests at `dfe32d4`: 538 passed locally and under `act`, with zero gating quality findings. The shared failure-injection matrix and invariant check cover every command. The operator validated `propose deprovision` against the live hub on 2026-10-23 with `virt-cookbook`; see [Live Proposal Validation](validation.md#live-proposal-validation). Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
 
 | Check | Result |
 | --- | --- |
@@ -102,6 +102,8 @@ The model protocol remains provider-independent. A future provider must consume 
 
 | Commit | Change |
 | --- | --- |
+| `dfe32d4` | Required whole-file append-only metadata edits |
+| `a749dac` | Kept exact metadata text and validated remaining files |
 | `9ae9a18` | Added the `propose cluster-edit` command |
 | `2a79664` | Generated cluster-edit metadata backfill proposals |
 | `0756229` | Restricted cluster edits to appending metadata keys |

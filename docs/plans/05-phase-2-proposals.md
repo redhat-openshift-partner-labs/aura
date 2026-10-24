@@ -149,7 +149,7 @@ The operator disabled the Tekton EventListener on 2026-10-23. Proposals still st
 
 | Key | Default | Read by | Written by the scaffold at `2f6c7b4` |
 | --- | --- | --- | --- |
-| `platform` | `aws` | `read-cluster-metadata`, pre-provision branching | Always |
+| `platform` | `aws` | Written as a `read-cluster-metadata` result; no task reads it | Always |
 | `aws-credentials-mode` | `legacy` | Pre-provision credential workflow | `scoped` for new clusters, or `legacy` |
 | `htpasswd-provider-name` | `htpasswd` | Post-provision OAuth configuration | Only when supplied |
 | `openshift-ai-version` | `v3` | Post-provision AI workloads | Never |
