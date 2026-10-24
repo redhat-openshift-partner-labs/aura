@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import TypeVar
 from uuid import UUID, uuid4, uuid5
 
+from pydantic import ValidationError
+
 from aura.audit_store import (
     AuditEventAlreadyStored,
     JsonAuditEventStore,
@@ -107,6 +109,7 @@ from aura.services.proposal import (
     DeprovisionProposalGenerator,
     InvalidProposalCommand,
     PipelineProposalService,
+    ProposalGenerationError,
     ProposalRefused,
     ProposalService,
     ProposalStatusService,
@@ -1323,6 +1326,7 @@ def _assemble_records(
         CWASnapshotAlreadyStored,
         CWATraceAlreadyStored,
         DiagnosisAlreadyStored,
+        ProposalGenerationError,
         OSError,
     ) as error:
         return str(error)
@@ -1701,11 +1705,7 @@ def _propose_and_trace(
 ) -> tuple[Proposal | None, str | None, CWATrace]:
     created_at = clock()
     proposal, refusal_error = _result_or_refusal(
-        lambda: generator.generate(
-            assembly.snapshot,
-            cwa_trace_id=assembly.trace.trace_id,
-            created_at=created_at,
-        ),
+        lambda: _generated(generator, assembly, created_at),
         ProposalRefused,
         "proposal",
     )
@@ -1718,6 +1718,25 @@ def _propose_and_trace(
             "response_digest": proposal.proposal_digest,
         }
     )
+
+
+def _generated(
+    generator: ProposalGenerator,
+    assembly: CWAAssemblyResult,
+    created_at: datetime,
+) -> Proposal:
+    """Generate a proposal, reporting a contract violation concisely."""
+
+    try:
+        return generator.generate(
+            assembly.snapshot,
+            cwa_trace_id=assembly.trace.trace_id,
+            created_at=created_at,
+        )
+    except ValidationError as error:
+        raise ProposalGenerationError(
+            f"generated proposal is invalid: {error.errors()[0]['msg']}"
+        ) from error
 
 
 def _proposal_created_audit_event(

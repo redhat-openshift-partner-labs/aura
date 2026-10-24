@@ -15,7 +15,14 @@ from test_cli_propose import propose_arguments, stored_trace
 from test_cluster_edit_proposal import fleet
 from test_openshift_inventory_collector import FakeOpenShiftClient
 from test_pipeline_definitions import POST_PROVISION, FakePipelineClient
-from test_rerun_proposal import FULL_METADATA, LATEST, OLDER, RunsClient, run
+from test_rerun_proposal import (
+    FULL_METADATA,
+    LATEST,
+    OLDER,
+    TRIGGER_PARAMS,
+    RunsClient,
+    run,
+)
 
 
 def run_rerun(
@@ -175,3 +182,26 @@ def test_cli_rejects_a_blank_pipeline_run(
     assert capsys.readouterr().err == (
         "aura: --pipeline-run must not be blank\n"
     )
+
+
+def test_cli_fails_cleanly_when_the_generated_proposal_is_invalid(
+    tmp_path,
+    capsys,
+    monkeypatch,
+) -> None:
+    fleet(tmp_path, FULL_METADATA)
+    nested = run(
+        "post-provision-example-new",
+        "2026-01-02T00:00:00Z",
+        params={**TRIGGER_PARAMS, "tier": {"token": "abc"}},
+    )
+
+    exit_code = run_rerun(tmp_path, monkeypatch, "proposer", runs=(nested,))
+
+    assert exit_code == 2
+    assert capsys.readouterr().err == (
+        "aura: generated proposal is invalid: Value error, pipeline_run "
+        "must not contain secret material\n"
+    )
+    assert stored_command(tmp_path).status is CommandState.FAILED
+    assert not list((tmp_path / "proposals").glob("*.json"))

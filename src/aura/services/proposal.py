@@ -32,6 +32,10 @@ class InvalidProposalCommand(Exception):
     """Raised when a command is not a patch proposal command."""
 
 
+class ProposalGenerationError(Exception):
+    """Raised when a generator produces a proposal the contract rejects."""
+
+
 class ProposalRefused(Exception):
     """Raised when evidence does not satisfy a proposal's preconditions."""
 
@@ -227,6 +231,7 @@ __all__ = [
     "pinned_git_revision",
     "InvalidProposalCommand",
     "InvalidProposalStatusCommand",
+    "ProposalGenerationError",
     "ProposalRefused",
     "PipelineProposalService",
     "ProposalService",
