@@ -99,6 +99,11 @@ def test_tekton_collector_returns_pipeline_run_with_failed_task() -> None:
         "pipeline_name": "deploy-cluster",
         "params": {"cluster-name": "example"},
         "workspaces": [],
+        "run_template": {
+            "service_account_name": None,
+            "pod_template": {},
+            "unsupported_fields": [],
+        },
         "status": "Failed",
         "start_time": "2026-01-01T00:00:00Z",
         "completion_time": "2026-01-01T00:05:00Z",
@@ -200,6 +205,7 @@ def test_tekton_collector_records_redacted_params_and_workspaces() -> None:
             "reference": None,
             "sub_path": None,
             "claim_spec": {"accessModes": ["ReadWriteOnce"]},
+            "unsupported_fields": [],
         },
         {
             "name": "pull-secret",
@@ -207,6 +213,7 @@ def test_tekton_collector_records_redacted_params_and_workspaces() -> None:
             "reference": "pull-secret",
             "sub_path": None,
             "claim_spec": None,
+            "unsupported_fields": [],
         },
         {
             "name": "config",
@@ -214,6 +221,7 @@ def test_tekton_collector_records_redacted_params_and_workspaces() -> None:
             "reference": "fleet-config",
             "sub_path": "settings",
             "claim_spec": None,
+            "unsupported_fields": [],
         },
     ]
     assert snapshot.redactions == [REDACTION]
@@ -253,3 +261,122 @@ def test_combined_collectors_keep_included_tekton_redactions(
     snapshot = collector.collect(command_id=UUID(int=1))
 
     assert snapshot.redactions == expected
+
+
+class SpecTektonClient:
+    def __init__(self, spec: dict[str, Any]) -> None:
+        self._spec = spec
+
+    def list_pipeline_runs(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "metadata": {
+                    "name": "post-provision-example-abc",
+                    "namespace": "openshift-pipelines",
+                },
+                "spec": {
+                    "pipelineRef": {"name": "post-provision"},
+                    **self._spec,
+                },
+            }
+        ]
+
+    def list_task_runs(self) -> list[dict[str, Any]]:
+        return []
+
+    def resource_version(self) -> str:
+        return "pipelineruns=1;taskruns=1"
+
+
+def run_data(spec: dict[str, Any]) -> dict[str, Any]:
+    snapshot = TektonInventoryCollector(client=SpecTektonClient(spec)).collect(
+        command_id=UUID(int=1)
+    )
+    return snapshot.items[0].data
+
+
+FLEET_TEMPLATE = {
+    "serviceAccountName": "fleet-pipeline",
+    "podTemplate": {
+        "securityContext": {"fsGroup": 0},
+        "imagePullSecrets": [{"name": "fleet-pipeline-pull-secret"}],
+    },
+}
+
+
+def test_tekton_collector_records_the_run_template() -> None:
+    data = run_data(
+        {"taskRunTemplate": FLEET_TEMPLATE, "timeouts": {"pipeline": "1h0m0s"}}
+    )
+
+    assert data["run_template"] == {
+        "service_account_name": "fleet-pipeline",
+        "pod_template": FLEET_TEMPLATE["podTemplate"],
+        "unsupported_fields": [],
+    }
+
+
+def test_tekton_collector_names_unsupported_run_fields_only() -> None:
+    template = {
+        **FLEET_TEMPLATE,
+        "computeResources": {"limits": {"cpu": "1"}},
+        "podTemplate": {
+            **FLEET_TEMPLATE["podTemplate"],
+            "env": [{"name": "API", "value": "hunter2"}],
+        },
+    }
+    snapshot = TektonInventoryCollector(
+        client=SpecTektonClient(
+            {"taskRunTemplate": template, "taskRunSpecs": [{"x": "hunter2"}]}
+        )
+    ).collect(command_id=UUID(int=1))
+
+    data = snapshot.items[0].data
+    assert data["run_template"]["unsupported_fields"] == [
+        "spec.taskRunSpecs",
+        "spec.taskRunTemplate.computeResources",
+        "spec.taskRunTemplate.podTemplate.env",
+    ]
+    assert data["run_template"]["pod_template"] == (
+        FLEET_TEMPLATE["podTemplate"]
+    )
+    assert "hunter2" not in snapshot.model_dump_json()
+
+
+def test_tekton_collector_records_runs_without_a_run_template() -> None:
+    assert run_data({})["run_template"] == {
+        "service_account_name": None,
+        "pod_template": {},
+        "unsupported_fields": [],
+    }
+
+
+def test_tekton_collector_names_unsupported_workspace_fields() -> None:
+    workspaces = run_data(
+        {
+            "workspaces": [
+                {
+                    "name": "keys",
+                    "secret": {
+                        "secretName": "keys",
+                        "items": [{"key": "a", "path": "a"}],
+                        "defaultMode": 256,
+                    },
+                },
+                {"name": "scratch", "emptyDir": {"medium": "Memory"}},
+                {
+                    "name": "shared",
+                    "volumeClaimTemplate": {
+                        "metadata": {"name": "x"},
+                        "spec": {"accessModes": ["ReadWriteOnce"]},
+                    },
+                },
+            ]
+        }
+    )["workspaces"]
+
+    assert [w["unsupported_fields"] for w in workspaces] == [
+        ["secret.defaultMode", "secret.items"],
+        ["emptyDir.medium"],
+        ["volumeClaimTemplate.metadata"],
+    ]

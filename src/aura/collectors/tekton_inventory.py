@@ -126,6 +126,7 @@ class TektonInventoryCollector:
                     _workspace_binding(workspace)
                     for workspace in spec.get("workspaces", [])
                 ],
+                "run_template": _run_template(spec),
                 "status": self._status(resource),
                 "start_time": status.get("startTime", ""),
                 "completion_time": status.get("completionTime", ""),
@@ -260,6 +261,50 @@ _WORKSPACE_REFERENCES = {
 }
 
 
+_RUN_SPEC_FIELDS = frozenset(
+    {"pipelineRef", "params", "workspaces", "taskRunTemplate", "timeouts"}
+)
+_POD_TEMPLATE_FIELDS = (
+    "securityContext",
+    "imagePullSecrets",
+    "nodeSelector",
+    "tolerations",
+)
+
+
+def _run_template(spec: dict[str, Any]) -> dict[str, Any]:
+    """Record the run template a rerun copies, naming other fields only.
+
+    Unsupported fields are named, never valued, because fields such as a
+    pod template's env can hold secret material.
+    """
+
+    template = spec.get("taskRunTemplate") or {}
+    pod_template = template.get("podTemplate") or {}
+    unsupported = [
+        *(f"spec.{key}" for key in spec if key not in _RUN_SPEC_FIELDS),
+        *(
+            f"spec.taskRunTemplate.{key}"
+            for key in template
+            if key not in {"serviceAccountName", "podTemplate"}
+        ),
+        *(
+            f"spec.taskRunTemplate.podTemplate.{key}"
+            for key in pod_template
+            if key not in _POD_TEMPLATE_FIELDS
+        ),
+    ]
+    return {
+        "service_account_name": template.get("serviceAccountName"),
+        "pod_template": {
+            key: pod_template[key]
+            for key in _POD_TEMPLATE_FIELDS
+            if key in pod_template
+        },
+        "unsupported_fields": sorted(unsupported),
+    }
+
+
 def _workspace_binding(workspace: dict[str, Any]) -> dict[str, Any]:
     """Summarize a workspace binding by source and referenced object name."""
 
@@ -269,6 +314,17 @@ def _workspace_binding(workspace: dict[str, Any]) -> dict[str, Any]:
     )
     reference_key = _WORKSPACE_REFERENCES.get(source)
     details = workspace.get(source) or {}
+    carried = {reference_key} if reference_key else set()
+    if source == "volumeClaimTemplate":
+        carried = {"spec"}
+    unsupported = [
+        *(
+            key
+            for key in workspace
+            if key not in {"name", "subPath", source}
+        ),
+        *(f"{source}.{key}" for key in details if key not in carried),
+    ]
     return {
         "name": workspace.get("name", ""),
         "source": source,
@@ -277,4 +333,5 @@ def _workspace_binding(workspace: dict[str, Any]) -> dict[str, Any]:
         "claim_spec": (
             details.get("spec") if source == "volumeClaimTemplate" else None
         ),
+        "unsupported_fields": sorted(unsupported),
     }
