@@ -24,11 +24,12 @@
           "crossplane",
           "hive"
         ],
-        "install_image_set": "img4.21.13-x86-64-appsub"
+        "install_image_set": "img4.21.13-x86-64-appsub",
+        "patch_platform": "aws",
+        "metadata_text": "platform: aws\naws-credentials-mode: scoped\nhtpasswd-provider-name: Red Hat"
       }
     }
   ],
   "redactions": [],
-  "snapshot_digest": "b09dfcb6f09df5f22d02e91cde508524620c4e87ad0f2d985bdb601a41485f55"
+  "snapshot_digest": "6e4813208e838a7f64714527d53382c4fe64f4c95d7baf4219c447109de8b0f2"
 }
-

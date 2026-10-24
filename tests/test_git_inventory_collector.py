@@ -173,6 +173,12 @@ def test_git_inventory_collector_returns_typed_evidence(tmp_path: Path) -> None:
             "hive",
         ],
         "install_image_set": "img4.21.13-x86-64-appsub",
+        "patch_platform": "aws",
+        "metadata_text": (
+            "platform: aws\n"
+            "aws-credentials-mode: scoped\n"
+            "htpasswd-provider-name: Red Hat"
+        ),
     }
     assert snapshot.redactions == []
 
@@ -227,7 +233,41 @@ def test_git_inventory_collector_reports_incomplete_cluster(tmp_path: Path) -> N
             "hive/patches/managedcluster.yaml",
             "metadata.yaml",
         ],
+        "patch_platform": None,
+        "crossplane_template": None,
     }
+
+
+def test_git_inventory_collector_reads_incomplete_definition_sources(
+    tmp_path: Path,
+) -> None:
+    write_cluster(tmp_path)
+    (tmp_path / "provision" / "example" / "metadata.yaml").unlink()
+    write_cluster(tmp_path, cluster_name="broken")
+    broken = tmp_path / "provision" / "broken"
+    (broken / "metadata.yaml").unlink()
+    (broken / "hive" / "patches" / "clusterdeployment.yaml").write_text(
+        "- op: [", encoding="utf-8"
+    )
+    (broken / "crossplane" / "kustomization.yaml").write_text(
+        "resources: 7", encoding="utf-8"
+    )
+    commit_repository(tmp_path)
+
+    items = {
+        item.data["cluster_name"]: item.data
+        for item in collect_snapshot(tmp_path).items
+    }
+
+    assert items["example"]["missing_files"] == ["metadata.yaml"]
+    assert (
+        items["example"]["patch_platform"],
+        items["example"]["crossplane_template"],
+    ) == ("aws", "crossplane-scoped")
+    assert (
+        items["broken"]["patch_platform"],
+        items["broken"]["crossplane_template"],
+    ) == (None, None)
 
 
 def test_git_inventory_collector_names_definition_without_metadata(
@@ -247,6 +287,8 @@ def test_git_inventory_collector_names_definition_without_metadata(
                 "status": "archived",
                 "cluster_name": "legacy",
                 "missing_files": ["metadata.yaml"],
+                "patch_platform": "aws",
+                "crossplane_template": "crossplane-scoped",
             },
         )
     ]

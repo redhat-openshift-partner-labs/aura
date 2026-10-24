@@ -183,14 +183,7 @@ def _definition_data(
     crossplane_file = "crossplane/kustomization.yaml"
     crossplane = _load_mapping(tree, cluster_path, crossplane_file)
 
-    resources = crossplane.get("resources", [])
-    if not isinstance(resources, list) or not all(
-        isinstance(resource, str) for resource in resources
-    ):
-        raise _InvalidDefinition(
-            f"{crossplane_file}: expected resources to be a list of paths"
-        )
-    crossplane_template = Path(resources[0]).name if resources else ""
+    crossplane_template = _crossplane_template(crossplane, crossplane_file)
 
     return {
         "path": cluster_path,
@@ -224,7 +217,61 @@ def _definition_data(
             cluster_file,
             "/spec/provisioning/imageSetRef/name",
         ),
+        "patch_platform": _patch_platform(cluster_patches),
+        "metadata_text": tree.file(f"{cluster_path}/metadata.yaml"),
     }
+
+
+def _crossplane_template(crossplane: dict[str, Any], name: str) -> str:
+    resources = crossplane.get("resources", [])
+    if not isinstance(resources, list) or not all(
+        isinstance(resource, str) for resource in resources
+    ):
+        raise _InvalidDefinition(
+            f"{name}: expected resources to be a list of paths"
+        )
+    return Path(resources[0]).name if resources else ""
+
+
+def _patch_platform(patches: list[dict[str, Any]]) -> str | None:
+    """Return the cloud named by the first /spec/platform/<cloud> patch."""
+
+    for patch in patches:
+        parts = str(patch.get("path", "")).split("/")
+        if len(parts) > 3 and parts[1:3] == ["spec", "platform"]:
+            return parts[3] or None
+    return None
+
+
+def _incomplete_sources(
+    tree: _GitTree,
+    cluster_path: str,
+    missing_files: list[str],
+) -> dict[str, str | None]:
+    """Read what the present files of an incomplete definition declare."""
+
+    sources: dict[str, str | None] = {
+        "patch_platform": None,
+        "crossplane_template": None,
+    }
+    cluster_file = "hive/patches/clusterdeployment.yaml"
+    crossplane_file = "crossplane/kustomization.yaml"
+    try:
+        if cluster_file not in missing_files:
+            sources["patch_platform"] = _patch_platform(
+                _load_patches(tree, cluster_path, cluster_file)
+            )
+    except _InvalidDefinition:
+        pass
+    try:
+        if crossplane_file not in missing_files:
+            sources["crossplane_template"] = _crossplane_template(
+                _load_mapping(tree, cluster_path, crossplane_file),
+                crossplane_file,
+            ) or None
+    except _InvalidDefinition:
+        pass
+    return sources
 
 
 def _load_yaml(tree: _GitTree, cluster_path: str, name: str) -> Any:
@@ -359,6 +406,7 @@ class GitInventoryCollector:
                     "status": status,
                     "cluster_name": Path(relative_path).name,
                     "missing_files": missing_files,
+                    **_incomplete_sources(tree, cluster_path, missing_files),
                 },
             )
 

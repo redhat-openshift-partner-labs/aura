@@ -38,12 +38,14 @@ class ClusterStateCollector:
         tekton_collector: ClusterStateSourceCollector,
         cluster_name: str,
         pipeline_run: str | None = None,
+        pipeline_name: str | None = None,
     ) -> None:
         self._git_collector = git_collector
         self._openshift_collector = openshift_collector
         self._tekton_collector = tekton_collector
         self._cluster_name = cluster_name
         self._pipeline_run = pipeline_run
+        self._pipeline_name = pipeline_name
 
     def collect(
         self,
@@ -104,8 +106,10 @@ class ClusterStateCollector:
             cluster_name=self._cluster_name,
             namespace=namespace,
         )
-        selected_pipeline_items = self._selected_pipeline_items(
-            pipeline_items
+        selected_pipeline_items = select_pipeline_runs(
+            pipeline_items,
+            pipeline_run=self._pipeline_run,
+            pipeline_name=self._pipeline_name,
         )
 
         status = deprovision_status(git_items, openshift_item, sentinel_items)
@@ -215,31 +219,6 @@ class ClusterStateCollector:
             )
         ]
 
-    def _selected_pipeline_items(
-        self,
-        pipeline_items: list[EvidenceItem],
-    ) -> list[EvidenceItem]:
-        if self._pipeline_run is None:
-            if not pipeline_items:
-                return []
-            return [
-                max(
-                    pipeline_items,
-                    key=lambda item: str(
-                        item.data.get("start_time") or ""
-                    ),
-                )
-            ]
-        return [
-            item
-            for item in pipeline_items
-            if self._pipeline_run
-            in (
-                str(item.data.get("pipeline_run_id") or ""),
-                str(item.data.get("pipeline_run_name") or ""),
-            )
-        ]
-
     @staticmethod
     def _missing_evidence(
         *,
@@ -277,6 +256,40 @@ class ClusterStateCollector:
                 return missing
             missing.append("Tekton PipelineRun status")
         return missing
+
+
+def select_pipeline_runs(
+    pipeline_items: list[EvidenceItem],
+    *,
+    pipeline_run: str | None,
+    pipeline_name: str | None,
+) -> list[EvidenceItem]:
+    """Select the named run, or else the latest run, of one pipeline or any."""
+
+    if pipeline_name is not None:
+        pipeline_items = [
+            item
+            for item in pipeline_items
+            if item.data.get("pipeline_name") == pipeline_name
+        ]
+    if pipeline_run is not None:
+        return [
+            item
+            for item in pipeline_items
+            if pipeline_run
+            in (
+                str(item.data.get("pipeline_run_id") or ""),
+                str(item.data.get("pipeline_run_name") or ""),
+            )
+        ]
+    if not pipeline_items:
+        return []
+    return [
+        max(
+            pipeline_items,
+            key=lambda item: str(item.data.get("start_time") or ""),
+        )
+    ]
 
 
 def _included_redactions(

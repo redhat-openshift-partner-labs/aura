@@ -10,6 +10,7 @@ import pytest
 from aura.collectors.cluster_state import ClusterStateCollector
 from aura.collectors.git_inventory import GitInventoryCollector
 from aura.contracts import EvidenceItem, EvidenceSnapshot
+from test_cluster_inventory_collector import pipeline_run, tekton_collector
 from test_git_inventory_collector import commit_repository, write_cluster
 
 
@@ -630,3 +631,45 @@ def test_cluster_state_collector_reports_missing_selected_run() -> None:
     assert correlation.data["missing_evidence"] == [
         "Selected Tekton PipelineRun missing-run"
     ]
+
+
+def named_run(number: int, pipeline: str, start: str) -> EvidenceItem:
+    item = pipeline_run("example")
+    return item.model_copy(
+        update={
+            "item_id": UUID(int=number),
+            "data": {
+                **item.data,
+                "pipeline_run_name": f"{pipeline}-{number}",
+                "pipeline_name": pipeline,
+                "start_time": start,
+            },
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("pipeline_name", "selected"),
+    [(None, "provision-33"), ("post-provision", "post-provision-32")],
+)
+def test_cluster_state_collector_selects_latest_run_of_a_pipeline(
+    pipeline_name: str | None,
+    selected: str,
+) -> None:
+    snapshot = ClusterStateCollector(
+        git_collector=FakeGitCollector(),
+        openshift_collector=FakeOpenShiftCollector(),
+        tekton_collector=tekton_collector(
+            named_run(31, "post-provision", "2026-01-01T00:00:00Z"),
+            named_run(32, "post-provision", "2026-01-02T00:00:00Z"),
+            named_run(33, "provision", "2026-01-03T00:00:00Z"),
+        ),
+        cluster_name="example",
+        pipeline_name=pipeline_name,
+    ).collect(command_id=UUID(int=1))
+
+    assert [
+        item.data["pipeline_run_name"]
+        for item in snapshot.items
+        if item.kind == "pipeline_run"
+    ] == [selected]
