@@ -123,8 +123,8 @@ def test_cli_refuses_a_rerun_while_the_latest_run_is_running(
 
     assert exit_code == 2
     assert capsys.readouterr().err == (
-        "aura: proposal refused: PipelineRun post-provision-example-new "
-        "has not finished\n"
+        "aura: proposal refused: post-provision runs for cluster example "
+        "have not finished: ['post-provision-example-new']\n"
     )
     assert stored_command(tmp_path).status is CommandState.REFUSED
 

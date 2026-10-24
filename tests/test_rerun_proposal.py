@@ -71,12 +71,13 @@ def run(
     params: dict[str, Any] | None = None,
     succeeded: str | None = "True",
     pipeline_name: str = "post-provision",
+    namespace: str = "openshift-pipelines",
     **spec: Any,
 ) -> dict[str, Any]:
     return {
         "metadata": {
             "name": name,
-            "namespace": "openshift-pipelines",
+            "namespace": namespace,
             "uid": f"uid-{name}",
         },
         "spec": {
@@ -91,7 +92,7 @@ def run(
             **spec,
         },
         "status": {
-            "startTime": start,
+            **({"startTime": start} if start else {}),
             "conditions": (
                 []
                 if succeeded is None
@@ -289,6 +290,10 @@ def _with_sentinel(root: Path) -> None:
     (root / "deprovision" / "example-archive").write_text("")
 
 
+def _drop_managed_cluster(root: Path) -> None:
+    (root / "provision/example/hive/patches/managedcluster.yaml").unlink()
+
+
 def _case(
     *runs: dict[str, Any],
     metadata: object = FULL_METADATA,
@@ -328,7 +333,8 @@ NEW = "PipelineRun post-provision-example-new"
                 ),
                 OLDER,
             ),
-            f"{NEW} has not finished",
+            "post-provision runs for cluster example have not finished: "
+            "['post-provision-example-new']",
         ),
         (
             _case(
@@ -456,6 +462,53 @@ NEW = "PipelineRun post-provision-example-new"
             ),
             f"{NEW} workspace creds uses source csi, which a rerun cannot "
             "copy",
+        ),
+        (
+            _case(
+                OLDER,
+                run(
+                    "post-provision-example-new",
+                    "2026-01-02T00:00:00Z",
+                    succeeded=None,
+                ),
+                pipeline_run="post-provision-example-old",
+            ),
+            "post-provision runs for cluster example have not finished: "
+            "['post-provision-example-new']",
+        ),
+        (
+            _case(
+                LATEST,
+                run("post-provision-example-pending", "", succeeded=None),
+            ),
+            "post-provision runs for cluster example have not finished: "
+            "['post-provision-example-pending']",
+        ),
+        (
+            _case(
+                run(
+                    "post-provision-example-new",
+                    "2026-01-02T00:00:00Z",
+                    namespace="example",
+                )
+            ),
+            f"{NEW} is in namespace example, not openshift-pipelines",
+        ),
+        (
+            _case(
+                run(
+                    "post-provision-example-new",
+                    "2026-01-02T00:00:00Z",
+                    namespace="example-ns",
+                    params={**TRIGGER_PARAMS, "cluster-name": "other"},
+                )
+            ),
+            f"{NEW} is for cluster other, not example",
+        ),
+        (
+            _case(LATEST, prepare=_drop_managed_cluster),
+            "cannot check metadata.yaml for example: its definition is "
+            "missing ['hive/patches/managedcluster.yaml']",
         ),
         (
             _case(

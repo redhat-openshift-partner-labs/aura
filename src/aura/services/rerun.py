@@ -33,7 +33,6 @@ from aura.services.proposal import (
 )
 
 
-FINISHED = frozenset({"Succeeded", "Failed"})
 REDACTED = "[REDACTED]"
 _WORKSPACE_SOURCES = {
     "volumeClaimTemplate": lambda binding: {"spec": binding["claim_spec"]},
@@ -74,6 +73,12 @@ class PostProvisionRerunGenerator:
         source = _source_run(correlation, items_by_id)
         if source is None:
             reasons.append(_missing_run_reason(correlation, cluster))
+        unfinished = correlation.data.get("unfinished_pipeline_runs") or []
+        if unfinished:
+            reasons.append(
+                f"post-provision runs for cluster {cluster} have not "
+                f"finished: {unfinished}"
+            )
         definition = next(
             (item for item in items if item.kind == "pipeline_definition"),
             None,
@@ -91,7 +96,9 @@ class PostProvisionRerunGenerator:
         if metadata_reason:
             reasons.append(metadata_reason)
         if source is not None and definition is not None:
-            reasons.extend(_run_reasons(source, definition, metadata))
+            reasons.extend(
+                _run_reasons(source, definition, metadata, cluster)
+            )
         if reasons or source is None:
             raise ProposalRefused(reasons)
 
@@ -193,20 +200,36 @@ def _metadata(
     if definition.kind == "cluster_definition":
         document = yaml.safe_load(definition.data.get("metadata_text") or "")
         return (document if isinstance(document, dict) else {}), None
-    if "metadata.yaml" in definition.data.get("missing_files", []):
+    missing = definition.data.get("missing_files", [])
+    if "metadata.yaml" in missing:
         return {}, None
-    return {}, f"cannot read metadata.yaml for {cluster}"
+    if missing:
+        return {}, (
+            f"cannot check metadata.yaml for {cluster}: its definition is "
+            f"missing {missing}"
+        )
+    return {}, (
+        f"cannot check metadata.yaml for {cluster}: its definition is "
+        f"invalid"
+    )
 
 
 def _run_reasons(
     source: EvidenceItem,
     definition: EvidenceItem,
     metadata: dict[str, Any],
+    cluster: str,
 ) -> list[str]:
     run = f"PipelineRun {source.data['pipeline_run_name']}"
     reasons: list[str] = []
-    if source.data.get("status") not in FINISHED:
-        reasons.append(f"{run} has not finished")
+    namespace = source.data.get("namespace")
+    if namespace != RERUN_NAMESPACE:
+        reasons.append(
+            f"{run} is in namespace {namespace}, not {RERUN_NAMESPACE}"
+        )
+    run_cluster = source.data.get("cluster_name")
+    if run_cluster != cluster:
+        reasons.append(f"{run} is for cluster {run_cluster}, not {cluster}")
     params: dict[str, Any] = source.data.get("params") or {}
     declared = {entry["name"] for entry in definition.data["params"]}
     required = definition.data["required_params"]
