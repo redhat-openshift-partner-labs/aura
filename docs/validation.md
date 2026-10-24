@@ -301,7 +301,18 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync python -c 'import os, u
 | `malformed_params` | `0` |
 | Defaults | No `default` field anywhere; `has_default` only; `redactions` empty |
 
-Not yet run live.
+Latest validation, run by the operator on 2026-10-24 after applying `deploy/` with `oc apply -k deploy`:
+
+| Check | Result |
+| --- | --- |
+| Read access | `list` allowed on `clusterdeployments`, `managedclusters`, `pipelineruns`, `taskruns`, and on `pipelines` in `openshift-pipelines` |
+| Least privilege | `get`, `create`, `patch`, and `delete` on Pipelines, `list` Pipelines in `default`, and `list` Secrets all denied |
+| Definition | One `post-provision` item with 20 parameters, `malformed_params: 0`, no `default` field, and empty `redactions` |
+| Required parameters | `cluster-name tier dns-zones`, matching `fleet` `HEAD` |
+| Missing Pipeline | `PipelineDefinitionError: requested Pipelines not found: ['does-not-exist']`, after one `oc` timeout on a mobile hotspot |
+| Existing commands | Pending: `inventory list --source combined` timed out on the hotspot and is to be re-run on a steadier connection |
+
+The snapshot `source_version` was `pipelines=`: `oc get -o json` returns a client-side `List` with an empty `resourceVersion`, so OpenShift and Tekton source versions carry no version. This affects every `oc` client and is tracked under [Status](status.md#not-implemented).
 
 ## Idempotency Validation
 
