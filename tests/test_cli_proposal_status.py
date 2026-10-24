@@ -10,6 +10,7 @@ from aura.cli import main
 from aura.command_store import JsonCommandStore
 from aura.contracts import CommandState, CommandType, EvidenceSnapshot
 from aura.proposal_store import JsonProposalStore
+from failure_injection import deny_access
 from test_git_inventory_collector import commit_repository, write_cluster
 from test_git_staleness import deprovision_proposal
 
@@ -155,12 +156,13 @@ def test_cli_proposal_status_fails_for_tampered_proposal(
 def test_cli_proposal_status_fails_for_unreadable_record(
     tmp_path,
     capsys,
+    monkeypatch,
 ) -> None:
     _, base = fleet_clusters(tmp_path)
     path = JsonProposalStore(tmp_path / "proposals").save(
         deprovision_proposal(base)
     )
-    path.chmod(0o000)
+    deny_access(monkeypatch, "read_text", path)
 
     exit_code = run_status(status_arguments(tmp_path))
 

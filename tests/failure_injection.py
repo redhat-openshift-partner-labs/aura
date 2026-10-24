@@ -84,6 +84,22 @@ def install_write_faults(
     return writes
 
 
+def deny_access(monkeypatch, method: str, target: Path) -> None:
+    """Make one Path method raise PermissionError for one path.
+
+    Unlike chmod, this also fails for root, which ignores file modes.
+    """
+
+    original = getattr(Path, method)
+
+    def denied(self: Path, *args, **kwargs):
+        if self == target:
+            raise PermissionError(errno.EACCES, "Permission denied", str(self))
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, method, denied)
+
+
 def run_cli(
     arguments: Sequence[str],
     monkeypatch,

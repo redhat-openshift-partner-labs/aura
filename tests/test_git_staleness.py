@@ -14,6 +14,7 @@ from aura.collectors.git_staleness import (
 )
 from aura.proposal_store import JsonProposalStore, ProposalNotFound
 from aura.proposals import Proposal
+from failure_injection import deny_access
 from test_git_inventory_collector import commit_repository, write_cluster
 from test_proposals import added_file, make_proposal
 
@@ -243,19 +244,18 @@ def test_staleness_collector_rejects_missing_store(
 def test_staleness_collector_rejects_unreadable_store(
     repository,
     tmp_path,
+    monkeypatch,
 ) -> None:
     root, base = repository
     store = JsonProposalStore(tmp_path / "proposals")
     store.save(deprovision_proposal(base))
-    store.root.chmod(0o000)
-    try:
-        with pytest.raises(
-            ProposalRecordUnreadable,
-            match="proposal store is unreadable: .*Permission denied",
-        ):
-            collect_staleness(root, store.root)
-    finally:
-        store.root.chmod(0o700)
+    deny_access(monkeypatch, "iterdir", store.root)
+
+    with pytest.raises(
+        ProposalRecordUnreadable,
+        match="proposal store is unreadable: .*Permission denied",
+    ):
+        collect_staleness(root, store.root)
 
 
 def test_staleness_collector_checks_repeated_ids_once(
@@ -282,7 +282,7 @@ def test_staleness_collector_rejects_missing_requested_proposal(
         collect_staleness(root, tmp_path / "proposals", [UUID(int=9)])
 
 
-def _tamper(path: Path) -> None:
+def _tamper(path: Path, monkeypatch) -> None:
     path.chmod(0o600)
     path.write_text(
         path.read_text(encoding="utf-8").replace(
@@ -292,7 +292,11 @@ def _tamper(path: Path) -> None:
     )
 
 
-def _replace_with_directory(path: Path) -> None:
+def _deny_read(path: Path, monkeypatch) -> None:
+    deny_access(monkeypatch, "read_text", path)
+
+
+def _replace_with_directory(path: Path, monkeypatch) -> None:
     path.unlink()
     path.mkdir()
 
@@ -302,7 +306,7 @@ def _replace_with_directory(path: Path) -> None:
     [
         (_tamper, f"proposal record is unreadable: {UUID(int=500)}.json"),
         (
-            lambda path: path.chmod(0o000),
+            _deny_read,
             f"proposal record is unreadable: {UUID(int=500)}.json",
         ),
         (
@@ -310,7 +314,7 @@ def _replace_with_directory(path: Path) -> None:
             f"proposal record is unreadable: {UUID(int=500)}.json",
         ),
         (
-            lambda path: (path.parent / "notes.json").write_text("{}"),
+            lambda path, _: (path.parent / "notes.json").write_text("{}"),
             "proposal store is unreadable: "
             "record name is not an ID: notes.json",
         ),
@@ -319,6 +323,7 @@ def _replace_with_directory(path: Path) -> None:
 def test_staleness_collector_rejects_unreadable_records(
     repository,
     tmp_path,
+    monkeypatch,
     damage,
     message,
 ) -> None:
@@ -326,7 +331,7 @@ def test_staleness_collector_rejects_unreadable_records(
     path = JsonProposalStore(tmp_path / "proposals").save(
         deprovision_proposal(base)
     )
-    damage(path)
+    damage(path, monkeypatch)
 
     with pytest.raises(ProposalRecordUnreadable, match=message):
         collect_staleness(root, tmp_path / "proposals")
