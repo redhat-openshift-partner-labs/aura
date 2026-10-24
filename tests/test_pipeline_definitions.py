@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from subprocess import CalledProcessError
@@ -13,12 +14,18 @@ from aura.collectors.oc_cli import OpenShiftCLIError
 from aura.collectors.openshift_cli_pipeline_client import (
     OpenShiftCLIPipelineClient,
 )
-from aura.collectors.pipeline_definitions import PipelineDefinitionCollector
+from aura.collectors.pipeline_definitions import (
+    PipelineDefinitionCollector,
+    PipelineDefinitionError,
+)
 
 
-def param(name: str, default: object = None, **fields: object) -> dict:
+NO_DEFAULT = object()
+
+
+def param(name: str, default: object = NO_DEFAULT, **fields: object) -> dict:
     entry: dict[str, object] = {"name": name, "type": "string", **fields}
-    if default is not None:
+    if default is not NO_DEFAULT:
         entry["default"] = default
     return entry
 
@@ -86,20 +93,17 @@ def test_collector_records_parameter_definitions() -> None:
                 "name": "keycloak-admin-secret",
                 "type": "string",
                 "has_default": True,
-                "default": "keycloak-admin",
             },
             {"name": "dns-zones", "type": "string", "has_default": False},
             {
                 "name": "htpasswd-provider-name",
                 "type": "string",
                 "has_default": True,
-                "default": "htpasswd",
             },
             {
                 "name": "openshift-ai-version",
                 "type": "string",
                 "has_default": True,
-                "default": "v3",
             },
         ],
         "required_params": ["cluster-name", "tier", "dns-zones"],
@@ -107,24 +111,91 @@ def test_collector_records_parameter_definitions() -> None:
     }
 
 
-def test_collector_redacts_secret_named_defaults() -> None:
+def test_collector_never_stores_default_values() -> None:
     snapshot = collect(
-        pipeline("post-provision", param("github-token", "ghp_example"))
+        pipeline(
+            "post-provision",
+            param("github-token", "ghp_example"),
+            param("spoke-kubeconfig", "users:\n- user: {token: sha256~abc}"),
+            param("git-repo-url", "https://user:pw@example.com/fleet.git"),
+            param("config", {"password": "hunter2"}, type="object"),
+        )
     )
 
+    dumped = snapshot.model_dump_json()
+    for secret in ("ghp_example", "sha256~abc", "user:pw", "hunter2"):
+        assert secret not in dumped
     [item] = snapshot.items
-    assert item.data["params"] == [
-        {
-            "name": "github-token",
-            "type": "string",
-            "has_default": True,
-            "default": "[REDACTED]",
-        }
+    assert all("default" not in entry for entry in item.data["params"])
+    assert all(entry["has_default"] for entry in item.data["params"])
+    assert snapshot.redactions == []
+
+
+def test_collector_treats_null_default_as_required() -> None:
+    [item] = collect(
+        pipeline("post-provision", param("cluster-name", None))
+    ).items
+
+    assert item.data["required_params"] == ["cluster-name"]
+    assert item.data["params"][0]["has_default"] is False
+
+
+def test_collector_counts_duplicate_and_unknown_type_params() -> None:
+    [item] = collect(
+        pipeline(
+            "post-provision",
+            param("tier"),
+            param("tier", "base"),
+            param("zones", type="arrray"),
+            param("labels", type={"k": 1}),
+            param("hosts", type="array"),
+        )
+    ).items
+
+    assert item.data["malformed_params"] == 3
+    assert [entry["name"] for entry in item.data["params"]] == [
+        "tier",
+        "hosts",
     ]
-    assert snapshot.redactions == [
-        "pipeline[openshift-pipelines/post-provision].params.github-token"
-    ]
-    assert "ghp_example" not in snapshot.model_dump_json()
+    assert item.data["required_params"] == ["tier", "hosts"]
+
+
+def test_collector_counts_non_mapping_spec_as_malformed() -> None:
+    broken = pipeline("post-provision")
+    broken["spec"] = "x"
+
+    [item] = collect(broken).items
+
+    assert (item.data["params"], item.data["malformed_params"]) == ([], 1)
+
+
+@pytest.mark.parametrize(
+    ("items", "names", "message"),
+    [
+        (
+            (POST_PROVISION,),
+            {"post-provision", "missing"},
+            "requested Pipelines not found: ['missing']",
+        ),
+        (
+            ({"spec": {}},),
+            None,
+            "Pipeline without a name in openshift-pipelines",
+        ),
+        (
+            ({"metadata": {"name": None}, "spec": {}},),
+            None,
+            "Pipeline without a name in openshift-pipelines",
+        ),
+    ],
+)
+def test_collector_fails_closed_on_missing_or_unnamed_pipelines(
+    items,
+    names,
+    message,
+) -> None:
+    with pytest.raises(PipelineDefinitionError, match=re.escape(message)):
+        collect(*items, names=names)
 
 
 def test_collector_counts_malformed_parameters() -> None:
@@ -155,7 +226,6 @@ def test_collector_counts_malformed_parameters() -> None:
             {"post-provision"},
             [("post-provision", ["cluster-name", "tier", "dns-zones"])],
         ),
-        ((POST_PROVISION,), {"missing"}, []),
     ],
 )
 def test_collector_handles_edge_inputs(items, names, expected) -> None:
