@@ -1,0 +1,11 @@
+# Read-only access for Aura on the OpenShift hub.
+# Apply with: oc apply -k deploy
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- namespace.yaml
+- serviceaccount.yaml
+- clusterrole.yaml
+- clusterrolebinding.yaml
+- pipelines-role.yaml
+- pipelines-rolebinding.yaml

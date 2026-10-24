@@ -1,0 +1,11 @@
+# Pipeline parameter definitions are read only in openshift-pipelines,
+# so this grant is namespaced rather than part of the ClusterRole.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aura-readonly-pipelines
+  namespace: openshift-pipelines
+rules:
+- apiGroups: ["tekton.dev"]
+  resources: ["pipelines"]
+  verbs: ["list"]
