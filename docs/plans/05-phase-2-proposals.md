@@ -130,14 +130,20 @@ flowchart LR
 | Commit message | Must contain `[skip-provision]` when the patch adds a file, and must be the push head commit |
 | Reversibility | Revert the commit |
 
-Scope decisions, 2026-10-23:
+Scope decisions, revised 2026-10-23:
 
 | Decision | Position |
 | --- | --- |
-| Allow list now | Only backfill `platform` in an existing `metadata.yaml` under `provision/<id>`. The patch modifies one file and triggers nothing. |
-| `metadata.yaml` backfill | Deferred. `metadata.yaml` stays a required definition file, and definitions without it remain reported as incomplete; Aura proposes nothing for them for now. |
-| Archived definitions | Never edited; edits apply under `provision/` only. |
-| Credential-mode mismatch | When a `metadata.yaml` backfill is revisited, a definition without `aws-credentials-mode` whose evidence shows scoped credentials is refused, because the pipeline treats the missing key as `legacy`. |
+| Edit kinds | Backfill a missing `metadata.yaml`, and add missing keys to an existing `metadata.yaml`, both under `provision/<id>` only. `metadata.yaml` stays a required definition file. |
+| Keys | Every proposal leaves the file with all four keys below. Existing keys and any other keys are never changed. |
+| Value sources | `platform` from the Git ClusterDeployment patch, cross-checked against the OpenShift ClusterDeployment. `htpasswd-provider-name` and `openshift-ai-version` from the latest retained `post-provision` PipelineRun parameters. Without that evidence, the `fleet` default below, which is what the pipeline uses today when the key is absent. |
+| Run value differs from default | The run's value is written, because it is the spoke's current configuration. |
+| `aws-credentials-mode` | The `legacy` default, because the pipeline treats a missing key as `legacy`. If evidence shows scoped credentials, such as a scoped Crossplane template, the proposal is refused. |
+| Preconditions | Live OpenShift resources, no deprovision sentinel, exactly one definition, and it is under `provision/`. An existing key whose value contradicts evidence refuses the proposal. |
+| Archived definitions | Never edited. |
+| Provenance | The proposal states which keys came from evidence and which from `fleet` defaults, and the `fleet` commit the defaults were read from. |
+
+The operator disabled the Tekton EventListener on 2026-10-23. Proposals still state trigger effects as if it were enabled, and a patch that adds `metadata.yaml` still requires `[skip-provision]` in the push head commit.
 
 `metadata.yaml` keys read by `fleet` at commit `9464f0b`, with the value the pipeline uses when a key or the file is absent:
 
@@ -148,7 +154,7 @@ Scope decisions, 2026-10-23:
 | `htpasswd-provider-name` | `htpasswd` | Post-provision OAuth configuration | Only when supplied |
 | `openshift-ai-version` | `v3` | Post-provision AI workloads | Never |
 
-Because an absent key means its default, adding `platform: aws` where the ClusterDeployment platform is `aws` changes no pipeline behavior. A `metadata.yaml` backfill that writes only evidence-backed keys and omits the rest likewise preserves current behavior.
+Because an absent key means its default, writing a key whose value equals what the pipeline already uses changes no pipeline behavior. Writing a run's non-default value records the spoke's current configuration, so later pipeline runs keep it.
 
 ## Proposal Contract
 
