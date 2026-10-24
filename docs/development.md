@@ -37,7 +37,9 @@ flowchart TD
   D --> C[7. Commit]
   C --> X[8. Independent review of the feature]
   X -->|Findings| R
-  X --> L[9. Operator live validation, when approved]
+  X --> A[9. Run the CI workflow locally with act]
+  A -->|Fails| R
+  A --> L[10. Operator live validation, when approved]
   L --> P[Ready for the operator to publish]
 ```
 
@@ -67,7 +69,7 @@ Test conventions are in [`AGENTS.md`](../AGENTS.md#test-guidance). In particular
 
 - Correlation and generator tests use the real `GitInventoryCollector` over a temporary Git tree.
 - Failure tests force the failure deterministically, for example by pre-creating a record at its deterministic ID, replacing a directory with a file, or removing permissions. They do not rely on timing.
-- Tests that change permissions restore them so temporary directories can be cleaned up.
+- Tests do not rely on file modes to make a path unreadable, because root ignores them and `act`'s runner image runs as root. Use `deny_access` from `tests/failure_injection.py` to raise `PermissionError` for one path. Tests that do change permissions restore them so temporary directories can be cleaned up.
 
 ### 4. Implement
 
@@ -114,7 +116,33 @@ Each feature gets an independent review before it is reported done, not after a 
 - The author reproduces every finding before acting on it. A confirmed finding is fixed test-first: write the failing test, then the fix.
 - Product decisions raised by the review go to the operator.
 
-### 9. Operator Live Validation
+### 9. Run the CI Workflow Locally
+
+Before reporting a feature ready to publish, run `.github/workflows/ci.yml` locally with [`act`](https://github.com/nektos/act) on a clean, committed tree. `act` copies the working tree, so uncommitted files would be tested but not published. It runs the same steps as GitHub CI in a Linux container, with the Python version CI pins.
+
+With Podman, pull the medium runner image once:
+
+```bash
+podman pull docker.io/catthehacker/ubuntu:act-latest
+```
+
+Then run the workflow:
+
+```bash
+DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')" act push -j test -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-daemon-socket - --pull=false
+```
+
+With Docker, omit `DOCKER_HOST`. `--container-daemon-socket -` keeps the host socket out of the job container, which the workflow does not need.
+
+The job must succeed. Known differences from GitHub's hosted runners:
+
+- The runner image runs steps as root, so tests must not depend on file modes.
+- On Apple silicon the container is `linux/arm64`; GitHub runs `linux/x86_64`.
+- The image approximates the hosted runner, and `setup-python` and `setup-uv` still download from the network.
+
+A passing `act` run makes a passing GitHub run likely, not certain. GitHub CI on the published commit remains the authority, and the operator confirms it after publishing.
+
+### 10. Operator Live Validation
 
 Live cluster access requires explicit operator approval for each run. By default, provide the commands and expected results for the operator to run, as in [Validation](validation.md). Use placeholders such as `<cluster>`; do not assume a test cluster still exists. Record each run with its date, Aura commit, the clusters used, and the outcome.
 
@@ -203,6 +231,7 @@ Adopted on 2026-10-23.
 | --- | --- |
 | Failure-injection harness | In place, with 14 scenarios: inventory list with no record directories, audit only, through CWA, and through diagnosis; workflow inspect with none or with snapshot and audit; diagnose state succeeded and refused; propose deprovision succeeded and refused; proposal status with none or with snapshot and audit. Against the CLI from commit `0416058`, before the review fixes, 19 of its 62 matrix tests fail. It found a store defect, fixed in `17b06d3`: a directory sync failure after linking left records that callers treated as unwritten. |
 | Invariant check for I1–I4 | In place. It runs after every matrix run. Existing per-command CLI tests do not call it yet. |
+| Local CI with `act` | Adopted. On its first run, at `4c2d2b5`, it ran Python 3.13.17 on `linux/arm64` as root and failed three `chmod`-based tests that GitHub CI had passed; they now use `deny_access`. |
 | Mutation testing | Not adopted. When adopted, run it periodically on changed modules to confirm that tests constrain the code. |
 
 The harness does not cover failures of the command-store lock, the idempotency check, or the failure-path writes themselves, such as the `command_failed` audit write. Existing CLI tests cover the lock and idempotency check; a failing failure-path write is not yet tested.

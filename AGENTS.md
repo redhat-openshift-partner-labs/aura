@@ -45,6 +45,7 @@ Follow [`docs/development.md`](docs/development.md) for every behavior change. I
 6. Update affected docs in the same commit series.
 7. Create an incremental conventional commit.
 8. Get an independent review of each feature, reproduce every finding, and fix confirmed findings test-first.
+9. Run the CI workflow locally with `act` on the committed tree before reporting the feature ready to publish.
 
 Useful commands:
 
@@ -52,6 +53,7 @@ Useful commands:
 UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 git diff --check
 ripwire . --quality-delta=adb2c2b..HEAD
+DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')" act push -j test -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-daemon-socket - --pull=false
 ```
 
 Run live cluster validation only when explicitly approved by the operator. By default, give the operator the commands and expected results to run.
@@ -111,6 +113,7 @@ Leave these untracked local artifacts alone unless the user explicitly asks othe
 - Every spec rule that says only, exactly, empty, must, must not, or never has a negative test against the contract or validator, not only the generator.
 - Every command has failure tests for each record write and external read in its failure-mode matrix, asserting the terminal record, absent artifacts, and the `command_failed` link. Add a `Scenario` to `tests/test_failure_matrix.py` for each new command or outcome, with its documented write order; the shared harness then tests every row.
 - Tests force failures deterministically, for example by pre-creating a record at its deterministic ID, and restore any permissions they change.
+- Tests never rely on file modes to make a path unreadable, because root ignores them; use `deny_access` from `tests/failure_injection.py`.
 - A change that touches a project invariant in `docs/development.md` has a test asserting it.
 
 ## Security Guidance
@@ -131,5 +134,6 @@ Leave these untracked local artifacts alone unless the user explicitly asks othe
 - Protected repositories have no tracked changes.
 - The change is committed with a conventional commit and sign-off.
 - The feature has had an independent review, and every confirmed finding is fixed test-first.
+- The CI workflow passes locally under `act` on the committed tree.
 
 A completed task or checklist item does not mean the work is done; this list does.
