@@ -262,7 +262,14 @@ _WORKSPACE_REFERENCES = {
 
 
 _RUN_SPEC_FIELDS = frozenset(
-    {"pipelineRef", "params", "workspaces", "taskRunTemplate", "timeouts"}
+    {
+        "pipelineRef",
+        "params",
+        "workspaces",
+        "taskRunTemplate",
+        "timeouts",
+        "status",
+    }
 )
 _POD_TEMPLATE_FIELDS = (
     "securityContext",
@@ -282,16 +289,16 @@ def _run_template(spec: dict[str, Any]) -> dict[str, Any]:
     template = spec.get("taskRunTemplate") or {}
     pod_template = template.get("podTemplate") or {}
     unsupported = [
-        *(f"spec.{key}" for key in spec if key not in _RUN_SPEC_FIELDS),
-        *(
-            f"spec.taskRunTemplate.{key}"
-            for key in template
-            if key not in {"serviceAccountName", "podTemplate"}
+        *_unsupported(spec, _RUN_SPEC_FIELDS, "spec."),
+        *_unsupported(
+            template,
+            {"serviceAccountName", "podTemplate"},
+            "spec.taskRunTemplate.",
         ),
-        *(
-            f"spec.taskRunTemplate.podTemplate.{key}"
-            for key in pod_template
-            if key not in _POD_TEMPLATE_FIELDS
+        *_unsupported(
+            pod_template,
+            set(_POD_TEMPLATE_FIELDS),
+            "spec.taskRunTemplate.podTemplate.",
         ),
     ]
     return {
@@ -303,6 +310,32 @@ def _run_template(spec: dict[str, Any]) -> dict[str, Any]:
         },
         "unsupported_fields": sorted(unsupported),
     }
+
+
+def _unsupported(
+    value: dict[str, Any],
+    carried: set[str] | frozenset[str],
+    prefix: str,
+) -> list[str]:
+    """Name fields outside carried whose values are not Go zero values.
+
+    Stored Kubernetes objects serialize zero values such as
+    `creationTimestamp: null` and `status: {}`; omitting them is the same.
+    """
+
+    return [
+        f"{prefix}{key}"
+        for key, item in value.items()
+        if key not in carried and not _is_zero(item)
+    ]
+
+
+def _is_zero(value: Any) -> bool:
+    if isinstance(value, dict):
+        return all(_is_zero(item) for item in value.values())
+    if isinstance(value, list):
+        return not value
+    return value in (None, False, 0, "")
 
 
 def _workspace_binding(workspace: dict[str, Any]) -> dict[str, Any]:
@@ -318,12 +351,8 @@ def _workspace_binding(workspace: dict[str, Any]) -> dict[str, Any]:
     if source == "volumeClaimTemplate":
         carried = {"spec"}
     unsupported = [
-        *(
-            key
-            for key in workspace
-            if key not in {"name", "subPath", source}
-        ),
-        *(f"{source}.{key}" for key in details if key not in carried),
+        *_unsupported(workspace, {"name", "subPath", source}, ""),
+        *_unsupported(details, carried, f"{source}."),
     ]
     return {
         "name": workspace.get("name", ""),

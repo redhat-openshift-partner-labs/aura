@@ -142,6 +142,9 @@ class ClusterStateCollector:
                     pipeline_items=selected_pipeline_items,
                     sentinel_items=sentinel_items,
                     deprovision_state=status,
+                    unfinished_runs=_unfinished_runs(
+                        pipeline_items, self._pipeline_name
+                    ),
                     missing_evidence=missing_evidence,
                 ),
             )
@@ -325,6 +328,18 @@ def _evidence_ids(items: list[EvidenceItem]) -> list[str]:
     return [str(item.item_id) for item in items]
 
 
+def _unfinished_runs(
+    pipeline_items: list[EvidenceItem],
+    pipeline_name: str | None,
+) -> list[str]:
+    return sorted(
+        str(item.data.get("pipeline_run_name"))
+        for item in pipeline_items
+        if pipeline_name in (None, item.data.get("pipeline_name"))
+        and item.data.get("status") not in {"Succeeded", "Failed"}
+    )
+
+
 def _correlation_data(
     *,
     cluster_name: str,
@@ -334,6 +349,7 @@ def _correlation_data(
     pipeline_items: list[EvidenceItem],
     sentinel_items: list[EvidenceItem],
     deprovision_state: str | None,
+    unfinished_runs: list[str],
     missing_evidence: list[str],
 ) -> dict[str, object]:
     return {
@@ -350,5 +366,6 @@ def _correlation_data(
         "pipeline_run_evidence_ids": _evidence_ids(pipeline_items),
         "deprovision_status": deprovision_state,
         "deprovision_sentinel_evidence_ids": _evidence_ids(sentinel_items),
+        "unfinished_pipeline_runs": unfinished_runs,
         "missing_evidence": missing_evidence,
     }

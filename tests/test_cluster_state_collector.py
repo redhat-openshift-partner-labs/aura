@@ -359,6 +359,7 @@ def test_cluster_state_collector_correlates_evidence() -> None:
         "pipeline_run_evidence_ids": [str(UUID(int=31))],
         "deprovision_status": None,
         "deprovision_sentinel_evidence_ids": [],
+        "unfinished_pipeline_runs": [],
         "missing_evidence": [],
     }
 
@@ -673,3 +674,28 @@ def test_cluster_state_collector_selects_latest_run_of_a_pipeline(
         for item in snapshot.items
         if item.kind == "pipeline_run"
     ] == [selected]
+
+
+def test_cluster_state_collector_lists_unfinished_pipeline_runs() -> None:
+    def unfinished(number: int, pipeline: str, start: str) -> EvidenceItem:
+        item = named_run(number, pipeline, start)
+        return item.model_copy(
+            update={"data": {**item.data, "status": "Unknown"}}
+        )
+
+    snapshot = ClusterStateCollector(
+        git_collector=FakeGitCollector(),
+        openshift_collector=FakeOpenShiftCollector(),
+        tekton_collector=tekton_collector(
+            named_run(31, "post-provision", "2026-01-03T00:00:00Z"),
+            unfinished(32, "post-provision", ""),
+            unfinished(33, "provision", "2026-01-04T00:00:00Z"),
+        ),
+        cluster_name="example",
+        pipeline_name="post-provision",
+    ).collect(command_id=UUID(int=1))
+
+    correlation = snapshot.items[-1]
+    assert correlation.data["unfinished_pipeline_runs"] == [
+        "post-provision-32"
+    ]

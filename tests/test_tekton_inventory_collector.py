@@ -380,3 +380,47 @@ def test_tekton_collector_names_unsupported_workspace_fields() -> None:
         ["emptyDir.medium"],
         ["volumeClaimTemplate.metadata"],
     ]
+
+
+def test_tekton_collector_ignores_zero_values_and_control_fields() -> None:
+    data = run_data(
+        {
+            "status": "Cancelled",
+            "taskRunTemplate": {
+                **FLEET_TEMPLATE,
+                "podTemplate": {
+                    **FLEET_TEMPLATE["podTemplate"],
+                    "hostNetwork": False,
+                    "env": [],
+                },
+            },
+            "workspaces": [
+                {
+                    "name": "shared",
+                    "volumeClaimTemplate": {
+                        "metadata": {"creationTimestamp": None},
+                        "spec": {"accessModes": ["ReadWriteOnce"]},
+                        "status": {},
+                    },
+                }
+            ],
+        }
+    )
+
+    assert data["run_template"]["unsupported_fields"] == []
+    assert data["workspaces"][0]["unsupported_fields"] == []
+
+
+def test_tekton_collector_names_non_zero_unsupported_values() -> None:
+    data = run_data(
+        {
+            "taskRunTemplate": {
+                **FLEET_TEMPLATE,
+                "podTemplate": {"hostNetwork": True},
+            },
+        }
+    )
+
+    assert data["run_template"]["unsupported_fields"] == [
+        "spec.taskRunTemplate.podTemplate.hostNetwork"
+    ]
