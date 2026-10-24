@@ -51,6 +51,17 @@ class ProposalService(EvidenceCommandService):
     )
 
 
+class PipelineProposalService(EvidenceCommandService):
+    """Collects read-only evidence for an authorized PipelineRun proposal."""
+
+    spec = make_evidence_command_spec(
+        command_type=CommandType.PROPOSE_PIPELINE,
+        unauthorized_error=UnauthorizedProposalCommand,
+        invalid_error=InvalidProposalCommand,
+        action="propose changes",
+    )
+
+
 class UnauthorizedProposalStatusCommand(Exception):
     """Raised when an operator cannot check proposal staleness."""
 
@@ -217,6 +228,7 @@ __all__ = [
     "InvalidProposalCommand",
     "InvalidProposalStatusCommand",
     "ProposalRefused",
+    "PipelineProposalService",
     "ProposalService",
     "ProposalStatusService",
     "UnauthorizedProposalCommand",

@@ -37,7 +37,15 @@ from aura.collectors.openshift_cli_client import OpenShiftCLIInventoryClient
 from aura.collectors.openshift_cli_tekton_client import (
     OpenShiftCLITektonClient,
 )
+from aura.collectors.openshift_cli_pipeline_client import (
+    OpenShiftCLIPipelineClient,
+)
 from aura.collectors.openshift_inventory import OpenShiftInventoryCollector
+from aura.collectors.pipeline_definitions import (
+    PipelineDefinitionCollector,
+    PipelineDefinitionError,
+)
+from aura.collectors.rerun_evidence import RerunEvidenceCollector
 from aura.collectors.tekton_inventory import TektonInventoryCollector
 from aura.collectors.workflow_inventory import WorkflowInventoryCollector
 from aura.cwa_store import (
@@ -94,9 +102,11 @@ from aura.services.cluster_state import (
     UnauthorizedClusterStateCommand,
 )
 from aura.services.cluster_edit import ClusterEditProposalGenerator
+from aura.services.rerun import PostProvisionRerunGenerator
 from aura.services.proposal import (
     DeprovisionProposalGenerator,
     InvalidProposalCommand,
+    PipelineProposalService,
     ProposalRefused,
     ProposalService,
     ProposalStatusService,
@@ -234,7 +244,14 @@ def _add_diagnose_state_arguments(
 _PROPOSAL_GENERATORS = {
     ProposalType.DEPROVISION.value: DeprovisionProposalGenerator,
     ProposalType.CLUSTER_EDIT.value: ClusterEditProposalGenerator,
+    ProposalType.POST_PROVISION_RERUN.value: PostProvisionRerunGenerator,
 }
+_RERUN = ProposalType.POST_PROVISION_RERUN.value
+ProposalGenerator = (
+    DeprovisionProposalGenerator
+    | ClusterEditProposalGenerator
+    | PostProvisionRerunGenerator
+)
 
 
 def _add_propose_arguments(
@@ -283,6 +300,36 @@ def _add_proposal_status_arguments(
     )
 
 
+def _add_propose_parsers(
+    command_parser: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    propose_parser = command_parser.add_parser("propose")
+    propose_command_parser = propose_parser.add_subparsers(
+        dest="propose_command",
+        required=True,
+    )
+    _add_propose_arguments(
+        propose_command_parser.add_parser("deprovision"),
+        ProposalType.DEPROVISION,
+    )
+    _add_propose_arguments(
+        propose_command_parser.add_parser("cluster-edit"),
+        ProposalType.CLUSTER_EDIT,
+        pipeline_name="post-provision",
+    )
+    rerun_parser = propose_command_parser.add_parser("post-provision-rerun")
+    _add_propose_arguments(
+        rerun_parser,
+        ProposalType.POST_PROVISION_RERUN,
+        pipeline_name="post-provision",
+    )
+    rerun_parser.add_argument(
+        "--pipeline-run",
+        required=False,
+        help="post-provision PipelineRun to rerun; omit for the latest",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="aura")
     command_parser = parser.add_subparsers(dest="command", required=True)
@@ -310,20 +357,7 @@ def build_parser() -> argparse.ArgumentParser:
     state_parser = diagnose_command_parser.add_parser("state")
     _add_diagnose_state_arguments(state_parser)
 
-    propose_parser = command_parser.add_parser("propose")
-    propose_command_parser = propose_parser.add_subparsers(
-        dest="propose_command",
-        required=True,
-    )
-    _add_propose_arguments(
-        propose_command_parser.add_parser("deprovision"),
-        ProposalType.DEPROVISION,
-    )
-    _add_propose_arguments(
-        propose_command_parser.add_parser("cluster-edit"),
-        ProposalType.CLUSTER_EDIT,
-        pipeline_name="post-provision",
-    )
+    _add_propose_parsers(command_parser)
 
     proposal_parser = command_parser.add_parser("proposal")
     proposal_command_parser = proposal_parser.add_subparsers(
@@ -376,6 +410,9 @@ def _diagnose_state_argument_error(args: argparse.Namespace) -> str | None:
 def _propose_argument_error(args: argparse.Namespace) -> str | None:
     if re.fullmatch(CLUSTER_NAME_PATTERN, args.cluster) is None:
         return f"--cluster must be a DNS-1123 label: {args.cluster}"
+    pipeline_run = getattr(args, "pipeline_run", None)
+    if pipeline_run is not None and not pipeline_run.strip():
+        return "--pipeline-run must not be blank"
     return None
 
 
@@ -860,6 +897,23 @@ def _selected_cluster_state_collector(
         cluster_name=args.cluster,
         pipeline_run=getattr(args, "pipeline_run", None),
         pipeline_name=getattr(args, "pipeline_name", None),
+    )
+
+
+def _selected_proposal_collector(
+    args: argparse.Namespace,
+    collector: EvidenceCollector | None,
+) -> EvidenceCollector:
+    if collector is not None or args.proposal_type != _RERUN:
+        return _selected_cluster_state_collector(args, collector)
+    return RerunEvidenceCollector(
+        cluster_state=_selected_cluster_state_collector(args, None),
+        pipeline_definitions=PipelineDefinitionCollector(
+            client=OpenShiftCLIPipelineClient(
+                kubeconfig_path=args.openshift_kubeconfig,
+            ),
+            pipeline_names={"post-provision"},
+        ),
     )
 
 
@@ -1500,8 +1554,13 @@ def _run_proposal(
     collector: EvidenceCollector | None,
     clock: Callable[[], datetime],
 ) -> int:
-    service = ProposalService(
-        collector=_selected_cluster_state_collector(args, collector)
+    service_type = (
+        PipelineProposalService
+        if args.proposal_type == _RERUN
+        else ProposalService
+    )
+    service = service_type(
+        collector=_selected_proposal_collector(args, collector)
     )
     roles = {OperatorRole(role) for role in args.role}
     collected = _collect_evidence(
@@ -1514,6 +1573,7 @@ def _run_proposal(
             InvalidCommandTransition,
             OpenShiftCLIError,
             GitInventoryError,
+            PipelineDefinitionError,
         ),
         clock,
     )
@@ -1636,7 +1696,7 @@ def _assemble_and_propose(
 
 def _propose_and_trace(
     assembly: CWAAssemblyResult,
-    generator: DeprovisionProposalGenerator | ClusterEditProposalGenerator,
+    generator: ProposalGenerator,
     clock: Callable[[], datetime],
 ) -> tuple[Proposal | None, str | None, CWATrace]:
     created_at = clock()
@@ -1708,11 +1768,20 @@ def _dispatch_command(
         )
     return _execute_new_command(
         args,
-        CommandType.PROPOSE_PATCH,
+        (
+            CommandType.PROPOSE_PIPELINE
+            if args.proposal_type == _RERUN
+            else CommandType.PROPOSE_PATCH
+        ),
         {
             "query": args.query,
             "proposal_type": args.proposal_type,
             "cluster_name": args.cluster,
+            **(
+                {"pipeline_run": args.pipeline_run}
+                if args.proposal_type == _RERUN
+                else {}
+            ),
             "history": [],
         },
         lambda command: _run_proposal(args, command, collector, clock),

@@ -24,6 +24,8 @@ from test_cli_diagnose_state import FakeClusterStateCollector
 from aura.collectors.git_inventory import GitInventoryCollector
 from test_cli_propose import cluster_state_collector, fleet_clusters
 from test_cluster_edit_proposal import ABSENT, fleet
+from aura.collectors.pipeline_definitions import PipelineDefinitionError
+from test_rerun_proposal import FULL_METADATA, LATEST, run, rerun_collector
 from test_git_inventory_collector import commit_repository, write_cluster
 from test_git_staleness import deprovision_proposal
 
@@ -40,6 +42,7 @@ RECORD_DIRS = (
 )
 SOURCE_ERRORS = (GitInventoryError, OpenShiftCLIError)
 STORE_ERRORS = (GitInventoryError, ProposalNotFound, ProposalRecordUnreadable)
+RERUN_ERRORS = (*SOURCE_ERRORS, PipelineDefinitionError)
 RECEIVED = "AuditEvent:command_received"
 EVIDENCE = ("EvidenceSnapshot", "AuditEvent:evidence_collected")
 ASSEMBLED = ("CWASnapshot",)
@@ -208,6 +211,25 @@ def cluster_edit(metadata: object = ABSENT, template: str = "crossplane"):
     return build
 
 
+def rerun(*runs: dict):
+    def build(root: Path):
+        fleet(root, FULL_METADATA)
+        return (
+            [
+                "propose",
+                "post-provision-rerun",
+                *cluster(root),
+                *records(root, "snapshot", "audit", "cwa", "proposal"),
+                "--role",
+                "proposer",
+                *operator(root),
+            ],
+            rerun_collector(root / "fleet-clusters", *runs),
+        )
+
+    return build
+
+
 def proposal_status(*names: str):
     def build(root: Path):
         fleet = root / "fleet-clusters"
@@ -278,6 +300,25 @@ SCENARIOS = [
         cluster_edit(template="crossplane-scoped"),
         REFUSED,
         CommandState.REFUSED,
+    ),
+    Scenario(
+        "rerun",
+        rerun(LATEST),
+        PROPOSED,
+        read_errors=RERUN_ERRORS,
+    ),
+    Scenario(
+        "rerun-refused",
+        rerun(
+            run(
+                "post-provision-example-new",
+                "2026-01-02T00:00:00Z",
+                succeeded=None,
+            )
+        ),
+        REFUSED,
+        CommandState.REFUSED,
+        read_errors=RERUN_ERRORS,
     ),
     Scenario(
         "proposal-status-minimal",

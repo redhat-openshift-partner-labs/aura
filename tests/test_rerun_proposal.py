@@ -115,13 +115,13 @@ class RunsClient:
         return "pipelineruns=1;taskruns=1"
 
 
-def evidence(
+def rerun_collector(
     root: Path,
     *runs: dict[str, Any],
     openshift: object | None = None,
     definition: dict[str, Any] = POST_PROVISION,
     pipeline_run: str | None = None,
-) -> EvidenceSnapshot:
+) -> RerunEvidenceCollector:
     cluster_state = ClusterStateCollector(
         git_collector=GitInventoryCollector(root),
         openshift_collector=openshift
@@ -137,7 +137,11 @@ def evidence(
             client=FakePipelineClient(definition),
             pipeline_names={"post-provision"},
         ),
-    ).collect(
+    )
+
+
+def evidence(root: Path, *runs: dict[str, Any], **options: Any):
+    return rerun_collector(root, *runs, **options).collect(
         command_id=UUID(int=1),
         snapshot_id=UUID(int=40),
         collected_at=CREATED_AT,
