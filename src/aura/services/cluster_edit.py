@@ -1,0 +1,428 @@
+"""Deterministic metadata.yaml backfill proposals for one live cluster."""
+
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, final
+from uuid import UUID, uuid5
+
+import yaml
+
+from aura.contracts import EvidenceItem
+from aura.cwa import CWASnapshot
+from aura.proposals import (
+    EXPECTED_REVERSIBILITY,
+    EXPECTED_TRIGGER_EFFECTS,
+    SKIP_PROVISION,
+    Proposal,
+    ProposalType,
+)
+from aura.services.diagnosis import cwa_evidence_items
+from aura.services.proposal import (
+    ProposalRefused,
+    cluster_preconditions,
+    correlation_item,
+    pinned_git_revision,
+)
+
+
+FLEET_DEFAULTS_COMMIT = "9464f0b"
+METADATA_DEFAULTS = {
+    "platform": "aws",
+    "aws-credentials-mode": "legacy",
+    "htpasswd-provider-name": "htpasswd",
+    "openshift-ai-version": "v3",
+}
+RUN_KEYS = ("htpasswd-provider-name", "openshift-ai-version")
+POST_PROVISION = "post-provision"
+SCOPED_TEMPLATE = "crossplane-scoped"
+REDACTED = "[REDACTED]"
+
+
+@dataclass(frozen=True)
+class _Value:
+    value: str
+    source: str
+
+
+@final
+class ClusterEditProposalGenerator:
+    """Proposes the metadata.yaml keys a provision/<id> definition lacks."""
+
+    provider_name = "aura"
+    generator = "cluster-edit-deterministic"
+    generator_version = "0.1.0"
+
+    def generate(
+        self,
+        snapshot: CWASnapshot,
+        *,
+        cwa_trace_id: UUID,
+        created_at: datetime,
+    ) -> Proposal:
+        items = cwa_evidence_items(snapshot)
+        correlation = correlation_item(items)
+        cluster = str(correlation.data["cluster_name"])
+        items_by_id = {str(item.item_id): item for item in items}
+        reasons = cluster_preconditions(correlation, items_by_id, cluster)
+        base_commit = pinned_git_revision(snapshot)
+        if base_commit is None:
+            reasons.append("no pinned Git base commit in evidence")
+        definition = _single_definition(correlation, items_by_id)
+        if definition is not None:
+            reasons.extend(_definition_reasons(definition, cluster))
+        if reasons or definition is None:
+            raise ProposalRefused(reasons)
+
+        current = (
+            str(definition.data.get("metadata_text") or "")
+            if definition.kind == "cluster_definition"
+            else None
+        )
+        existing = _mapping(current)
+        openshift_id = str(correlation.data.get("openshift_evidence_id"))
+        values, conflicts = _metadata_values(
+            definition,
+            items_by_id.get(openshift_id),
+            _post_provision_run(correlation, items_by_id),
+            existing,
+            cluster,
+        )
+        if conflicts:
+            raise ProposalRefused(conflicts)
+        missing = [key for key in METADATA_DEFAULTS if key not in existing]
+        if not missing:
+            raise ProposalRefused(
+                [f"metadata.yaml for {cluster} already declares every key"]
+            )
+        path = f"provision/{cluster}/metadata.yaml"
+        updated = _extended(
+            current,
+            "".join(_yaml_line(key, values[key].value) for key in missing),
+        )
+        expected = {**existing, **{key: values[key].value for key in missing}}
+        if _parsed(updated) != expected:
+            raise ProposalRefused(
+                [
+                    f"metadata.yaml for {cluster} cannot be extended by "
+                    "appending keys"
+                ]
+            )
+
+        proposal_id = uuid5(
+            snapshot.command_id,
+            f"proposal:{snapshot.snapshot_id}",
+        )
+        proposal_type = ProposalType.CLUSTER_EDIT
+        return Proposal(
+            proposal_id=proposal_id,
+            command_id=snapshot.command_id,
+            proposal_type=proposal_type,
+            cluster_name=cluster,
+            created_at=created_at,
+            base_commit=base_commit,
+            evidence_snapshot_id=snapshot.evidence_snapshot_id,
+            evidence_snapshot_digest=snapshot.evidence_snapshot_digest,
+            cwa_snapshot_id=snapshot.snapshot_id,
+            cwa_trace_id=cwa_trace_id,
+            generator=self.generator,
+            generator_version=self.generator_version,
+            trigger_effect=EXPECTED_TRIGGER_EFFECTS[proposal_type],
+            reversibility=EXPECTED_REVERSIBILITY[proposal_type],
+            patch=_patch(path, current, updated),
+            **_cluster_edit_text(
+                cluster,
+                path,
+                adds_file=current is None,
+                keys=[(key, values[key]) for key in missing],
+                proposal_id=proposal_id,
+            ),
+        )
+
+
+def _single_definition(
+    correlation: EvidenceItem,
+    items_by_id: dict[str, EvidenceItem],
+) -> EvidenceItem | None:
+    git_ids = correlation.data.get("git_evidence_ids", [])
+    return items_by_id.get(git_ids[0]) if len(git_ids) == 1 else None
+
+
+def _definition_reasons(definition: EvidenceItem, cluster: str) -> list[str]:
+    if definition.kind == "cluster_definition_invalid":
+        return [
+            f"definition for {cluster} is invalid: "
+            f"{definition.data.get('error')}"
+        ]
+    others = [
+        name
+        for name in definition.data.get("missing_files", [])
+        if name != "metadata.yaml"
+    ]
+    if others:
+        return [
+            f"definition for {cluster} is missing files other than "
+            f"metadata.yaml: {others}"
+        ]
+    return []
+
+
+def _mapping(text: str | None) -> dict[str, Any]:
+    document = yaml.safe_load(text) if text is not None else None
+    return document if isinstance(document, dict) else {}
+
+
+def _parsed(text: str) -> Any:
+    try:
+        return yaml.safe_load(text)
+    except yaml.YAMLError:
+        return None
+
+
+def _post_provision_run(
+    correlation: EvidenceItem,
+    items_by_id: dict[str, EvidenceItem],
+) -> EvidenceItem | None:
+    runs = [
+        items_by_id[run_id]
+        for run_id in correlation.data.get("pipeline_run_evidence_ids", [])
+        if run_id in items_by_id
+        and items_by_id[run_id].data.get("pipeline_name") == POST_PROVISION
+    ]
+    return runs[0] if runs else None
+
+
+def _default(key: str) -> _Value:
+    return _Value(
+        METADATA_DEFAULTS[key],
+        f"fleet {FLEET_DEFAULTS_COMMIT} default",
+    )
+
+
+def _metadata_values(
+    definition: EvidenceItem,
+    openshift: EvidenceItem | None,
+    run: EvidenceItem | None,
+    existing: dict[str, Any],
+    cluster: str,
+) -> tuple[dict[str, _Value], list[str]]:
+    conflicts: list[str] = []
+    values = {
+        "platform": _platform(
+            definition, openshift, existing, cluster, conflicts
+        ),
+        "aws-credentials-mode": _credentials_mode(
+            definition, existing, cluster, conflicts
+        ),
+    }
+    for key in RUN_KEYS:
+        values[key] = _run_value(key, run, existing, conflicts)
+    return values, conflicts
+
+
+def _platform(
+    definition: EvidenceItem,
+    openshift: EvidenceItem | None,
+    existing: dict[str, Any],
+    cluster: str,
+    conflicts: list[str],
+) -> _Value:
+    patch = definition.data.get("patch_platform") or None
+    actual = openshift.data.get("cloud_provider") if openshift else None
+    actual = actual or None
+    if patch and actual and patch != actual:
+        conflicts.append(
+            f"platform evidence conflicts for {cluster}: "
+            f"ClusterDeployment patch {patch}, OpenShift {actual}"
+        )
+    platform = patch or actual
+    declared = existing.get("platform")
+    if declared is not None and platform and declared != platform:
+        conflicts.append(
+            f"metadata.yaml declares platform {declared} but evidence "
+            f"shows {platform}"
+        )
+    if patch:
+        return _Value(patch, "ClusterDeployment patch")
+    if actual:
+        return _Value(actual, "OpenShift ClusterDeployment")
+    return _default("platform")
+
+
+def _credentials_mode(
+    definition: EvidenceItem,
+    existing: dict[str, Any],
+    cluster: str,
+    conflicts: list[str],
+) -> _Value:
+    template = definition.data.get("crossplane_template")
+    scoped = template == SCOPED_TEMPLATE
+    declared = existing.get("aws-credentials-mode")
+    if declared is None and scoped:
+        conflicts.append(
+            f"cluster {cluster} uses scoped AWS credentials but metadata.yaml "
+            "does not declare aws-credentials-mode"
+        )
+    elif (
+        declared is not None
+        and template
+        and (declared == "scoped") != scoped
+    ):
+        conflicts.append(
+            f"metadata.yaml declares aws-credentials-mode {declared} but the "
+            f"Crossplane template is {template}"
+        )
+    return _default("aws-credentials-mode")
+
+
+def _run_value(
+    key: str,
+    run: EvidenceItem | None,
+    existing: dict[str, Any],
+    conflicts: list[str],
+) -> _Value:
+    if run is None or key not in run.data.get("params", {}):
+        return _default(key)
+    name = run.data.get("pipeline_run_name")
+    used = run.data["params"][key]
+    if used == REDACTED:
+        conflicts.append(f"PipelineRun {name} parameter {key} is redacted")
+    elif key in existing and str(existing[key]) != str(used):
+        conflicts.append(
+            f"metadata.yaml declares {key} {existing[key]} but PipelineRun "
+            f"{name} used {used}"
+        )
+    return _Value(str(used), f"PipelineRun {name}")
+
+
+def _yaml_line(key: str, value: str) -> str:
+    return yaml.safe_dump(
+        {key: value},
+        default_flow_style=False,
+        sort_keys=False,
+        allow_unicode=True,
+        width=1000,
+    )
+
+
+def _extended(current: str | None, appended: str) -> str:
+    if not current:
+        return appended
+    separator = "" if current.endswith("\n") else "\n"
+    return current + separator + appended
+
+
+def _blob(text: str) -> str:
+    content = text.encode("utf-8")
+    header = f"blob {len(content)}\0".encode()
+    return hashlib.sha1(header + content).hexdigest()[:7]
+
+
+def _patch(path: str, current: str | None, updated: str) -> str:
+    """Return a Git patch that creates the file or appends to its end."""
+
+    new_lines = updated.splitlines()
+    if current is None:
+        return "".join(
+            [
+                f"diff --git a/{path} b/{path}\n",
+                "new file mode 100644\n",
+                f"index 0000000..{_blob(updated)}\n",
+                "--- /dev/null\n",
+                f"+++ b/{path}\n",
+                f"@@ -0,0 +1,{len(new_lines)} @@\n",
+                *(f"+{line}\n" for line in new_lines),
+            ]
+        )
+    old_lines = current.splitlines()
+    context = old_lines[-3:]
+    start = len(old_lines) - len(context) + 1 if context else 0
+    body = [f" {line}\n" for line in context]
+    if context and not current.endswith("\n"):
+        body[-1:] = [
+            f"-{context[-1]}\n",
+            "\\ No newline at end of file\n",
+            f"+{context[-1]}\n",
+        ]
+    added = new_lines[len(old_lines):]
+    return "".join(
+        [
+            f"diff --git a/{path} b/{path}\n",
+            f"index {_blob(current)}..{_blob(updated)} 100644\n",
+            f"--- a/{path}\n",
+            f"+++ b/{path}\n",
+            f"@@ -{start},{len(context)} "
+            f"+{max(start, 1)},{len(context) + len(added)} @@\n",
+            *body,
+            *(f"+{line}\n" for line in added),
+        ]
+    )
+
+
+def _cluster_edit_text(
+    cluster: str,
+    path: str,
+    *,
+    adds_file: bool,
+    keys: list[tuple[str, _Value]],
+    proposal_id: UUID,
+) -> dict[str, object]:
+    names = ", ".join(key for key, _ in keys)
+    sources = "; ".join(
+        f"{key}: {value.value} from {value.source}" for key, value in keys
+    )
+    action = (
+        "Backfill metadata.yaml"
+        if adds_file
+        else "Add missing metadata.yaml keys"
+    )
+    if adds_file:
+        body = (
+            f"Add {path} with {names}. Push this commit alone, as the push "
+            f"head commit, so {SKIP_PROVISION} suppresses pre-provision."
+        )
+        title = f"{action} for cluster {cluster} {SKIP_PROVISION}"
+    else:
+        body = (
+            f"Add {names} to {path}. Only an existing file changes, so no "
+            "pipeline starts."
+        )
+        title = f"{action} for cluster {cluster}"
+    risks = [
+        "Later provision and post-provision runs read these values from "
+        "metadata.yaml instead of applying defaults.",
+        f"Values from fleet {FLEET_DEFAULTS_COMMIT} defaults keep that "
+        "value if fleet later changes a default.",
+    ]
+    if adds_file:
+        risks.insert(
+            0,
+            f"Adding {path} starts pre-provision unless this commit is the "
+            f"push head commit and keeps {SKIP_PROVISION}; with a merge "
+            "commit, the merge commit is the head commit instead.",
+        )
+    return {
+        "summary": f"{action} for cluster {cluster}. {sources}.",
+        "expected_effect": (
+            f"{path} declares {', '.join(METADATA_DEFAULTS)}. Each value "
+            "matches what the pipeline uses today or what the latest "
+            "post-provision run used."
+        ),
+        "commit_message": (
+            f"{title}\n\n{body}\n\nAura-Proposal: {proposal_id}\n"
+        ),
+        "risks": risks,
+        "rollback": (
+            "Revert the commit. Reverting changes only metadata.yaml and "
+            "starts no pipeline."
+        ),
+    }
+
+
+__all__ = [
+    "ClusterEditProposalGenerator",
+    "FLEET_DEFAULTS_COMMIT",
+    "METADATA_DEFAULTS",
+]

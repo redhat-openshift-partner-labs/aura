@@ -86,21 +86,11 @@ class DeprovisionProposalGenerator:
         created_at: datetime,
     ) -> Proposal:
         items = cwa_evidence_items(snapshot)
-        correlation = next(
-            (
-                item
-                for item in items
-                if item.kind == "cluster_state_correlation"
-            ),
-            None,
-        )
-        if correlation is None:
-            raise ProposalRefused(["no cluster state correlation in evidence"])
-
+        correlation = correlation_item(items)
         cluster = str(correlation.data["cluster_name"])
         items_by_id = {str(item.item_id): item for item in items}
-        base_commit = _pinned_git_revision(snapshot)
-        reasons = _unmet_preconditions(correlation, items_by_id, cluster)
+        base_commit = pinned_git_revision(snapshot)
+        reasons = cluster_preconditions(correlation, items_by_id, cluster)
         if base_commit is None:
             reasons.append("no pinned Git base commit in evidence")
         if reasons:
@@ -163,7 +153,19 @@ def _deprovision_text(cluster: str, proposal_id: UUID) -> dict[str, object]:
         "patch": deprovision_sentinel_patch(cluster),
     }
 
-def _pinned_git_revision(snapshot: CWASnapshot) -> str | None:
+def correlation_item(items: list[EvidenceItem]) -> EvidenceItem:
+    """Return the cluster-state correlation item, or refuse without one."""
+
+    correlation = next(
+        (item for item in items if item.kind == "cluster_state_correlation"),
+        None,
+    )
+    if correlation is None:
+        raise ProposalRefused(["no cluster state correlation in evidence"])
+    return correlation
+
+
+def pinned_git_revision(snapshot: CWASnapshot) -> str | None:
     evidence_slot = next(
         slot
         for slot in snapshot.slots
@@ -175,11 +177,13 @@ def _pinned_git_revision(snapshot: CWASnapshot) -> str | None:
     return match.group(1) if match else None
 
 
-def _unmet_preconditions(
+def cluster_preconditions(
     correlation: EvidenceItem,
     items_by_id: dict[str, EvidenceItem],
     cluster: str,
 ) -> list[str]:
+    """Return unmet preconditions shared by proposals for a live cluster."""
+
     reasons: list[str] = []
     git_ids = correlation.data.get("git_evidence_ids", [])
     if len(git_ids) > 1:
@@ -207,6 +211,9 @@ def _unmet_preconditions(
 
 __all__ = [
     "DeprovisionProposalGenerator",
+    "cluster_preconditions",
+    "correlation_item",
+    "pinned_git_revision",
     "InvalidProposalCommand",
     "InvalidProposalStatusCommand",
     "ProposalRefused",
