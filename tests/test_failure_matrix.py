@@ -21,7 +21,9 @@ from invariants import (
     record_files,
 )
 from test_cli_diagnose_state import FakeClusterStateCollector
+from aura.collectors.git_inventory import GitInventoryCollector
 from test_cli_propose import cluster_state_collector, fleet_clusters
+from test_cluster_edit_proposal import ABSENT, fleet
 from test_git_inventory_collector import commit_repository, write_cluster
 from test_git_staleness import deprovision_proposal
 
@@ -49,6 +51,15 @@ DIAGNOSED = (
     "DiagnosisRecord",
     *CONTEXT,
     "AuditEvent:model_called",
+    "CommandEnvelope",
+)
+PROPOSED = (
+    RECEIVED,
+    *EVIDENCE,
+    *ASSEMBLED,
+    *CONTEXT,
+    "AuditEvent:proposal_created",
+    "Proposal",
     "CommandEnvelope",
 )
 REFUSED = (
@@ -176,6 +187,27 @@ def propose(sentinel: str | None):
     return build
 
 
+def cluster_edit(metadata: object = ABSENT, template: str = "crossplane"):
+    def build(root: Path):
+        fleet(root, metadata, template=template)
+        return (
+            [
+                "propose",
+                "cluster-edit",
+                *cluster(root),
+                *records(root, "snapshot", "audit", "cwa", "proposal"),
+                "--role",
+                "proposer",
+                *operator(root),
+            ],
+            FakeClusterStateCollector(
+                git_collector=GitInventoryCollector(root / "fleet-clusters")
+            ),
+        )
+
+    return build
+
+
 def proposal_status(*names: str):
     def build(root: Path):
         fleet = root / "fleet-clusters"
@@ -228,22 +260,22 @@ SCENARIOS = [
         REFUSED,
         CommandState.REFUSED,
     ),
-    Scenario(
-        "propose",
-        propose(None),
-        (
-            RECEIVED,
-            *EVIDENCE,
-            *ASSEMBLED,
-            *CONTEXT,
-            "AuditEvent:proposal_created",
-            "Proposal",
-            "CommandEnvelope",
-        ),
-    ),
+    Scenario("propose", propose(None), PROPOSED),
     Scenario(
         "propose-refused",
         propose("example-archive"),
+        REFUSED,
+        CommandState.REFUSED,
+    ),
+    Scenario("cluster-edit-file", cluster_edit(), PROPOSED),
+    Scenario(
+        "cluster-edit-keys",
+        cluster_edit("htpasswd-provider-name: Red Hat"),
+        PROPOSED,
+    ),
+    Scenario(
+        "cluster-edit-refused",
+        cluster_edit(template="crossplane-scoped"),
         REFUSED,
         CommandState.REFUSED,
     ),

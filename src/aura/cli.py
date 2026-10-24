@@ -93,6 +93,7 @@ from aura.services.cluster_state import (
     InvalidClusterStateCommand,
     UnauthorizedClusterStateCommand,
 )
+from aura.services.cluster_edit import ClusterEditProposalGenerator
 from aura.services.proposal import (
     DeprovisionProposalGenerator,
     InvalidProposalCommand,
@@ -230,9 +231,22 @@ def _add_diagnose_state_arguments(
     _add_operator_arguments(parser, "diagnose cluster state")
 
 
-def _add_propose_deprovision_arguments(
+_PROPOSAL_GENERATORS = {
+    ProposalType.DEPROVISION.value: DeprovisionProposalGenerator,
+    ProposalType.CLUSTER_EDIT.value: ClusterEditProposalGenerator,
+}
+
+
+def _add_propose_arguments(
     parser: argparse.ArgumentParser,
+    proposal_type: ProposalType,
+    *,
+    pipeline_name: str | None = None,
 ) -> None:
+    parser.set_defaults(
+        proposal_type=proposal_type.value,
+        pipeline_name=pipeline_name,
+    )
     parser.add_argument("--cluster", required=True, help="Cluster name")
     _add_path_arguments(
         parser,
@@ -244,7 +258,10 @@ def _add_propose_deprovision_arguments(
         _PROPOSAL_DIR,
         required=True,
     )
-    _add_operator_arguments(parser, "propose deprovision")
+    _add_operator_arguments(
+        parser,
+        f"propose {proposal_type.value.replace('_', ' ')}",
+    )
 
 
 def _add_proposal_status_arguments(
@@ -298,8 +315,15 @@ def build_parser() -> argparse.ArgumentParser:
         dest="propose_command",
         required=True,
     )
-    deprovision_parser = propose_command_parser.add_parser("deprovision")
-    _add_propose_deprovision_arguments(deprovision_parser)
+    _add_propose_arguments(
+        propose_command_parser.add_parser("deprovision"),
+        ProposalType.DEPROVISION,
+    )
+    _add_propose_arguments(
+        propose_command_parser.add_parser("cluster-edit"),
+        ProposalType.CLUSTER_EDIT,
+        pipeline_name="post-provision",
+    )
 
     proposal_parser = command_parser.add_parser("proposal")
     proposal_command_parser = proposal_parser.add_subparsers(
@@ -835,6 +859,7 @@ def _selected_cluster_state_collector(
         ),
         cluster_name=args.cluster,
         pipeline_run=getattr(args, "pipeline_run", None),
+        pipeline_name=getattr(args, "pipeline_name", None),
     )
 
 
@@ -1550,7 +1575,11 @@ def _assemble_and_propose(
     records = _assemble_records(
         args,
         _assembly_request(result, roles, evidence_event, "proposal", clock),
-        lambda assembly: _propose_and_trace(assembly, clock),
+        lambda assembly: _propose_and_trace(
+            assembly,
+            _PROPOSAL_GENERATORS[args.proposal_type](),
+            clock,
+        ),
     )
     if isinstance(records, str):
         return AssemblyFailure(records, evidence_event)
@@ -1607,9 +1636,9 @@ def _assemble_and_propose(
 
 def _propose_and_trace(
     assembly: CWAAssemblyResult,
+    generator: DeprovisionProposalGenerator | ClusterEditProposalGenerator,
     clock: Callable[[], datetime],
 ) -> tuple[Proposal | None, str | None, CWATrace]:
-    generator = DeprovisionProposalGenerator()
     created_at = clock()
     proposal, refusal_error = _result_or_refusal(
         lambda: generator.generate(
@@ -1682,7 +1711,7 @@ def _dispatch_command(
         CommandType.PROPOSE_PATCH,
         {
             "query": args.query,
-            "proposal_type": ProposalType.DEPROVISION.value,
+            "proposal_type": args.proposal_type,
             "cluster_name": args.cluster,
             "history": [],
         },

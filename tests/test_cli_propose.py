@@ -46,10 +46,11 @@ def propose_arguments(
     tmp_path: Path,
     *roles: str,
     cluster: str = "example",
+    command: str = "deprovision",
 ) -> list[str]:
     arguments = [
         "propose",
-        "deprovision",
+        command,
         "--cluster",
         cluster,
         "--fleet-clusters",
