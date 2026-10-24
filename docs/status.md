@@ -30,7 +30,7 @@ Validation summary, recorded at Aura commit `6dc0eb3`:
 
 ## Phase 2 Prerequisites
 
-Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented; P2 remains. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`. P4 adds `propose deprovision`, authorized for `proposer` and `admin`, which generates the deprovision sentinel proposal type. `proposal status` reports Git staleness of stored proposals for `viewer`, `proposer`, and `admin`. The operator published through `4c2d2b5`, and CI run `40036888279` passed. Automated tests at `8326732`: 480 passed locally and under `act`, with zero gating quality findings. The shared failure-injection matrix and invariant check cover every command. The operator validated `propose deprovision` against the live hub on 2026-10-23 with `virt-cookbook`; see [Live Proposal Validation](validation.md#live-proposal-validation). Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
+Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented; P2 remains. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`. P4 adds `propose deprovision`, authorized for `proposer` and `admin`, which generates the deprovision sentinel proposal type. `proposal status` reports Git staleness of stored proposals for `viewer`, `proposer`, and `admin`. The operator published through `4c2d2b5`, and CI run `40036888279` passed. `propose cluster-edit` generates `metadata.yaml` backfill proposals and is not yet validated live. Automated tests at `9ae9a18`: 526 passed locally and under `act`, with zero gating quality findings. The shared failure-injection matrix and invariant check cover every command. The operator validated `propose deprovision` against the live hub on 2026-10-23 with `virt-cookbook`; see [Live Proposal Validation](validation.md#live-proposal-validation). Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
 
 | Check | Result |
 | --- | --- |
@@ -72,7 +72,8 @@ Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-prop
 | Deprovision proposals | Generates a deterministic, digest-verified proposal that adds only `deprovision/<id>-archive` as a standalone commit, or refuses with every unmet precondition; stores proposal, CWA, and `proposal_created` audit records and writes nothing to Git |
 | Proposal staleness | Checks stored proposals against one pinned `fleet-clusters` `HEAD` and fails on tampered or malformed records; Git-only |
 | Authorization | Allows Phase 1 commands for `viewer` and `admin`, `propose` commands for `proposer` and `admin`, and `proposal status` for `viewer`, `proposer`, and `admin`; supplied `--role` values replace the `viewer` default |
-| CLI | Provides `inventory list`, `workflow inspect`, `diagnose state`, `propose deprovision`, and `proposal status` |
+| Cluster-edit proposals | Generates a deterministic proposal that adds `metadata.yaml` with all four `fleet` keys, or appends the missing keys, from ClusterDeployment, post-provision PipelineRun, or `fleet` default values; refuses on any contradictory evidence |
+| CLI | Provides `inventory list`, `workflow inspect`, `diagnose state`, `propose deprovision`, `propose cluster-edit`, and `proposal status` |
 
 ## Current Model Behavior
 
@@ -89,7 +90,7 @@ The model protocol remains provider-independent. A future provider must consume 
 
 - External model provider integration.
 - Natural-language chat interface.
-- Scaffold, cluster-edit, and post-provision rerun proposals.
+- Scaffold and post-provision rerun proposals.
 - Applying patches, creating commits, or opening pull requests.
 - Pipeline or Git execution.
 - Portal integration.
@@ -101,6 +102,10 @@ The model protocol remains provider-independent. A future provider must consume 
 
 | Commit | Change |
 | --- | --- |
+| `9ae9a18` | Added the `propose cluster-edit` command |
+| `2a79664` | Generated cluster-edit metadata backfill proposals |
+| `0756229` | Restricted cluster edits to appending metadata keys |
+| `72576ac` | Recorded metadata sources for cluster edits |
 | `8326732` | Made permission tests root-safe for `act` |
 | `b32a67b` | Hardened the failure matrix and invariant checks |
 | `17b06d3` | Removed a linked record when the directory sync fails |
@@ -163,4 +168,5 @@ The model protocol remains provider-independent. A future provider must consume 
 Phase 1 is published. Remaining work:
 
 1. `fleet-clusters` owners backfill `metadata.yaml` and its `platform` key for the definitions listed in [Open Questions](plans/08-open-questions.md#fleet-clusters-data), pushing any added `metadata.yaml` with `[skip-provision]` in the head commit message, and decide how to remediate the stranded deprovision sentinels.
-2. Implement the remaining [Phase 2](plans/05-phase-2-proposals.md) prerequisite P2, then the scaffold, cluster-edit, and post-provision rerun proposal types, each under the development workflow. P0, P1, P3, and P4 are done.
+2. Validate `propose cluster-edit` against the live hub with operator approval.
+3. Implement the remaining [Phase 2](plans/05-phase-2-proposals.md) prerequisite P2, then the scaffold and post-provision rerun proposal types, each under the development workflow. P0, P1, P3, and P4 are done.

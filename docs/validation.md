@@ -11,10 +11,10 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-480 passed
+526 passed
 ```
 
-Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `8326732`, passed with 480 tests on Python 3.13.17 in `linux/arm64`.
+Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `9ae9a18`, passed with 526 tests on Python 3.13.17 in `linux/arm64`.
 
 Run diff hygiene:
 
@@ -57,6 +57,7 @@ The test classes every change must include are defined in [Development Workflow]
 - Proposal staleness collection against one pinned `HEAD`, requested-ID selection, and rejection of missing, misnamed, or tampered records.
 - `proposal status` authorization for `viewer`, `proposer`, and `admin`, output, and failure records, including missing and unreadable stores.
 - Write order: a failed trace, audit, or proposal write leaves no proposal file, and `command_failed` links to the last stored audit event.
+- Cluster-edit generation over real temporary Git trees: added and appended `metadata.yaml` files that apply with `git apply --check`, preserve existing bytes, and leave a complete definition; values from runs and defaults; every refusal reason.
 - Deprovision contract rejection of non-empty or non-regular sentinel files.
 - The failure-injection matrix: every command's documented write order, a failure of each write in turn before writing and after linking, and each route's read errors, with invariants I1–I4 checked after every run.
 - Fixture validity and secret redaction, including field spelling variants.
@@ -249,6 +250,22 @@ Then rerun the command with new idempotency keys for a deprovisioned cluster (`-
 | `fleet-clusters` | `git status --porcelain` is empty |
 
 Latest validation, run by the operator on 2026-10-23 against Aura commit `c5abafb` with `virt-cookbook` as the live cluster and `0171d46a-scopedaws` for refusal: every check above produced the expected result.
+
+### Cluster-Edit Proposals
+
+Not yet run live. Choose a live cluster whose definition lacks `metadata.yaml` or some of its keys, with no deprovision sentinel, and run [`propose cluster-edit`](cli.md#propose-cluster-edit) with a new idempotency key. Then check the proposal as for deprovision:
+
+```bash
+jq -r .patch "$OUT/proposal.json" | git -C ../fleet-clusters apply --check -v -
+```
+
+| Check | Expected result |
+| --- | --- |
+| Patch | Applies; changes only `provision/<id>/metadata.yaml`; adds it or only appends lines |
+| Values | `summary` names each key's source; run values match the latest `post-provision` PipelineRun parameters |
+| Commit message | Contains `[skip-provision]` only when the patch adds the file |
+| A cluster with every key | Exit code `2`; `already declares every key` |
+| `fleet-clusters` | `git status --porcelain` is empty |
 
 ## Idempotency Validation
 

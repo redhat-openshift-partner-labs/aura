@@ -10,6 +10,7 @@
 | `workflow inspect` | `workflow.inspect` | `WorkflowService` | `WorkflowInventoryCollector` |
 | `diagnose state` | `diagnose.state` | `ClusterStateService` | `ClusterStateCollector` |
 | `propose deprovision` | `propose.patch` | `ProposalService` | `ClusterStateCollector` |
+| `propose cluster-edit` | `propose.patch` | `ProposalService` | `ClusterStateCollector` selecting the latest `post-provision` run |
 | `proposal status` | `proposal.status` | `ProposalStatusService` | `ProposalStalenessCollector` |
 
 All services extend `EvidenceCommandService`. Before collection they:
@@ -87,7 +88,7 @@ PipelineRun correlation first reads `spec.params` where `name` is `cluster-name`
 
 `ClusterStateCollector` runs Git, OpenShift, and Tekton collectors for one cluster. It emits all matching Git items, whether complete, incomplete, or invalid, any matching `deprovision_sentinel` items, the matching OpenShift item, the selected PipelineRun, and a `cluster_state_correlation` item.
 
-PipelineRun selection defaults to the latest matching run by `start_time`. The `diagnose state --pipeline-run` flag selects by PipelineRun name or UID. If multiple Git definitions match, the correlation records the conflict and diagnosis refuses to proceed.
+PipelineRun selection defaults to the latest matching run by `start_time`. The `diagnose state --pipeline-run` flag selects by PipelineRun name or UID. A collector built with `pipeline_name` considers only runs of that Pipeline; `propose cluster-edit` uses `post-provision`. If multiple Git definitions match, the correlation records the conflict and diagnosis refuses to proceed.
 
 `oc` process failures are converted to `OpenShiftCLIError` before they reach command services. The CLI reports the resource, exit code, and final `oc` error line without printing partial JSON.
 
@@ -116,6 +117,10 @@ Process error contracts:
 4. Otherwise it returns a deterministic `Proposal` whose ID derives from the command and CWA snapshot.
 
 The CLI stores the CWA snapshot, the CWA trace, the `context_assembled` and `proposal_created` audit events, and only then the proposal. If any earlier write fails, the command fails and no proposal file exists, so a stored proposal always has its trace and audit events. The trace records provider `aura`, model name `deprovision-sentinel-deterministic`, and the proposal digest as its response digest. Incomplete and invalid definitions do not block a deprovision proposal, because deprovision acts on the cluster name.
+
+### Cluster-edit proposals
+
+`propose cluster-edit` collects cluster state like `propose deprovision`, but selects the latest `post-provision` PipelineRun. `ClusterEditProposalGenerator` reads only the CWA snapshot. It applies the shared live-cluster preconditions, requires a definition that is complete or missing only `metadata.yaml`, and derives each missing key from evidence or the `fleet` `9464f0b` default. The CLI stores records in the same order as for deprovision, with the proposal last.
 
 ### Proposal staleness
 

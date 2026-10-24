@@ -199,6 +199,33 @@ The command prints the stored `Proposal`. Its `patch` adds only the empty file `
 
 If a precondition is unmet, the command exits with code `2`, prints `proposal refused:` and every unmet precondition to standard error, stores no proposal, and still stores evidence, CWA, and audit records. A `--cluster` value that is not a DNS-1123 label is rejected before collection.
 
+## `propose cluster-edit`
+
+Flags are the same as [`propose deprovision`](#propose-deprovision); the `--query` default is `propose cluster edit`. Supply `--role proposer` or `--role admin`.
+
+Example:
+
+```bash
+UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura propose cluster-edit \
+  --cluster <cluster> \
+  --fleet-clusters ../fleet-clusters \
+  --openshift-kubeconfig "$HOME/.kube/aura-readonly" \
+  --snapshot-dir ./local/snapshots \
+  --audit-dir ./local/audit \
+  --cwa-dir ./local/cwa \
+  --proposal-dir ./local/proposals \
+  --role proposer \
+  --operator operator@example.com \
+  --idempotency-key propose-cluster-edit-001 \
+  --command-dir ./local/commands
+```
+
+The command prints the stored `Proposal`. Its `patch` either adds `provision/<id>/metadata.yaml` with `platform`, `aws-credentials-mode`, `htpasswd-provider-name`, and `openshift-ai-version`, or appends the keys an existing `metadata.yaml` lacks without changing any existing line. Its `summary` names the source of every value: the ClusterDeployment patch, the latest `post-provision` PipelineRun, or the `fleet` default.
+
+A patch that adds `metadata.yaml` has a commit message containing `[skip-provision]`. That commit must be pushed alone as the push head commit, so squash or fast-forward it; a merge commit becomes the head commit and does not carry the marker. A patch that only appends keys starts no pipeline.
+
+Unmet preconditions refuse the command with every reason, as for `propose deprovision`. See [Cluster-Edit Proposal](evidence.md#cluster-edit-proposal) for the value rules and refusal reasons.
+
 ## `proposal status`
 
 | Flag | Required | Default | Acceptable values |

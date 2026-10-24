@@ -19,6 +19,7 @@ Aura is a sidecar to the existing lifecycle systems. It does not replace RabbitM
 - Redact secret fields across case and separator spellings before storage.
 - Generate deterministic, evidence-linked deprovision proposals for `proposer` or `admin` without writing Git.
 - Report whether stored proposals are stale against `fleet-clusters` `HEAD`.
+- Generate `metadata.yaml` backfill proposals that add the keys a live cluster's definition lacks.
 
 ## Non-Goals
 
