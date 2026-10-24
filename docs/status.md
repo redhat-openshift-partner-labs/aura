@@ -30,7 +30,7 @@ Validation summary, recorded at Aura commit `6dc0eb3`:
 
 ## Phase 2 Prerequisites
 
-Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented. P2's Pipeline definition collector is implemented; its namespaced Role and RoleBinding in [`deploy/`](../deploy) were applied and validated on 2026-10-24. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`. P4 adds `propose deprovision`, authorized for `proposer` and `admin`, which generates the deprovision sentinel proposal type. `proposal status` reports Git staleness of stored proposals for `viewer`, `proposer`, and `admin`. The operator published through `4c2d2b5`, and CI run `40036888279` passed. `propose cluster-edit` generates `metadata.yaml` backfill proposals; the operator validated it against the live hub on 2026-10-24. `propose post-provision-rerun` generates rerun proposals and is not yet validated live. Automated tests at `590d242`: 613 passed locally and under `act`, with zero gating quality findings. The shared failure-injection matrix and invariant check cover every command. The operator validated `propose deprovision` against the live hub on 2026-10-23 with `virt-cookbook`; see [Live Proposal Validation](validation.md#live-proposal-validation). Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
+Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented. P2's Pipeline definition collector is implemented; its namespaced Role and RoleBinding in [`deploy/`](../deploy) were applied and validated on 2026-10-24. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`. P4 adds `propose deprovision`, authorized for `proposer` and `admin`, which generates the deprovision sentinel proposal type. `proposal status` reports Git staleness of stored proposals for `viewer`, `proposer`, and `admin`. The operator published through `4c2d2b5`, and CI run `40036888279` passed. `propose cluster-edit` generates `metadata.yaml` backfill proposals; the operator validated it against the live hub on 2026-10-24. `propose post-provision-rerun` generates rerun proposals and is not yet validated live. Automated tests at `75d149b`: 632 passed locally and under `act`, with zero gating quality findings. The shared failure-injection matrix and invariant check cover every command. The operator validated `propose deprovision` against the live hub on 2026-10-23 with `virt-cookbook`; see [Live Proposal Validation](validation.md#live-proposal-validation). Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
 
 | Check | Result |
 | --- | --- |
@@ -105,6 +105,10 @@ The model protocol remains provider-independent. A future provider must consume 
 
 | Commit | Change |
 | --- | --- |
+| `75d149b` | Failed cleanly when a generated proposal breaks the contract |
+| `17d7fa3` | Refused rerun overlap and foreign source runs |
+| `5029b4b` | Mirrored rerun allow-lists in the contract |
+| `21c703e` | Tolerated zero values and reported unfinished runs |
 | `590d242` | Added the `propose post-provision-rerun` command |
 | `6783e45` | Generated post-provision rerun proposals |
 | `436291d` | Tightened the post-provision rerun contract |

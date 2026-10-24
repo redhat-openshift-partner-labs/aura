@@ -11,10 +11,10 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-613 passed
+632 passed
 ```
 
-Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `590d242`, passed with 613 tests on Python 3.13.17 in `linux/arm64`.
+Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `75d149b`, passed with 632 tests on Python 3.13.17 in `linux/arm64`.
 
 Run diff hygiene:
 
@@ -326,9 +326,10 @@ jq '.pipeline_run' "$OUT/rerun.json"
 | Check | Expected result |
 | --- | --- |
 | Manifest | `generateName: post-provision-<id>-` in `openshift-pipelines`; the source run's parameters, workspaces, and `taskRunTemplate`; the two `aura.openshiftpartnerlabs.com` annotations |
+| Stored source run | `oc get pipelinerun <source> -n openshift-pipelines -o json` contains no field the evidence reports in `unsupported_fields` beyond zero values; the proposal is not refused for fields a rerun cannot copy |
 | Source | `summary` names the latest finished `post-provision` run, or the `--pipeline-run` given |
 | Parameters | Match the source run's `spec.params` (`oc get pipelinerun <name> -n openshift-pipelines -o json`) |
-| A cluster whose latest run is running | Exit code `2`; `has not finished` |
+| A cluster with any unfinished `post-provision` run | Exit code `2`; `have not finished` |
 | Hub | No new PipelineRun appears |
 
 ## Idempotency Validation

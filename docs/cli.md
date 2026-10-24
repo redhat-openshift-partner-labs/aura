@@ -292,6 +292,7 @@ An `oc` failure is reported as a concise CLI error with exit code `2`; no partia
 Additional error contracts:
 
 - Blank `--operator` and `--idempotency-key` values are rejected before collection.
+- A proposal generator output that the `Proposal` contract rejects exits `2` with `generated proposal is invalid:` and stores a `failed` command record.
 - Existing non-directory record paths are rejected before collection.
 - A missing Git checkout is reported as an unusable checkout.
 - Git subprocess failures report the exit code and final diagnostic line.
