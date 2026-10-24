@@ -11,10 +11,10 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-553 passed
+559 passed
 ```
 
-Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `fcd86d1`, passed with 553 tests on Python 3.13.17 in `linux/arm64`.
+Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `9ca2a10`, passed with 559 tests on Python 3.13.17 in `linux/arm64`.
 
 Run diff hygiene:
 
@@ -281,7 +281,7 @@ Latest validation, run by the operator on 2026-10-24 against Aura commit `dfe32d
 
 ## Pipeline Definition Validation
 
-After the operator applies the P2 Role and RoleBinding from [Security](security.md#minimum-rbac), confirm access:
+After the operator applies `deploy/` (`oc apply -k deploy`, see [Security](security.md#minimum-rbac)), confirm access:
 
 ```bash
 oc --kubeconfig "$AURA_KUBECONFIG" auth can-i list pipelines.tekton.dev -n openshift-pipelines

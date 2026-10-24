@@ -115,6 +115,7 @@ Leave these untracked local artifacts alone unless the user explicitly asks othe
 - Tests force failures deterministically, for example by pre-creating a record at its deterministic ID, and restore any permissions they change.
 - Tests never rely on file modes to make a path unreadable, because root ignores them; use `deny_access` from `tests/failure_injection.py`.
 - A change that touches a project invariant in `docs/development.md` has a test asserting it.
+- A collector that reads a new Kubernetes resource adds a `list`-only grant to `deploy/`; `tests/test_deploy_manifests.py` enforces it.
 
 ## Security Guidance
 

@@ -30,7 +30,7 @@ Validation summary, recorded at Aura commit `6dc0eb3`:
 
 ## Phase 2 Prerequisites
 
-Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented. P2's Pipeline definition collector is implemented; its namespaced Role and RoleBinding in [Security](security.md#minimum-rbac) await the operator. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`. P4 adds `propose deprovision`, authorized for `proposer` and `admin`, which generates the deprovision sentinel proposal type. `proposal status` reports Git staleness of stored proposals for `viewer`, `proposer`, and `admin`. The operator published through `4c2d2b5`, and CI run `40036888279` passed. `propose cluster-edit` generates `metadata.yaml` backfill proposals; the operator validated it against the live hub on 2026-10-24. Automated tests at `fcd86d1`: 553 passed locally and under `act`, with zero gating quality findings. The shared failure-injection matrix and invariant check cover every command. The operator validated `propose deprovision` against the live hub on 2026-10-23 with `virt-cookbook`; see [Live Proposal Validation](validation.md#live-proposal-validation). Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
+Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented. P2's Pipeline definition collector is implemented; its namespaced Role and RoleBinding in [`deploy/`](../deploy) await the operator. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`. P4 adds `propose deprovision`, authorized for `proposer` and `admin`, which generates the deprovision sentinel proposal type. `proposal status` reports Git staleness of stored proposals for `viewer`, `proposer`, and `admin`. The operator published through `4c2d2b5`, and CI run `40036888279` passed. `propose cluster-edit` generates `metadata.yaml` backfill proposals; the operator validated it against the live hub on 2026-10-24. Automated tests at `9ca2a10`: 559 passed locally and under `act`, with zero gating quality findings. The shared failure-injection matrix and invariant check cover every command. The operator validated `propose deprovision` against the live hub on 2026-10-23 with `virt-cookbook`; see [Live Proposal Validation](validation.md#live-proposal-validation). Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
 
 | Check | Result |
 | --- | --- |
@@ -103,6 +103,7 @@ The model protocol remains provider-independent. A future provider must consume 
 
 | Commit | Change |
 | --- | --- |
+| `9ca2a10` | Added read-only OpenShift RBAC manifests in `deploy/` |
 | `fcd86d1` | Failed closed on Pipeline definitions and stopped storing defaults |
 | `d6ef7b7` | Read Tekton Pipeline parameter definitions |
 | `dfe32d4` | Required whole-file append-only metadata edits |
@@ -173,5 +174,5 @@ The model protocol remains provider-independent. A future provider must consume 
 Phase 1 is published. Remaining work:
 
 1. `fleet-clusters` owners backfill `metadata.yaml` and its `platform` key for the definitions listed in [Open Questions](plans/08-open-questions.md#fleet-clusters-data), pushing any added `metadata.yaml` with `[skip-provision]` in the head commit message, and decide how to remediate the stranded deprovision sentinels.
-2. The operator applies the P2 Role and RoleBinding in `openshift-pipelines` and validates the Pipeline definition collector.
+2. The operator applies `deploy/` with `oc apply -k deploy` and validates the Pipeline definition collector.
 3. Implement post-provision rerun and scaffold proposals, each under the development workflow.

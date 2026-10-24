@@ -112,6 +112,7 @@ Agent guidance is in [`AGENTS.md`](AGENTS.md). Claude-specific guidance is in [`
 | `src/aura/proposals.py` | Proposal contract |
 | `src/aura/*_store.py` | Append-only JSON stores |
 | `tests/` | Contract, collector, service, CLI, and fixture tests |
+| `deploy/` | Read-only OpenShift RBAC manifests, applied with `oc apply -k deploy` |
 | `docs/plans/` | Architecture and phased implementation plans |
 
 ## Protected Repositories

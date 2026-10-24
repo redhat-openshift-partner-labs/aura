@@ -58,7 +58,7 @@ These must land before proposal types that depend on them:
 | --- | --- | --- | --- |
 | P0 | Git collector reads `deprovision/` sentinels, records whether each has the `-archive` suffix, and inventory and diagnosis distinguish pending, archive-pending, stranded, leftover, and orphaned deprovisions | Deprovision sentinel, inventory accuracy | Done |
 | P1 | Tekton collector records redacted `spec.params` and workspace bindings, not only `cluster-name` | Post-provision rerun | Done |
-| P2 | Read-only RBAC adds `list` on `pipelines.tekton.dev` in `openshift-pipelines`, and a collector reads Pipeline parameter definitions | Post-provision rerun | Collector done; Role and RoleBinding in `docs/security.md` await the operator |
+| P2 | Read-only RBAC adds `list` on `pipelines.tekton.dev` in `openshift-pipelines`, and a collector reads Pipeline parameter definitions | Post-provision rerun | Collector done; Role and RoleBinding in `deploy/` await the operator |
 | P3 | Append-only proposal store and `Proposal` contract | All proposal types | Done |
 | P4 | `propose` CLI commands, authorized for `proposer` and `admin` | All proposal types | Done |
 

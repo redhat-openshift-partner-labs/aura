@@ -57,63 +57,27 @@ Kubeconfig rules:
 
 ## Minimum RBAC
 
-The service account needs only `list` on five resources. Aura always lists resources and does not request individual objects by name. Pipelines are read only in `openshift-pipelines`, so that grant is a namespaced Role rather than part of the ClusterRole:
+The service account needs only `list` on five resources. Aura always lists resources and does not request individual objects by name. The manifests are in [`deploy/`](../deploy) and target the OpenShift hub:
 
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: aura-readonly
-rules:
-- apiGroups: ["hive.openshift.io"]
-  resources: ["clusterdeployments"]
-  verbs: ["list"]
-- apiGroups: ["cluster.open-cluster-management.io"]
-  resources: ["managedclusters"]
-  verbs: ["list"]
-- apiGroups: ["tekton.dev"]
-  resources: ["pipelineruns", "taskruns"]
-  verbs: ["list"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: aura-readonly
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: aura-readonly
-subjects:
-- kind: ServiceAccount
-  name: aura-readonly
-  namespace: aura
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: aura-readonly-pipelines
-  namespace: openshift-pipelines
-rules:
-- apiGroups: ["tekton.dev"]
-  resources: ["pipelines"]
-  verbs: ["list"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: aura-readonly-pipelines
-  namespace: openshift-pipelines
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: aura-readonly-pipelines
-subjects:
-- kind: ServiceAccount
-  name: aura-readonly
-  namespace: aura
+| Manifest | Grants |
+| --- | --- |
+| `namespace.yaml`, `serviceaccount.yaml` | The `aura` namespace and the `aura-readonly` service account |
+| `clusterrole.yaml`, `clusterrolebinding.yaml` | `list` on `clusterdeployments.hive.openshift.io`, `managedclusters.cluster.open-cluster-management.io`, and `pipelineruns` and `taskruns` in `tekton.dev`, cluster-wide |
+| `pipelines-role.yaml`, `pipelines-rolebinding.yaml` | `list` on `pipelines.tekton.dev` in `openshift-pipelines` only, for prerequisite P2 |
+
+`tests/test_deploy_manifests.py` keeps every rule `list`-only and the granted resources equal to the resources the `oc` clients query, so a collector that reads a new resource fails the suite until the manifests grant it. The manifests create no token Secret; build the read-only kubeconfig from a token for the service account as before.
+
+Preview the change on the hub without applying it, then apply it as a cluster administrator:
+
+```bash
+oc apply -k deploy --dry-run=server
 ```
 
-The Pipeline Role and RoleBinding were added on 2026-10-24 for prerequisite P2. Until the operator applies them, only the Pipeline definition collector fails; every current command works without them.
+```bash
+oc apply -k deploy
+```
+
+If `aura-readonly` objects already exist, `apply` replaces their rules with these. Until the Pipeline Role and RoleBinding are applied, only the Pipeline definition collector fails; every current command works without them.
 
 Verify authorization:
 
