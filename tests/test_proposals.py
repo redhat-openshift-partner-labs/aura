@@ -12,7 +12,17 @@ from aura.proposals import Proposal, patch_changes
 
 
 BASE_COMMIT = "492bc8e07afddcd557441ddb7d72158de60ab8cb"
+FULL_METADATA = (
+    "platform: aws\naws-credentials-mode: legacy\n"
+    "htpasswd-provider-name: htpasswd\nopenshift-ai-version: v3"
+)
+MISSING_KEYS = (
+    "+platform: aws",
+    "+aws-credentials-mode: legacy",
+    "+openshift-ai-version: v3",
+)
 CLUSTER = "0171d46a-scopedaws"
+METADATA_PATH = f"provision/{CLUSTER}/metadata.yaml"
 
 
 def added_file(path: str, content: str = "") -> str:
@@ -22,7 +32,25 @@ def added_file(path: str, content: str = "") -> str:
         "index 0000000..e69de29",
     ]
     if content:
-        lines += ["--- /dev/null", f"+++ b/{path}", "@@ -0,0 +1 @@", f"+{content}"]
+        body = content.splitlines()
+        lines += [
+            "--- /dev/null",
+            f"+++ b/{path}",
+            f"@@ -0,0 +1,{len(body)} @@",
+            *(f"+{line}" for line in body),
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def hunk_patch(path: str, *hunks: tuple[str, ...]) -> str:
+    lines = [
+        f"diff --git a/{path} b/{path}",
+        "index 1111111..2222222 100644",
+        f"--- a/{path}",
+        f"+++ b/{path}",
+    ]
+    for hunk in hunks:
+        lines += list(hunk)
     return "\n".join(lines) + "\n"
 
 
@@ -134,7 +162,7 @@ TYPE_FIELDS: dict[str, dict[str, Any]] = {
         "trigger_effect": [],
         "reversibility": "reversible",
         "commit_message": f"fix: backfill metadata for {CLUSTER} [skip-provision]",
-        "patch": added_file(f"provision/{CLUSTER}/metadata.yaml", "platform: aws"),
+        "patch": added_file(f"provision/{CLUSTER}/metadata.yaml", FULL_METADATA),
     },
     "post_provision_rerun": {
         "proposal_type": "post_provision_rerun",
@@ -171,6 +199,8 @@ def test_proposal_accepts_cluster_edit_that_only_appends_keys(
             f"provision/{CLUSTER}/metadata.yaml",
             "htpasswd-provider-name: Red Hat",
             "platform: aws",
+            "aws-credentials-mode: legacy",
+            "openshift-ai-version: v3",
             newline_at_end=newline_at_end,
         ),
     )
@@ -255,6 +285,111 @@ def test_proposal_rejects_changed_content_under_old_digest() -> None:
             "cluster_edit",
             {"patch": modified_file(f"provision/{CLUSTER}/metadata.yaml")},
             "cluster_edit proposal may not change existing lines",
+        ),
+        (
+            "cluster_edit",
+            {
+                "patch": hunk_patch(
+                    METADATA_PATH,
+                    (
+                        "@@ -1,4 +1,5 @@",
+                        *(f" {line}" for line in FULL_METADATA.splitlines()),
+                        "+aws-credentials-mode: scoped",
+                    ),
+                )
+            },
+            "cluster_edit proposal may only add keys metadata.yaml lacks: "
+            "['aws-credentials-mode']",
+        ),
+        (
+            "cluster_edit",
+            {
+                "patch": hunk_patch(
+                    METADATA_PATH,
+                    (
+                        "@@ -1,1 +1,4 @@",
+                        *MISSING_KEYS,
+                        " htpasswd-provider-name: Red Hat",
+                    ),
+                )
+            },
+            "cluster_edit proposal may only append to the end of",
+        ),
+        (
+            "cluster_edit",
+            {
+                "patch": hunk_patch(
+                    METADATA_PATH,
+                    (
+                        "@@ -2,1 +2,4 @@",
+                        " htpasswd-provider-name: Red Hat",
+                        *MISSING_KEYS,
+                    ),
+                )
+            },
+            "must change metadata.yaml in one hunk that starts at line 1",
+        ),
+        (
+            "cluster_edit",
+            {
+                "patch": hunk_patch(
+                    METADATA_PATH,
+                    ("@@ -1,1 +1,2 @@", " a: b", "+platform: aws"),
+                    ("@@ -5,1 +6,2 @@", " c: d", "+openshift-ai-version: v3"),
+                )
+            },
+            "must change metadata.yaml in one hunk that starts at line 1",
+        ),
+        (
+            "cluster_edit",
+            {
+                "patch": hunk_patch(
+                    METADATA_PATH,
+                    (
+                        "@@ -1,1 +1,5 @@",
+                        " htpasswd-provider-name: Red Hat",
+                        *MISSING_KEYS,
+                        "+extra: x",
+                    ),
+                )
+            },
+            "cluster_edit proposal may only add the metadata keys fleet "
+            "reads: ['extra']",
+        ),
+        (
+            "cluster_edit",
+            {
+                "patch": hunk_patch(
+                    METADATA_PATH,
+                    (
+                        "@@ -1,1 +1,2 @@",
+                        " htpasswd-provider-name: Red Hat",
+                        "+platform: aws",
+                    ),
+                )
+            },
+            "metadata.yaml must declare platform, aws-credentials-mode, "
+            "htpasswd-provider-name, openshift-ai-version",
+        ),
+        (
+            "cluster_edit",
+            {"patch": added_file(METADATA_PATH, "platform: aws")},
+            "metadata.yaml must declare platform, aws-credentials-mode, "
+            "htpasswd-provider-name, openshift-ai-version",
+        ),
+        (
+            "cluster_edit",
+            {
+                "patch": hunk_patch(
+                    METADATA_PATH,
+                    (
+                        "@@ -1,1 +1,4 @@",
+                        " {htpasswd-provider-name: x}",
+                        *MISSING_KEYS,
+                    ),
+                )
+            },
+            "metadata.yaml in a cluster_edit patch must be a YAML mapping",
         ),
         (
             "cluster_edit",

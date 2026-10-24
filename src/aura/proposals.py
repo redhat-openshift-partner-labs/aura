@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import re
-from collections import Counter
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
+import yaml
 from pydantic import (
     AwareDatetime,
     BaseModel,
@@ -26,6 +26,12 @@ SKIP_PROVISION = "[skip-provision]"
 SKIP_DEPROVISION = "[skip-deprovision]"
 RERUN_NAMESPACE = "openshift-pipelines"
 RERUN_PIPELINE = "post-provision"
+METADATA_KEYS = (
+    "platform",
+    "aws-credentials-mode",
+    "htpasswd-provider-name",
+    "openshift-ai-version",
+)
 CLUSTER_NAME_PATTERN = r"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
 
 
@@ -92,6 +98,8 @@ EXPECTED_REVERSIBILITY: dict[ProposalType, Reversibility] = {
 }
 
 _DIFF_HEADER = re.compile(r"^diff --git a/(\S+) b/(\S+)$")
+_HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@")
+_NO_NEWLINE = "\\ No newline at end of file"
 
 
 def deprovision_sentinel_patch(cluster_name: str) -> str:
@@ -270,29 +278,122 @@ def _validate_patch_scope(
 
 
 def _validate_metadata_edit(patch: str, metadata: str) -> None:
-    others = [path for path, _ in patch_changes(patch) if path != metadata]
+    """Require a whole-file edit that only appends missing metadata keys.
+
+    A modify patch must be one hunk from line 1 with no trailing context,
+    which Git anchors to the whole file, so the patch alone shows the
+    file before and after the change.
+    """
+
+    changes = patch_changes(patch)
+    others = [path for path, _ in changes if path != metadata]
     if others:
         raise ValueError(
             f"cluster_edit proposal may change only {metadata}: {others}"
         )
-    removed: Counter[str] = Counter()
-    added: Counter[str] = Counter()
-    in_hunk = False
-    for line in patch.splitlines():
-        if line.startswith("diff --git "):
-            in_hunk = False
-        elif line.startswith("@@"):
-            in_hunk = True
-        elif in_hunk and line.startswith("-"):
-            removed[line[1:]] += 1
-        elif in_hunk and line.startswith("+"):
-            added[line[1:]] += 1
-    # A removed line re-added unchanged only gains a final newline.
-    if removed - added:
+    hunks = _hunks(patch)
+    if changes[0][1] == "added":
+        existing: list[str] = []
+        appended = [
+            line[1:]
+            for hunk in hunks
+            for line in hunk[1:]
+            if line.startswith("+")
+        ]
+    else:
+        existing, appended = _appended_lines(hunks)
+    before = _metadata_mapping(existing)
+    added = _metadata_mapping(appended)
+    unknown = sorted(set(added) - set(METADATA_KEYS))
+    if unknown:
         raise ValueError(
-            "cluster_edit proposal may not change existing lines in "
-            f"{metadata}"
+            "cluster_edit proposal may only add the metadata keys fleet "
+            f"reads: {unknown}"
         )
+    repeated = sorted(set(added) & set(before))
+    if repeated:
+        raise ValueError(
+            "cluster_edit proposal may only add keys metadata.yaml lacks: "
+            f"{repeated}"
+        )
+    after = _metadata_mapping([*existing, *appended])
+    if after != {**before, **added}:
+        raise ValueError(
+            "cluster_edit append changes how metadata.yaml parses"
+        )
+    if set(METADATA_KEYS) - set(after):
+        raise ValueError(
+            f"metadata.yaml must declare {', '.join(METADATA_KEYS)}"
+        )
+
+
+def _hunks(patch: str) -> list[list[str]]:
+    hunks: list[list[str]] = []
+    for line in patch.splitlines():
+        if line.startswith("@@"):
+            hunks.append([line])
+        elif hunks:
+            hunks[-1].append(line)
+    return hunks
+
+
+def _appended_lines(hunks: list[list[str]]) -> tuple[list[str], list[str]]:
+    header = _HUNK_HEADER.match(hunks[0][0]) if len(hunks) == 1 else None
+    if header is None or header.group(1) != "1":
+        raise ValueError(
+            "cluster_edit proposal must change metadata.yaml in one hunk "
+            "that starts at line 1"
+        )
+    existing: list[str] = []
+    appended: list[str] = []
+    body = hunks[0][1:]
+    ended = False
+    index = 0
+    while index < len(body):
+        line = body[index]
+        if line.startswith(" ") and not ended:
+            existing.append(line[1:])
+        elif line.startswith("-") and not ended:
+            # Only an unterminated last line may be re-added with a newline.
+            if body[index + 1 : index + 3] != [_NO_NEWLINE, f"+{line[1:]}"]:
+                raise ValueError(
+                    "cluster_edit proposal may not change existing lines in "
+                    "metadata.yaml"
+                )
+            existing.append(line[1:])
+            ended = True
+            index += 2
+        elif line.startswith("+"):
+            appended.append(line[1:])
+            ended = True
+        else:
+            raise ValueError(
+                "cluster_edit proposal may only append to the end of "
+                "metadata.yaml"
+            )
+        index += 1
+    if len(existing) != int(header.group(2) or 1):
+        raise ValueError(
+            "cluster_edit proposal must change metadata.yaml in one hunk "
+            "that starts at line 1"
+        )
+    return existing, appended
+
+
+def _metadata_mapping(lines: list[str]) -> dict[str, Any]:
+    try:
+        document = yaml.safe_load("\n".join(lines)) if lines else {}
+    except yaml.YAMLError as error:
+        raise ValueError(
+            "metadata.yaml in a cluster_edit patch must be a YAML mapping"
+        ) from error
+    if document is None:
+        return {}
+    if not isinstance(document, dict):
+        raise ValueError(
+            "metadata.yaml in a cluster_edit patch must be a YAML mapping"
+        )
+    return document
 
 
 def _validate_commit_message(
@@ -360,6 +461,7 @@ def _validate_rerun_proposal(proposal: Proposal) -> None:
 
 __all__ = [
     "CLUSTER_NAME_PATTERN",
+    "METADATA_KEYS",
     "EXPECTED_REVERSIBILITY",
     "EXPECTED_TRIGGER_EFFECTS",
     "GIT_PROPOSAL_TYPES",

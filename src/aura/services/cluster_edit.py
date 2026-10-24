@@ -15,6 +15,7 @@ from aura.cwa import CWASnapshot
 from aura.proposals import (
     EXPECTED_REVERSIBILITY,
     EXPECTED_TRIGGER_EFFECTS,
+    METADATA_KEYS,
     SKIP_PROVISION,
     Proposal,
     ProposalType,
@@ -29,12 +30,9 @@ from aura.services.proposal import (
 
 
 FLEET_DEFAULTS_COMMIT = "9464f0b"
-METADATA_DEFAULTS = {
-    "platform": "aws",
-    "aws-credentials-mode": "legacy",
-    "htpasswd-provider-name": "htpasswd",
-    "openshift-ai-version": "v3",
-}
+METADATA_DEFAULTS = dict(
+    zip(METADATA_KEYS, ("aws", "legacy", "htpasswd", "v3"), strict=True)
+)
 RUN_KEYS = ("htpasswd-provider-name", "openshift-ai-version")
 POST_PROVISION = "post-provision"
 SCOPED_TEMPLATE = "crossplane-scoped"
@@ -73,14 +71,17 @@ class ClusterEditProposalGenerator:
         definition = _single_definition(correlation, items_by_id)
         if definition is not None:
             reasons.extend(_definition_reasons(definition, cluster))
+        current = (
+            str(definition.data.get("metadata_text") or "")
+            if definition is not None
+            and definition.kind == "cluster_definition"
+            else None
+        )
+        if current is not None and "\r" in current:
+            reasons.append(f"metadata.yaml for {cluster} has CR line endings")
         if reasons or definition is None:
             raise ProposalRefused(reasons)
 
-        current = (
-            str(definition.data.get("metadata_text") or "")
-            if definition.kind == "cluster_definition"
-            else None
-        )
         existing = _mapping(current)
         openshift_id = str(correlation.data.get("openshift_evidence_id"))
         values, conflicts = _metadata_values(
@@ -151,11 +152,11 @@ def _single_definition(
 
 
 def _definition_reasons(definition: EvidenceItem, cluster: str) -> list[str]:
-    if definition.kind == "cluster_definition_invalid":
-        return [
-            f"definition for {cluster} is invalid: "
-            f"{definition.data.get('error')}"
-        ]
+    error = definition.data.get("error") or definition.data.get(
+        "remaining_files_error"
+    )
+    if error:
+        return [f"definition for {cluster} is invalid: {error}"]
     others = [
         name
         for name in definition.data.get("missing_files", [])
@@ -237,18 +238,18 @@ def _platform(
             f"platform evidence conflicts for {cluster}: "
             f"ClusterDeployment patch {patch}, OpenShift {actual}"
         )
-    platform = patch or actual
     declared = existing.get("platform")
-    if declared is not None and platform and declared != platform:
+    if declared is not None and patch and declared != patch:
         conflicts.append(
             f"metadata.yaml declares platform {declared} but evidence "
-            f"shows {platform}"
+            f"shows {patch}"
         )
-    if patch:
-        return _Value(patch, "ClusterDeployment patch")
-    if actual:
-        return _Value(actual, "OpenShift ClusterDeployment")
-    return _default("platform")
+    if not patch:
+        # A valid definition always has one; refuse rather than guess.
+        conflicts.append(
+            f"no ClusterDeployment platform evidence for {cluster}"
+        )
+    return _Value(str(patch), "ClusterDeployment patch")
 
 
 def _credentials_mode(
@@ -336,15 +337,14 @@ def _patch(path: str, current: str | None, updated: str) -> str:
                 *(f"+{line}\n" for line in new_lines),
             ]
         )
+    # The whole file is context, so the patch shows it before and after.
     old_lines = current.splitlines()
-    context = old_lines[-3:]
-    start = len(old_lines) - len(context) + 1 if context else 0
-    body = [f" {line}\n" for line in context]
-    if context and not current.endswith("\n"):
+    body = [f" {line}\n" for line in old_lines]
+    if old_lines and not current.endswith("\n"):
         body[-1:] = [
-            f"-{context[-1]}\n",
+            f"-{old_lines[-1]}\n",
             "\\ No newline at end of file\n",
-            f"+{context[-1]}\n",
+            f"+{old_lines[-1]}\n",
         ]
     added = new_lines[len(old_lines):]
     return "".join(
@@ -353,8 +353,7 @@ def _patch(path: str, current: str | None, updated: str) -> str:
             f"index {_blob(current)}..{_blob(updated)} 100644\n",
             f"--- a/{path}\n",
             f"+++ b/{path}\n",
-            f"@@ -{start},{len(context)} "
-            f"+{max(start, 1)},{len(context) + len(added)} @@\n",
+            f"@@ -1,{len(old_lines)} +1,{len(old_lines) + len(added)} @@\n",
             *body,
             *(f"+{line}\n" for line in added),
         ]
@@ -406,9 +405,10 @@ def _cluster_edit_text(
     return {
         "summary": f"{action} for cluster {cluster}. {sources}.",
         "expected_effect": (
-            f"{path} declares {', '.join(METADATA_DEFAULTS)}. Each value "
-            "matches what the pipeline uses today or what the latest "
-            "post-provision run used."
+            f"{path} declares {', '.join(METADATA_KEYS)}. Each value a "
+            "pipeline reads is what it uses today with the key absent, or "
+            "what the latest post-provision run used; fleet "
+            f"{FLEET_DEFAULTS_COMMIT} does not read platform."
         ),
         "commit_message": (
             f"{title}\n\n{body}\n\nAura-Proposal: {proposal_id}\n"

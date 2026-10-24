@@ -142,6 +142,7 @@ def test_generator_backfills_missing_metadata_file(tmp_path: Path) -> None:
     assert "PipelineRun post-provision-example-abc" in proposal.summary
     assert "fleet 9464f0b default" in proposal.summary
     assert any("head commit" in risk for risk in proposal.risks)
+    assert "fleet 9464f0b does not read platform" in proposal.expected_effect
     assert generate(snapshot) == proposal
     assert Proposal.model_validate_json(proposal.model_dump_json()) == proposal
     assert yaml.safe_load(apply(root, proposal)) == {
@@ -167,6 +168,7 @@ def test_generator_backfills_missing_metadata_file(tmp_path: Path) -> None:
     [
         "htpasswd-provider-name: Red Hat",
         "# set by hand\nhtpasswd-provider-name: Red Hat\nextra-key: kept\n",
+        "# a\n# b\nhtpasswd-provider-name: Red Hat\nextra-key: kept\nmore: x",
     ],
 )
 def test_generator_appends_missing_keys(tmp_path: Path, original: str) -> None:
@@ -175,6 +177,7 @@ def test_generator_appends_missing_keys(tmp_path: Path, original: str) -> None:
     proposal = generate(evidence(root))
 
     assert patch_changes(proposal.patch or "") == [(METADATA, "modified")]
+    assert "\n@@ -1," in (proposal.patch or "")
     assert SKIP_PROVISION not in (proposal.commit_message or "")
     updated = apply(root, proposal)
     prefix = original if original.endswith("\n") else original + "\n"
@@ -221,6 +224,11 @@ def _setup(
 def _sentinel(root: Path) -> None:
     (root / "deprovision").mkdir(exist_ok=True)
     (root / "deprovision" / "example-archive").write_text("")
+
+
+def _break_patch(root: Path) -> None:
+    patch = root / "provision/example/hive/patches/clusterdeployment.yaml"
+    patch.write_text("- op: [")
 
 
 def _archive(root: Path) -> None:
@@ -343,6 +351,15 @@ RUN = "PipelineRun post-provision-example-abc"
             _setup("{htpasswd-provider-name: x}\n"),
             "metadata.yaml for example cannot be extended by appending keys",
         ),
+        (
+            _setup("htpasswd-provider-name: Red Hat\r\n"),
+            "metadata.yaml for example has CR line endings",
+        ),
+        (
+            _setup(prepare=_break_patch),
+            "definition for example is invalid: "
+            "hive/patches/clusterdeployment.yaml: invalid YAML",
+        ),
     ],
 )
 def test_generator_refuses_unmet_preconditions(
@@ -353,4 +370,4 @@ def test_generator_refuses_unmet_preconditions(
     with pytest.raises(ProposalRefused) as refusal:
         generate(build(tmp_path))
 
-    assert reason in refusal.value.reasons
+    assert any(item.startswith(reason) for item in refusal.value.reasons)
