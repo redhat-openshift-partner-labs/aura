@@ -253,7 +253,7 @@ Latest validation, run by the operator on 2026-10-23 against Aura commit `c5abaf
 
 ### Cluster-Edit Proposals
 
-Not yet run live. Choose a live cluster whose definition lacks `metadata.yaml` or some of its keys, with no deprovision sentinel, and run [`propose cluster-edit`](cli.md#propose-cluster-edit) with a new idempotency key. Then check the proposal as for deprovision:
+Choose a live cluster whose definition lacks `metadata.yaml` or some of its keys, with no deprovision sentinel, and run [`propose cluster-edit`](cli.md#propose-cluster-edit) with a new idempotency key. Then check the proposal as for deprovision:
 
 ```bash
 jq -r .patch "$OUT/proposal.json" | git -C ../fleet-clusters apply --check -v -
@@ -266,6 +266,17 @@ jq -r .patch "$OUT/proposal.json" | git -C ../fleet-clusters apply --check -v -
 | Commit message | Contains `[skip-provision]` only when the patch adds the file |
 | A cluster with every key | Exit code `2`; `already declares every key` |
 | `fleet-clusters` | `git status --porcelain` is empty |
+
+Latest validation, run by the operator on 2026-10-24 against Aura commit `dfe32d4` and `fleet-clusters` commit `0453793`:
+
+| Check | Result |
+| --- | --- |
+| Add file, `423d216c-vistergy` | Patch applied; `[skip-provision]` in the title; four keys in order; no retained post-provision run, so the run keys came from `fleet` defaults |
+| Append keys, `virt-cookbook` | One whole-file hunk kept `htpasswd-provider-name: VirtCookbook` and appended `platform`, `aws-credentials-mode`, and `openshift-ai-version`; no `[skip-provision]` |
+| Run value, `10a9746b-virtualc` | Its `metadata.yaml` lacked only `openshift-ai-version`; the proposal appended `v3` from its latest post-provision PipelineRun |
+| Deprovisioned cluster, `0171d46a-scopedaws` | Refused: defined under `archive/` and no OpenShift resources |
+| Contract, staleness, traces, records | All proposals validated, were fresh, and had matching trace digests; `fleet-clusters` was unchanged |
+| `already declares every key` | Not exercised live; no cluster with all four keys was used |
 
 ## Idempotency Validation
 
