@@ -20,6 +20,7 @@ Aura is a sidecar to the existing lifecycle systems. It does not replace RabbitM
 - Generate deterministic, evidence-linked deprovision proposals for `proposer` or `admin` without writing Git.
 - Report whether stored proposals are stale against `fleet-clusters` `HEAD`.
 - Generate `metadata.yaml` backfill proposals that add the keys a live cluster's definition lacks.
+- Generate post-provision rerun proposals as unapplied PipelineRun manifests copied from a finished run.
 
 ## Non-Goals
 

@@ -11,6 +11,7 @@
 | `diagnose state` | `diagnose.state` | `ClusterStateService` | `ClusterStateCollector` |
 | `propose deprovision` | `propose.patch` | `ProposalService` | `ClusterStateCollector` |
 | `propose cluster-edit` | `propose.patch` | `ProposalService` | `ClusterStateCollector` selecting the latest `post-provision` run |
+| `propose post-provision-rerun` | `propose.pipeline` | `PipelineProposalService` | `RerunEvidenceCollector` |
 | `proposal status` | `proposal.status` | `ProposalStatusService` | `ProposalStalenessCollector` |
 
 All services extend `EvidenceCommandService`. Before collection they:
@@ -82,7 +83,7 @@ PipelineRun correlation first reads `spec.params` where `name` is `cluster-name`
 oc --kubeconfig KUBECONFIG get pipelines -n openshift-pipelines -o json
 ```
 
-`PipelineDefinitionCollector` turns each Pipeline, or each named one, into a `pipeline_definition` item, and raises `PipelineDefinitionError` when a named Pipeline is absent. No command uses it yet; post-provision rerun proposals will validate their parameters against it.
+`PipelineDefinitionCollector` turns each Pipeline, or each named one, into a `pipeline_definition` item, and raises `PipelineDefinitionError` when a named Pipeline is absent. `propose post-provision-rerun` validates the source run's parameters against it.
 
 Every `oc` client declares its resources in `resource_specs`, which the shared `OpenShiftCLIResourceClient` builds.
 
@@ -131,6 +132,10 @@ The CLI stores the CWA snapshot, the CWA trace, the `context_assembled` and `pro
 ### Cluster-edit proposals
 
 `propose cluster-edit` collects cluster state like `propose deprovision`, but selects the latest `post-provision` PipelineRun. `ClusterEditProposalGenerator` reads only the CWA snapshot. It applies the shared live-cluster preconditions, requires a definition that is complete or missing only `metadata.yaml`, and derives each missing key from evidence or the `fleet` `9464f0b` default. The CLI stores records in the same order as for deprovision, with the proposal last.
+
+### Post-provision rerun proposals
+
+`RerunEvidenceCollector` combines `ClusterStateCollector`, selecting the named or latest `post-provision` run, with `PipelineDefinitionCollector` for `post-provision`. `PostProvisionRerunGenerator` reads only the CWA snapshot and rebuilds the PipelineRun from the source run's evidence. The CLI stores records in the same order as for other proposals, with the proposal last.
 
 ### Proposal staleness
 

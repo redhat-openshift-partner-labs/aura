@@ -226,6 +226,35 @@ A patch that adds `metadata.yaml` has a commit message containing `[skip-provisi
 
 Unmet preconditions refuse the command with every reason, as for `propose deprovision`. See [Cluster-Edit Proposal](evidence.md#cluster-edit-proposal) for the value rules and refusal reasons.
 
+## `propose post-provision-rerun`
+
+Flags are the same as [`propose deprovision`](#propose-deprovision), plus `--pipeline-run`; the `--query` default is `propose post provision rerun`. Supply `--role proposer` or `--role admin`. It is a `propose.pipeline` command.
+
+| Flag | Required | Default | Acceptable values |
+| --- | --- | --- | --- |
+| `--pipeline-run` | No | The latest `post-provision` run for the cluster | Non-empty PipelineRun name or UID |
+
+Example:
+
+```bash
+UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura propose post-provision-rerun \
+  --cluster <cluster> \
+  --fleet-clusters ../fleet-clusters \
+  --openshift-kubeconfig "$HOME/.kube/aura-readonly" \
+  --snapshot-dir ./local/snapshots \
+  --audit-dir ./local/audit \
+  --cwa-dir ./local/cwa \
+  --proposal-dir ./local/proposals \
+  --role proposer \
+  --operator operator@example.com \
+  --idempotency-key propose-rerun-001 \
+  --command-dir ./local/commands
+```
+
+The command prints the stored `Proposal`. Its `pipeline_run` is a PipelineRun manifest with `generateName: post-provision-<id>-` in `openshift-pipelines` that copies the source run's parameters, workspaces, and run template. Aura never creates it; Phase 3 would create it through the Kubernetes API, never through the EventListener. It reads Pipelines, so `deploy/` must be applied; a missing `post-provision` Pipeline fails the command.
+
+Unmet preconditions refuse the command with every reason. See [Post-Provision Rerun Proposal](evidence.md#post-provision-rerun-proposal).
+
 ## `proposal status`
 
 | Flag | Required | Default | Acceptable values |

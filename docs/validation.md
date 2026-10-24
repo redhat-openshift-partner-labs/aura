@@ -11,10 +11,10 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-559 passed
+613 passed
 ```
 
-Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `9ca2a10`, passed with 559 tests on Python 3.13.17 in `linux/arm64`.
+Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `590d242`, passed with 613 tests on Python 3.13.17 in `linux/arm64`.
 
 Run diff hygiene:
 
@@ -58,6 +58,7 @@ The test classes every change must include are defined in [Development Workflow]
 - `proposal status` authorization for `viewer`, `proposer`, and `admin`, output, and failure records, including missing and unreadable stores.
 - Write order: a failed trace, audit, or proposal write leaves no proposal file, and `command_failed` links to the last stored audit event.
 - Pipeline definition collection: parameters, required parameters, `null` defaults, no stored default values, malformed and duplicate entries, unknown types, missing or unnamed Pipelines, and a forbidden `oc` response.
+- Post-provision rerun generation over real Git, Tekton, and Pipeline definition collectors: copied parameters, workspaces, and run template; named and latest source runs; every refusal reason, including a `metadata.yaml` conflict; and the tightened rerun contract.
 - Cluster-edit generation over real temporary Git trees: added and appended `metadata.yaml` files that apply with `git apply --check`, preserve existing bytes, and leave a complete definition; values from runs and defaults; every refusal reason.
 - Deprovision contract rejection of non-empty or non-regular sentinel files.
 - The failure-injection matrix: every command's documented write order, a failure of each write in turn before writing and after linking, and each route's read errors, with invariants I1–I4 checked after every run.
@@ -313,6 +314,22 @@ Latest validation, run by the operator on 2026-10-24 after applying `deploy/` wi
 | Existing commands | Pending: `inventory list --source combined` timed out on the hotspot and is to be re-run on a steadier connection |
 
 The snapshot `source_version` was `pipelines=`: `oc get -o json` returns a client-side `List` with an empty `resourceVersion`, so OpenShift and Tekton source versions carry no version. This affects every `oc` client and is tracked under [Status](status.md#not-implemented).
+
+### Post-Provision Rerun Proposals
+
+Not yet run live. Choose a live, provisioned cluster with a finished `post-provision` run, and run [`propose post-provision-rerun`](cli.md#propose-post-provision-rerun) with a new idempotency key. Aura creates nothing.
+
+```bash
+jq '.pipeline_run' "$OUT/rerun.json"
+```
+
+| Check | Expected result |
+| --- | --- |
+| Manifest | `generateName: post-provision-<id>-` in `openshift-pipelines`; the source run's parameters, workspaces, and `taskRunTemplate`; the two `aura.openshiftpartnerlabs.com` annotations |
+| Source | `summary` names the latest finished `post-provision` run, or the `--pipeline-run` given |
+| Parameters | Match the source run's `spec.params` (`oc get pipelinerun <name> -n openshift-pipelines -o json`) |
+| A cluster whose latest run is running | Exit code `2`; `has not finished` |
+| Hub | No new PipelineRun appears |
 
 ## Idempotency Validation
 

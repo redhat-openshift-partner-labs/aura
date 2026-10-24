@@ -89,7 +89,8 @@ Deprovision status values:
 | `namespace` | Tekton `metadata.namespace` |
 | `cluster_name` | Tekton `cluster-name` parameter |
 | `params` | Every `spec.params` entry as a name-to-value map, with secret-named values redacted |
-| `workspaces` | Workspace bindings as `name`, `source`, `reference`, `sub_path`, and `claim_spec`; Secrets and ConfigMaps appear by name only |
+| `workspaces` | Workspace bindings as `name`, `source`, `reference`, `sub_path`, `claim_spec`, and `unsupported_fields`, which names binding fields the summary does not carry, such as a Secret's `defaultMode`; Secrets and ConfigMaps appear by name only |
+| `run_template` | `service_account_name` from `taskRunTemplate.serviceAccountName`, `pod_template` with only `securityContext`, `imagePullSecrets`, `nodeSelector`, and `tolerations`, and `unsupported_fields`, which names any other `spec`, `taskRunTemplate`, or `podTemplate` field without its value. `spec.timeouts` is neither copied nor unsupported. |
 | `status` | Tekton `Succeeded` condition: `Succeeded` when `True`, `Failed` when `False`, otherwise `Unknown` |
 | `start_time` and `completion_time` | Tekton status |
 | `conditions` | Tekton status conditions |
@@ -244,7 +245,7 @@ The contract enforces these invariants regardless of which generator produced th
 | Commit message | Names the cluster; no `[skip-provision]` | Names the cluster; no `[skip-deprovision]` | Names the cluster; contains `[skip-provision]` when a file is added | None |
 | `trigger_effect` | `pre-provision`, `provision`, `post-provision` | `deprovision`, `archive-cluster` | None | `post-provision` |
 | `reversibility` | `reversible_before_merge` | `reversible_before_merge` | `reversible` | `irreversible` |
-| Other | Requires `scaffold_commit` | | | `PipelineRun` for the `post-provision` Pipeline, `generateName` in `openshift-pipelines`, `cluster-name` equal to the target, no secret-named parameters or fields |
+| Other | Requires `scaffold_commit` | | | `PipelineRun` for the `post-provision` Pipeline with only `apiVersion`, `kind`, `metadata` (`generateName`, `namespace`, `labels`, `annotations`), and `spec` (`pipelineRef`, `params`, `workspaces`, `taskRunTemplate`); `generateName` `post-provision-<id>-` in `openshift-pipelines`; unique parameter names with `cluster-name` equal to the target; no secret-named parameters or fields, except a workspace `secret` binding holding only `secretName` and `items` |
 
 Patches must be Git-format diffs. Every proposal names exactly one cluster, and every patched path must belong to it.
 
@@ -308,6 +309,29 @@ Refusal reasons, reported together with the shared live-cluster reasons (no defi
 Scoped credentials are recognized only by the `crossplane-scoped` Crossplane template, which the scaffold writes for every scoped AWS cluster; the scaffold's other scoped markers are not checked.
 
 `metadata_text` is evidence, and redaction works on field names, so a secret value typed into `metadata.yaml` would not be redacted. The file holds only the four non-secret keys today.
+
+### Post-Provision Rerun Proposal
+
+`PostProvisionRerunGenerator` (`post-provision-rerun-deterministic`, version `0.1.0`) copies a finished `post-provision` run into an unapplied PipelineRun manifest: its parameters in order, its workspaces rebuilt from the evidence summary, its run template, and annotations `aura.openshiftpartnerlabs.com/proposal-id` and `aura.openshiftpartnerlabs.com/source-pipeline-run`. Parameters the source run did not set take the Pipeline defaults when the run is created.
+
+Refusal reasons, reported together with the shared live-cluster reasons (no definition, conflicting definitions, a definition outside `provision/`, an existing deprovision sentinel, no OpenShift resources):
+
+| Unmet precondition | Reason |
+| --- | --- |
+| Cluster not provisioned | `cluster <id> is not Provisioned` |
+| No retained run | `no post-provision PipelineRun for cluster <id>` |
+| Named run absent or not `post-provision` | `Selected Tekton PipelineRun <name>` |
+| Run not finished | `PipelineRun <name> has not finished` |
+| Malformed Pipeline definition | `the post-provision Pipeline has <n> malformed parameters` |
+| Missing required parameters | `PipelineRun <name> lacks required parameters: [...]` |
+| Parameters the Pipeline does not declare | `PipelineRun <name> sets parameters the post-provision Pipeline does not declare: [...]` |
+| Redacted parameter | `PipelineRun <name> parameter <param> is redacted` |
+| `metadata.yaml` disagrees | `PipelineRun <name> would use <key> <value> but metadata.yaml declares <value>` (or `defaults to`) |
+| Unreadable `metadata.yaml` | `cannot read metadata.yaml for <id>` |
+| Fields a rerun cannot copy | `PipelineRun <name> has fields a rerun cannot copy: [...]` |
+| Workspace source a rerun cannot rebuild (`csi`, `projected`, unknown) | `PipelineRun <name> workspace <ws> uses source <source>, which a rerun cannot copy` |
+
+The `metadata.yaml` check compares `htpasswd-provider-name` and `openshift-ai-version`. When the source run did not set a key, the rerun's value is assumed to be the `fleet` `9464f0b` Pipeline default, because Pipeline definition evidence stores no default values.
 
 ### Proposal Staleness Fields
 
