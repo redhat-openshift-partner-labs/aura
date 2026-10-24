@@ -117,6 +117,17 @@ flowchart LR
 | Trigger effect | Phase 3 creates the PipelineRun through the Kubernetes API, never through the unauthenticated EventListener |
 | Reversibility | Not reversible; post-provision tasks change the spoke cluster |
 
+Decisions, 2026-10-24:
+
+| Decision | Position |
+| --- | --- |
+| Source run | `--pipeline-run` names one; otherwise the latest `post-provision` PipelineRun for the cluster. A source run that has not finished refuses the proposal, because a rerun would overlap it. |
+| Run template | Copied from the source run: `taskRunTemplate.serviceAccountName` and the supported `podTemplate` fields. The Tekton collector records them; any other `taskRunTemplate` or `podTemplate` field refuses the proposal. |
+| Parameters | Copied from the source run and checked against the live `post-provision` Pipeline definition. For `htpasswd-provider-name` and `openshift-ai-version`, the value the rerun would use, copied or the Pipeline default, must equal the value `metadata.yaml` declares or defaults to; otherwise the proposal is refused. |
+| Workspace Secrets | Allowed only as a `secret` binding holding `secretName` and optional `items`; secret material anywhere else is still rejected. |
+
+Facts at `fleet` `9464f0b`: both the provision pipeline's `trigger-post-provision` task and the EventListener template create `post-provision` runs with `taskRunTemplate.serviceAccountName: fleet-pipeline`, a pod template with `fsGroup: 0` and the `fleet-pipeline-pull-secret` image pull secret, and a `shared-workspace` `volumeClaimTemplate`. The trigger task passes five parameters; the EventListener passes only `cluster-name`, `tier`, and `dns-zones`, so its runs take the Pipeline defaults for `htpasswd-provider-name` (`htpasswd`) and `openshift-ai-version` (`v3`).
+
 ### Existing-Cluster Edits
 
 | Aspect | Rule |
