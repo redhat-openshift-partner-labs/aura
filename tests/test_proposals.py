@@ -120,6 +120,16 @@ def rerun_manifest(**params: Any) -> dict[str, Any]:
     }
 
 
+def rerun_with(**updates: Any) -> dict[str, Any]:
+    manifest = rerun_manifest(tier="base")
+    for section, values in updates.items():
+        manifest[section] = {**manifest.get(section, {}), **values}
+    return manifest
+
+
+SECRET_WORKSPACE = {"name": "keys", "secret": {"secretName": "keys"}}
+
+
 BASE_FIELDS: dict[str, Any] = {
     "proposal_id": UUID(int=70),
     "command_id": UUID(int=1),
@@ -206,6 +216,34 @@ def test_proposal_accepts_cluster_edit_that_only_appends_keys(
     )
 
     assert "[skip-provision]" not in proposal.commit_message
+
+
+@pytest.mark.parametrize(
+    "secret",
+    [{"secretName": "keys"}, {"secretName": "keys", "items": [{"key": "a"}]}],
+)
+def test_proposal_accepts_rerun_with_secret_workspace_by_name(
+    secret: dict[str, Any],
+) -> None:
+    proposal = make_proposal(
+        "post_provision_rerun",
+        pipeline_run=rerun_with(
+            metadata={"annotations": {"aura/proposal-id": "x"}},
+            spec={
+                "workspaces": [{"name": "keys", "secret": secret}],
+                "taskRunTemplate": {
+                    "serviceAccountName": "fleet-pipeline",
+                    "podTemplate": {
+                        "imagePullSecrets": [
+                            {"name": "fleet-pipeline-pull-secret"}
+                        ]
+                    },
+                },
+            },
+        ),
+    )
+
+    assert proposal.pipeline_run is not None
 
 
 def test_proposal_rejects_changed_content_under_old_digest() -> None:
@@ -445,6 +483,76 @@ def test_proposal_rejects_changed_content_under_old_digest() -> None:
             "post_provision_rerun",
             {"pipeline_run": rerun_manifest(**{"github-token": "value"})},
             "must not contain secret material",
+        ),
+        (
+            "post_provision_rerun",
+            {
+                "pipeline_run": rerun_with(
+                    spec={
+                        "workspaces": [
+                            {
+                                "name": "keys",
+                                "secret": {
+                                    "secretName": "keys",
+                                    "defaultMode": 256,
+                                },
+                            }
+                        ]
+                    }
+                )
+            },
+            "workspace secret bindings may hold only secretName and items",
+        ),
+        (
+            "post_provision_rerun",
+            {
+                "pipeline_run": rerun_with(
+                    metadata={"annotations": {"token": "abc"}},
+                    spec={"workspaces": [SECRET_WORKSPACE]},
+                )
+            },
+            "must not contain secret material",
+        ),
+        (
+            "post_provision_rerun",
+            {"pipeline_run": {**rerun_manifest(), "status": {}}},
+            "pipeline_run may contain only apiVersion, kind, metadata, spec",
+        ),
+        (
+            "post_provision_rerun",
+            {"pipeline_run": rerun_with(metadata={"uid": "x"})},
+            "pipeline_run metadata may contain only generateName, namespace, "
+            "labels, annotations",
+        ),
+        (
+            "post_provision_rerun",
+            {"pipeline_run": rerun_with(spec={"taskRunSpecs": []})},
+            "pipeline_run spec may contain only pipelineRef, params, "
+            "workspaces, taskRunTemplate",
+        ),
+        (
+            "post_provision_rerun",
+            {
+                "pipeline_run": rerun_with(
+                    spec={
+                        "params": [
+                            {"name": "cluster-name", "value": CLUSTER},
+                            {"name": "tier", "value": "base"},
+                            {"name": "tier", "value": "premium"},
+                        ]
+                    }
+                )
+            },
+            "pipeline_run parameter names must be unique: ['tier']",
+        ),
+        (
+            "post_provision_rerun",
+            {
+                "pipeline_run": rerun_with(
+                    metadata={"generateName": "post-provision-other-"}
+                )
+            },
+            f"pipeline_run generateName must be post-provision-{CLUSTER}-",
         ),
         ("deprovision", {"risks": []}, "risks"),
         ("deprovision", {"risks": [" "]}, "risks"),

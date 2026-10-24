@@ -97,6 +97,10 @@ EXPECTED_REVERSIBILITY: dict[ProposalType, Reversibility] = {
     ProposalType.POST_PROVISION_RERUN: Reversibility.IRREVERSIBLE,
 }
 
+_RERUN_KEYS = ("apiVersion", "kind", "metadata", "spec")
+_RERUN_METADATA_KEYS = ("generateName", "namespace", "labels", "annotations")
+_RERUN_SPEC_KEYS = ("pipelineRef", "params", "workspaces", "taskRunTemplate")
+_NAMED_SECRET_KEYS = frozenset({"secretName", "items"})
 _DIFF_HEADER = re.compile(r"^diff --git a/(\S+) b/(\S+)$")
 _HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@")
 _NO_NEWLINE = "\\ No newline at end of file"
@@ -433,6 +437,9 @@ def _validate_rerun_proposal(proposal: Proposal) -> None:
         raise ValueError("post_provision_rerun proposals require pipeline_run")
     spec = manifest.get("spec") or {}
     metadata = manifest.get("metadata") or {}
+    _require_only(manifest, _RERUN_KEYS, "pipeline_run")
+    _require_only(metadata, _RERUN_METADATA_KEYS, "pipeline_run metadata")
+    _require_only(spec, _RERUN_SPEC_KEYS, "pipeline_run spec")
     if (
         manifest.get("kind") != "PipelineRun"
         or not str(manifest.get("apiVersion", "")).startswith("tekton.dev/")
@@ -445,6 +452,15 @@ def _validate_rerun_proposal(proposal: Proposal) -> None:
         raise ValueError(
             f"pipeline_run must use generateName in {RERUN_NAMESPACE}"
         )
+    prefix = f"{RERUN_PIPELINE}-{proposal.cluster_name}-"
+    if metadata.get("generateName") != prefix:
+        raise ValueError(f"pipeline_run generateName must be {prefix}")
+    names = [str(param.get("name", "")) for param in spec.get("params", [])]
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    if repeated:
+        raise ValueError(
+            f"pipeline_run parameter names must be unique: {repeated}"
+        )
     params = {
         str(param.get("name", "")): param.get("value")
         for param in spec.get("params", [])
@@ -454,9 +470,42 @@ def _validate_rerun_proposal(proposal: Proposal) -> None:
             f"cluster-name parameter must be {proposal.cluster_name}"
         )
     if redact_parameters(params).redacted_fields or redact(
-        manifest
+        _without_named_secrets(manifest)
     ).redacted_fields:
         raise ValueError("pipeline_run must not contain secret material")
+
+
+def _require_only(
+    value: dict[str, Any],
+    allowed: tuple[str, ...],
+    label: str,
+) -> None:
+    if set(value) - set(allowed):
+        raise ValueError(f"{label} may contain only {', '.join(allowed)}")
+
+
+def _without_named_secrets(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Drop workspace Secret bindings that reference a Secret by name only.
+
+    The redaction check would flag their `secret` key, but such a binding
+    holds a Secret's name, not its content.
+    """
+
+    spec = manifest.get("spec") or {}
+    workspaces = []
+    for workspace in spec.get("workspaces", []):
+        secret = workspace.get("secret")
+        if secret is None:
+            workspaces.append(workspace)
+            continue
+        if not isinstance(secret, dict) or set(secret) - _NAMED_SECRET_KEYS:
+            raise ValueError(
+                "workspace secret bindings may hold only secretName and items"
+            )
+        workspaces.append(
+            {key: item for key, item in workspace.items() if key != "secret"}
+        )
+    return {**manifest, "spec": {**spec, "workspaces": workspaces}}
 
 
 __all__ = [
