@@ -57,7 +57,7 @@ Kubeconfig rules:
 
 ## Minimum RBAC
 
-The service account needs only `list` on four resources. Aura always lists resources and does not request individual objects by name:
+The service account needs only `list` on five resources. Aura always lists resources and does not request individual objects by name. Pipelines are read only in `openshift-pipelines`, so that grant is a namespaced Role rather than part of the ClusterRole:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -87,7 +87,33 @@ subjects:
 - kind: ServiceAccount
   name: aura-readonly
   namespace: aura
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aura-readonly-pipelines
+  namespace: openshift-pipelines
+rules:
+- apiGroups: ["tekton.dev"]
+  resources: ["pipelines"]
+  verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aura-readonly-pipelines
+  namespace: openshift-pipelines
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: aura-readonly-pipelines
+subjects:
+- kind: ServiceAccount
+  name: aura-readonly
+  namespace: aura
 ```
+
+The Pipeline Role and RoleBinding were added on 2026-10-24 for prerequisite P2. Until the operator applies them, only the Pipeline definition collector fails; every current command works without them.
 
 Verify authorization:
 
@@ -96,6 +122,7 @@ oc --kubeconfig "$HOME/.kube/aura-readonly" auth can-i list clusterdeployments.h
 oc --kubeconfig "$HOME/.kube/aura-readonly" auth can-i list managedclusters.cluster.open-cluster-management.io
 oc --kubeconfig "$HOME/.kube/aura-readonly" auth can-i list pipelineruns.tekton.dev -A
 oc --kubeconfig "$HOME/.kube/aura-readonly" auth can-i list taskruns.tekton.dev -A
+oc --kubeconfig "$HOME/.kube/aura-readonly" auth can-i list pipelines.tekton.dev -n openshift-pipelines
 ```
 
 Every command must print `yes`. Write verbs such as `create`, `patch`, and `delete` must print `no`.

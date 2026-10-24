@@ -76,6 +76,16 @@ With `workflow inspect --namespace NAMESPACE`, both commands use `-n NAMESPACE` 
 
 PipelineRun correlation first reads `spec.params` where `name` is `cluster-name`. Namespace correlation is a fallback for runs that do not provide that parameter.
 
+`OpenShiftCLIPipelineClient` is a separate client, so no other read needs Pipeline RBAC:
+
+```bash
+oc --kubeconfig KUBECONFIG get pipelines -n openshift-pipelines -o json
+```
+
+`PipelineDefinitionCollector` turns each Pipeline, or each named one, into a `pipeline_definition` item, and raises `PipelineDefinitionError` when a named Pipeline is absent. No command uses it yet; post-provision rerun proposals will validate their parameters against it.
+
+Every `oc` client declares its resources in `resource_specs`, which the shared `OpenShiftCLIResourceClient` builds.
+
 ### Combined cluster inventory
 
 `ClusterInventoryCollector` runs Git, OpenShift, and Tekton collectors, preserves their source items, and appends one `cluster_inventory` item per correlated cluster. Complete, incomplete, and invalid Git definitions all participate in correlation by `cluster_name`; `definition_kind` records which one matched. Deprovision sentinels correlate by the same name and set `deprovision_status`. Combined snapshots keep the source redactions of the items they include.

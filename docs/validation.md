@@ -11,10 +11,10 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-538 passed
+553 passed
 ```
 
-Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `dfe32d4`, passed with 538 tests on Python 3.13.17 in `linux/arm64`.
+Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `fcd86d1`, passed with 553 tests on Python 3.13.17 in `linux/arm64`.
 
 Run diff hygiene:
 
@@ -57,6 +57,7 @@ The test classes every change must include are defined in [Development Workflow]
 - Proposal staleness collection against one pinned `HEAD`, requested-ID selection, and rejection of missing, misnamed, or tampered records.
 - `proposal status` authorization for `viewer`, `proposer`, and `admin`, output, and failure records, including missing and unreadable stores.
 - Write order: a failed trace, audit, or proposal write leaves no proposal file, and `command_failed` links to the last stored audit event.
+- Pipeline definition collection: parameters, required parameters, `null` defaults, no stored default values, malformed and duplicate entries, unknown types, missing or unnamed Pipelines, and a forbidden `oc` response.
 - Cluster-edit generation over real temporary Git trees: added and appended `metadata.yaml` files that apply with `git apply --check`, preserve existing bytes, and leave a complete definition; values from runs and defaults; every refusal reason.
 - Deprovision contract rejection of non-empty or non-regular sentinel files.
 - The failure-injection matrix: every command's documented write order, a failure of each write in turn before writing and after linking, and each route's read errors, with invariants I1–I4 checked after every run.
@@ -277,6 +278,30 @@ Latest validation, run by the operator on 2026-10-24 against Aura commit `dfe32d
 | Deprovisioned cluster, `0171d46a-scopedaws` | Refused: defined under `archive/` and no OpenShift resources |
 | Contract, staleness, traces, records | All proposals validated, were fresh, and had matching trace digests; `fleet-clusters` was unchanged |
 | `already declares every key` | Not exercised live; no cluster with all four keys was used |
+
+## Pipeline Definition Validation
+
+After the operator applies the P2 Role and RoleBinding from [Security](security.md#minimum-rbac), confirm access:
+
+```bash
+oc --kubeconfig "$AURA_KUBECONFIG" auth can-i list pipelines.tekton.dev -n openshift-pipelines
+```
+
+Then read the `post-provision` definition, read-only:
+
+```bash
+UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync python -c 'import os, uuid; from pathlib import Path; from aura.collectors.openshift_cli_pipeline_client import OpenShiftCLIPipelineClient; from aura.collectors.pipeline_definitions import PipelineDefinitionCollector; s = PipelineDefinitionCollector(client=OpenShiftCLIPipelineClient(kubeconfig_path=Path(os.environ["AURA_KUBECONFIG"])), pipeline_names={"post-provision"}).collect(command_id=uuid.uuid4()); print(s.model_dump_json(indent=2))'
+```
+
+| Check | Expected result |
+| --- | --- |
+| `auth can-i` | `yes`; `create`, `patch`, and `delete` print `no` |
+| Item | One `pipeline_definition` for `post-provision` |
+| `required_params` | The parameters without defaults in `fleet`'s `tekton/pipelines/post-provision.yaml` |
+| `malformed_params` | `0` |
+| Defaults | No `default` field anywhere; `has_default` only; `redactions` empty |
+
+Not yet run live.
 
 ## Idempotency Validation
 

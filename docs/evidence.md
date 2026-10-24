@@ -28,6 +28,7 @@ An `EvidenceSnapshot` is the frozen result of one collector invocation.
 | `cluster_actual_state` | OpenShift | Complete observed cluster state |
 | `cluster_actual_state_incomplete` | OpenShift | Cluster resource with missing status data |
 | `pipeline_run` | Tekton | PipelineRun and summarized TaskRuns |
+| `pipeline_definition` | Tekton Pipeline | Parameter definitions of one Pipeline in `openshift-pipelines` |
 | `cluster_inventory` | Combined correlator | Desired state, actual state, latest run, and drift |
 | `workflow_view` | Workflow correlator | Operator-facing PipelineRun view |
 | `cluster_state_correlation` | Cluster-state correlator | Per-cluster evidence links and missing evidence |
@@ -93,6 +94,17 @@ Deprovision status values:
 | `start_time` and `completion_time` | Tekton status |
 | `conditions` | Tekton status conditions |
 | `task_runs` and `failed_task` | Summarized TaskRuns |
+
+## Pipeline Definition Fields
+
+| Field | Source |
+| --- | --- |
+| `namespace` and `pipeline_name` | Pipeline `metadata` |
+| `params` | Each well-formed `spec.params` entry as `name`, `type` (`string` when absent), and `has_default`. Default values are never stored, because validation needs only whether a default exists and a default can hold secret material under any name. A `null` default counts as no default, as in Tekton. |
+| `required_params` | Names of parameters without a default, in declared order |
+| `malformed_params` | Entries that are not mappings, lack a non-empty name, have a type other than `string`, `array`, or `object`, or repeat an earlier name, plus one when `spec` or `spec.params` has the wrong shape. Such entries are counted, never silently dropped. |
+
+A requested Pipeline that is absent, or a Pipeline without a name, raises `PipelineDefinitionError` rather than producing an empty snapshot. Object parameter `properties` are not recorded; every `fleet` Pipeline uses string parameters.
 
 ## Cluster State Correlation Fields
 
