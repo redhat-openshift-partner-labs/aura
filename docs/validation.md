@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-728 passed
+757 passed
 ```
 
 Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `8ef2b93`, passed with 728 tests on Python 3.13.17 in `linux/arm64`.
@@ -38,7 +38,7 @@ ripwire . --quality-delta=adb2c2b..HEAD \
   --ack-only=SUBSTRING
 ```
 
-The current ledger acknowledges the store exception classes, which `JsonRecordStore` references as class attributes and `cli.py` catches by name, and the evidence route properties and collector selectors, which `cli.py` reads as attributes or references as `_EVIDENCE_ROUTES` values; ripwire counts only direct construction or calls as use.
+The current ledger acknowledges the store exception classes, which `JsonRecordStore` references as class attributes and `cli.py` catches by name, and the evidence route properties and collector selectors, which `cli.py` reads as attributes or references as `_EVIDENCE_ROUTES` values; ripwire counts only direct construction or calls as use. It also acknowledges structural clones with no shared logic: `ScaffoldEvidenceCollector`'s constructor against other keyword-only constructors that only store their arguments, and the scaffold tests' `request` helper against `make_evidence_command_spec`'s keyword call.
 
 The test classes every change must include are defined in [Development Workflow](development.md). The test suite covers:
 
