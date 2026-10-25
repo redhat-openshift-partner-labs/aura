@@ -24,7 +24,9 @@ Never modify:
 - `fleet-clusters`
 - `portal`
 
-The current runtime only reads `fleet-clusters`. The other protected repositories remain outside the Phase 1 runtime.
+The runtime reads `fleet-clusters`. `propose scaffold` also reads a local `fleet-cluster-scaffold` checkout and executes its code: it runs an export written byte for byte from `git ls-tree` and `git cat-file`, so export attributes such as `export-subst` and `export-ignore` do not apply, of the checkout's committed `HEAD`, never its working tree, with the current Python interpreter in `-I -B` mode, in a temporary directory, with no standard input and an environment of only `PATH`, `HOME` (that directory), and `LANG`, so no kubeconfig, cloud credential, or other operator variable reaches it, and with a five-minute timeout. An export refuses symlinks that point outside it. Treat the scaffold checkout as trusted code: Aura records its commit but cannot sandbox it beyond that. The definition check writes only to a `--shared --no-checkout` clone in a temporary directory. `fleet` and `portal` remain outside the runtime.
+
+Every Git command Aura runs, in collectors and in the scaffold runner and check, drops inherited `GIT_` variables such as `GIT_DIR` and `GIT_INDEX_FILE`, disables hooks and fsmonitor with `-c core.hooksPath=/dev/null -c core.fsmonitor=false`, turns off optional locks so `git status` never rewrites an index, and gets no standard input. An operator environment or global Git configuration therefore cannot redirect Aura to another repository or run code through Git.
 
 Git evidence resolves `HEAD` once and reads the tree listing and blobs from that pinned commit. Uncommitted working-tree changes, later commits, and untracked files are not treated as desired state.
 
@@ -155,3 +157,4 @@ Records are serialized to a private temporary file, flushed with `fsync`, and li
 - Treat `oc` failures as connectivity, RBAC, or cluster-availability errors.
 - Do not reuse output directories for commands that may produce the same deterministic UUIDs unless duplicate-record errors are expected.
 - Do not add an external model provider without an explicit data-flow and approval review.
+- `propose scaffold` reads the scaffold's standard output and error and every generated file into memory without size limits; run it only with a trusted scaffold checkout.

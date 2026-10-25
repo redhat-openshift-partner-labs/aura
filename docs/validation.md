@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-757 passed
+824 passed
 ```
 
 Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `f3f35d9`, passed with 757 tests on Python 3.13.17 in `linux/arm64`.
@@ -60,6 +60,7 @@ The test classes every change must include are defined in [Development Workflow]
 - Write order: a failed trace, audit, or proposal write leaves no proposal file, and `command_failed` links to the last stored audit event.
 - Pipeline definition collection: parameters, required parameters, `null` defaults, no stored default values, malformed and duplicate entries, unknown types, missing or unnamed Pipelines, and a forbidden `oc` response.
 - Post-provision rerun generation over real Git, Tekton, and Pipeline definition collectors: copied parameters, workspaces, and run template; named and latest source runs; every refusal reason, including a `metadata.yaml` conflict, which compares `openshift-ai-version` only for `ai` runs; and the tightened rerun contract.
+- The scaffold runner and definition check over a fake scaffold committed to a temporary Git tree: pinned commit and base commit exports, modes, the minimal environment, failures and timeouts, cleanup, and unchanged checkouts. `propose scaffold` end to end, and its failure-matrix scenarios.
 - Scaffold generation over real temporary `fleet-clusters` and scaffold Git trees with a fake scaffold runner: arguments, commits, and the run record; patches that apply with `git apply --check` and yield a complete definition; staleness; stream redaction; every refusal reason before and after the scaffold runs, with no run when a precondition fails; and infra-prefix parity with `fleet-clusters`.
 - Cluster-edit generation over real temporary Git trees: added and appended `metadata.yaml` files that apply with `git apply --check`, preserve existing bytes, and leave a complete definition; values from runs and defaults; `openshift-ai-version` only for tier `ai`, with tier from Git cross-checked against OpenShift; every refusal reason.
 - Deprovision contract rejection of non-empty or non-regular sentinel files.
@@ -379,6 +380,25 @@ Latest validation, run by the operator on 2026-10-25 against Aura commit `30878c
 | Workspace and run template | Identical to `fleet` `9464f0b`: `shared-workspace` 1Gi `gp3-csi` claim template, `fleet-pipeline` service account, `fsGroup: 0`, and `fleet-pipeline-pull-secret` |
 
 This result predates the 2026-10-25 tier revision. For this `virt` run, Aura now compares only `htpasswd-provider-name`; the `openshift-ai-version` agreement above is no longer checked. It has not been re-run live.
+
+### Scaffold Proposals
+
+Choose a cluster name that no `fleet-clusters` directory, deprovision sentinel, or hub ClusterDeployment or ManagedCluster uses, and whose first 21 characters match none of theirs. Confirm the scaffold checkout is clean and `kustomize` is on `PATH`, then run [`propose scaffold`](cli.md#propose-scaffold) with a new idempotency key. Aura writes nothing to Git or the hub, and the proposal must not be merged: merging provisions the cluster.
+
+```bash
+jq -r .patch "$OUT/proposal.json" | git -C ../fleet-clusters apply --check -v -
+```
+
+| Check | Expected result |
+| --- | --- |
+| Exit and patch | Exit code `0`; the patch adds only files under `provision/<id>/` and applies with `git apply --check` |
+| Run record | `scaffold_commit` is the scaffold `HEAD`; `scaffold_run.exit_code` is `0`; `scaffold_run.files` lists the added files |
+| Metadata | `platform: aws` and `aws-credentials-mode: scoped` |
+| A name in use | Exit code `2`; `already has a definition` or `OpenShift resources already exist` |
+| A name sharing an infra prefix | Exit code `2`; `infra prefix <prefix> is also used by` |
+| Checkouts | `git status --porcelain --ignored` unchanged in `fleet-clusters` and `fleet-cluster-scaffold` |
+
+A local smoke run on 2026-10-25 used the real `SubprocessScaffoldRunner` and `GitDefinitionCheck` against `fleet-cluster-scaffold` `2f6c7b4` and `fleet-clusters` `4ead929` with `kustomize` v5.8.1, without the hub: the `standard` and `sno` scaffolds wrote 41 and 40 files in about five seconds each, mostly spent exporting and hashing `fleet-clusters`; neither changed any other file, no output check fired, each patch yielded one complete definition, and the status, refs, object counts, and index files of both checkouts were unchanged.
 
 ## Idempotency Validation
 

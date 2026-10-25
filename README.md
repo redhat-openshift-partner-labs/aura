@@ -198,6 +198,7 @@ Every command takes `--operator`, `--idempotency-key`, and `--command-dir`, and 
 | [`propose deprovision`](docs/cli.md#propose-deprovision) | What standalone commit would archive this cluster? | `proposer` |
 | [`propose cluster-edit`](docs/cli.md#propose-cluster-edit) | Which `metadata.yaml` keys is this definition missing? | `proposer` |
 | [`propose post-provision-rerun`](docs/cli.md#propose-post-provision-rerun) | What PipelineRun would rerun post-provision for this cluster? | `proposer` |
+| [`propose scaffold`](docs/cli.md#propose-scaffold) | What definition would a pinned scaffold generate for a new cluster? | `proposer` |
 | [`proposal status`](docs/cli.md#proposal-status) | Is a stored proposal stale against `fleet-clusters` `HEAD`? | `viewer` |
 
 `admin` can run every command. `proposal status` also accepts `proposer`. When you pass no `--role`, Aura uses `viewer`; any `--role` you pass replaces that default.

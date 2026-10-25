@@ -29,6 +29,7 @@ class ScaffoldResult:
     stdout: str
     stderr: str
     files: dict[str, tuple[str, str]] = field(default_factory=dict)
+    changed: tuple[str, ...] = ()
 
 
 INFRA_PREFIX_LENGTH = 21
@@ -53,6 +54,17 @@ class ScaffoldRunner(Protocol):
         ...
 
 
+class DefinitionCheck(Protocol):
+    def check(
+        self,
+        *,
+        base_commit: str,
+        patch: str,
+        cluster_name: str,
+    ) -> list[str]:
+        ...
+
+
 def infra_prefix(cluster_name: str) -> str:
     """Return the installer infra ID prefix for a cluster name.
 
@@ -66,6 +78,7 @@ def infra_prefix(cluster_name: str) -> str:
 
 
 __all__ = [
+    "DefinitionCheck",
     "INFRA_PREFIX_LENGTH",
     "ScaffoldCheckoutError",
     "ScaffoldRequest",

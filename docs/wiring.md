@@ -12,6 +12,7 @@
 | `propose deprovision` | `propose.patch` | `ProposalService` | `ClusterStateCollector` |
 | `propose cluster-edit` | `propose.patch` | `ProposalService` | `ClusterStateCollector` selecting the latest `post-provision` run |
 | `propose post-provision-rerun` | `propose.pipeline` | `PipelineProposalService` | `RerunEvidenceCollector` |
+| `propose scaffold` | `propose.patch` | `ProposalService` | `ScaffoldEvidenceCollector` |
 | `proposal status` | `proposal.status` | `ProposalStatusService` | `ProposalStalenessCollector` |
 
 All services extend `EvidenceCommandService`. Before collection they:
@@ -136,6 +137,10 @@ The CLI stores the CWA snapshot, the CWA trace, the `context_assembled` and `pro
 ### Post-provision rerun proposals
 
 `RerunEvidenceCollector` combines `ClusterStateCollector`, selecting the named or latest `post-provision` run, with `PipelineDefinitionCollector` for `post-provision`. `PostProvisionRerunGenerator` reads only the CWA snapshot and rebuilds the PipelineRun from the source run's evidence. The CLI stores records in the same order as for other proposals, with the proposal last.
+
+### Scaffold proposals
+
+`ScaffoldEvidenceCollector` combines `GitInventoryCollector`, ClusterDeployment and ManagedCluster names from `OpenShiftCLIInventoryClient`, the request built from the CLI flags, the scaffold checkout's `HEAD` and cleanliness, and `kustomize_version()`. `ScaffoldProposalGenerator` reads the CWA snapshot, checks preconditions, and only then calls `SubprocessScaffoldRunner`, which exports both repositories with `git ls-tree` and `git cat-file` into a temporary directory, runs the scaffold there, and reports every added file and every other change, which the generator refuses. After its output checks, it builds the patch and calls `GitDefinitionCheck`, which applies the patch to a `--shared --no-checkout` clone with `git apply --cached`, commits it with `write-tree`, `commit-tree`, and `update-ref`, and runs `GitInventoryCollector` on the clone. All of these Git calls use the isolation in `aura.git_isolation`. A `ScaffoldRunError` from the runner or the check becomes `ProposalGenerationError`, so the command fails after its CWA snapshot and before its trace, and `command_failed` links to `evidence_collected`. The CLI stores records in the same order as for other proposals, with the proposal last.
 
 ### Proposal staleness
 

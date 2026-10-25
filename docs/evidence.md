@@ -363,7 +363,7 @@ The `metadata.yaml` check compares `htpasswd-provider-name`, and `openshift-ai-v
 | `scaffold_checkout` | The checkout's `HEAD` `commit`, and `clean`, false when tracked files have uncommitted changes. The local path is not recorded. A checkout that cannot be read, or a directory that is not the top of a Git checkout, fails the command with `ScaffoldCheckoutError` |
 | `kustomize` | `version`, or `null` when `kustomize` is not on `PATH` |
 
-`ScaffoldProposalGenerator` (`scaffold-deterministic`, version `0.1.0`) checks every precondition, and only then runs the pinned scaffold through a `ScaffoldRunner` with the arguments `aws --name <id> --region <region> --tier <tier>`, the operator options in request order, and `--base-path provision --cluster-templates-dir cluster-templates`. The runner receives the scaffold commit and the base commit; a runner that cannot run the scaffold at all, for example on a timeout, raises `ScaffoldRunError` and fails the command. The patch adds each generated file in path order. Every line of the scaffold's standard output and error that mentions a secret term, after lowercasing and removing non-alphanumeric characters, is stored as `[REDACTED]`, and so is every line of a `-----BEGIN` to `-----END` block. The terms are the redaction module's secret field names and parameter terms, plus `auth`. The last standard error line in a non-zero-exit refusal is redacted the same way. Applying the patch to the base commit and collecting a complete definition is not yet checked during generation; the real scaffold runner will do it in its workspace.
+`ScaffoldProposalGenerator` (`scaffold-deterministic`, version `0.1.0`) checks every precondition, and only then runs the pinned scaffold through a `ScaffoldRunner` with the arguments `aws --name <id> --region <region> --tier <tier>`, the operator options in request order, and `--base-path provision --cluster-templates-dir cluster-templates`. The runner receives the scaffold commit and the base commit; a runner that cannot run the scaffold at all, for example on a timeout, raises `ScaffoldRunError` and fails the command. The patch adds each generated file in path order. Every line of the scaffold's standard output and error that mentions a secret term, after lowercasing and removing non-alphanumeric characters, is stored as `[REDACTED]`, and so is every line of a `-----BEGIN` to `-----END` block. The terms are the redaction module's secret field names and parameter terms, plus `auth`. The last standard error line in a non-zero-exit refusal is redacted the same way.
 
 Refusal reasons before the scaffold runs, reported together:
 
@@ -395,6 +395,7 @@ Refusal reasons after the scaffold runs:
 | --- | --- |
 | Non-zero exit | `scaffold exited <code>: <last standard error line>` |
 | No files | `scaffold wrote no files` |
+| Any modified, deleted, or special file, such as a FIFO | `scaffold changed files other than adding them: [...]` |
 | A path outside `provision/<id>/` | `scaffold wrote outside provision/<id>/: [...]` |
 | A symlink or other non-regular file | `scaffold wrote a non-regular file <path> with mode <mode>` |
 | A YAML field the redaction policy would remove | `scaffold output <path> contains secret-named fields: [...]` |
@@ -402,6 +403,14 @@ Refusal reasons after the scaffold runs:
 | Metadata that is not scoped AWS | `scaffold metadata.yaml must declare platform aws and aws-credentials-mode scoped` |
 | An old wildcard render under `crossplane/patches/` | `<path> contains the old render pattern <pattern>` |
 | No current `machine-api` pattern | `<path> is missing`, or `<path> lacks instance-profile/<prefix>-?????-worker-profile` |
+
+After the output checks, `GitDefinitionCheck` applies the patch to the base commit in a shared clone and collects the result:
+
+| Problem | Reason |
+| --- | --- |
+| The patch does not apply | `patch does not apply to base commit <base>: <git apply detail>` |
+| No definition, several definitions, or an incomplete or invalid one | `applying the patch to <base> yields <kind> for <id>, not a complete cluster_definition`, or the matching variant |
+| A definition outside `provision/<id>` | `applying the patch to <base> yields a definition at <path>, not provision/<id>` |
 
 The render rules mirror `fleet-clusters` `scripts/check_new_overlays.py`; Aura re-implements them rather than running that script. The PR check's `kustomize build` of the whole overlay is not repeated: the scaffold builds `hive/` and `crossplane/` and exits non-zero on a failed build or surviving placeholder names.
 

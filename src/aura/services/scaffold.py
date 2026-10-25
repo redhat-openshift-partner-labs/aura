@@ -28,7 +28,12 @@ from aura.redaction import (
     PARAMETER_SECRET_TERMS,
     redact,
 )
-from aura.scaffold import ScaffoldRequest, ScaffoldResult, ScaffoldRunner
+from aura.scaffold import (
+    DefinitionCheck,
+    ScaffoldRequest,
+    ScaffoldResult,
+    ScaffoldRunner,
+)
 from aura.scaffold import infra_prefix
 from aura.services.diagnosis import cwa_evidence_items
 from aura.services.proposal import ProposalRefused, pinned_git_revision
@@ -65,8 +70,14 @@ class ScaffoldProposalGenerator:
     generator = "scaffold-deterministic"
     generator_version = "0.1.0"
 
-    def __init__(self, *, runner: ScaffoldRunner) -> None:
+    def __init__(
+        self,
+        *,
+        runner: ScaffoldRunner,
+        definition_check: DefinitionCheck,
+    ) -> None:
         self._runner = runner
+        self._definition_check = definition_check
 
     def generate(
         self,
@@ -105,6 +116,17 @@ class ScaffoldProposalGenerator:
         reasons = _output_reasons(result, cluster)
         if reasons:
             raise ProposalRefused(reasons)
+        patch = "".join(
+            added_file_patch(path, result.files[path][1])
+            for path in sorted(result.files)
+        )
+        reasons = self._definition_check.check(
+            base_commit=str(base_commit),
+            patch=patch,
+            cluster_name=cluster,
+        )
+        if reasons:
+            raise ProposalRefused(reasons)
 
         proposal_id = uuid5(
             snapshot.command_id,
@@ -135,10 +157,7 @@ class ScaffoldProposalGenerator:
             ),
             trigger_effect=EXPECTED_TRIGGER_EFFECTS[proposal_type],
             reversibility=EXPECTED_REVERSIBILITY[proposal_type],
-            patch="".join(
-                added_file_patch(path, result.files[path][1])
-                for path in sorted(result.files)
-            ),
+            patch=patch,
             **_scaffold_text(
                 request,
                 scaffold_commit=scaffold_commit,
@@ -269,6 +288,11 @@ def _output_reasons(result: ScaffoldResult, cluster: str) -> list[str]:
         ]
         detail = f": {lines[-1].strip()}" if lines else ""
         return [f"scaffold exited {result.exit_code}{detail}"]
+    if result.changed:
+        return [
+            "scaffold changed files other than adding them: "
+            f"{list(result.changed)}"
+        ]
     if not result.files:
         return ["scaffold wrote no files"]
     root = f"provision/{cluster}/"

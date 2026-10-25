@@ -11,6 +11,7 @@ from uuid import UUID, uuid5
 
 from aura.collectors.openshift_inventory import OpenShiftInventoryClient
 from aura.contracts import EvidenceItem, EvidenceSnapshot
+from aura.git_isolation import GIT_ISOLATION, isolated_git_environment
 from aura.scaffold import ScaffoldCheckoutError, ScaffoldRequest
 
 
@@ -119,10 +120,13 @@ def _names(resources: list[dict[str, Any]]) -> list[str]:
 def _git(root: Path, *arguments: str) -> str:
     try:
         return subprocess.run(
-            ["git", "-C", str(root), *arguments],
+            ["git", *GIT_ISOLATION, "-C", str(root), *arguments],
             check=True,
             capture_output=True,
+            stdin=subprocess.DEVNULL,
             text=True,
+            env=isolated_git_environment(),
+            timeout=60,
         ).stdout
     except subprocess.CalledProcessError as error:
         detail = (error.stderr or "").strip().splitlines()
@@ -130,7 +134,7 @@ def _git(root: Path, *arguments: str) -> str:
             f"scaffold checkout {root} is not usable: "
             f"{detail[-1] if detail else 'git failed'}"
         ) from error
-    except OSError as error:
+    except (OSError, subprocess.TimeoutExpired) as error:
         raise ScaffoldCheckoutError(
             f"scaffold checkout {root} is not usable: {error}"
         ) from error

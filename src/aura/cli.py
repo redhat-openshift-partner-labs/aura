@@ -48,6 +48,7 @@ from aura.collectors.pipeline_definitions import (
     PipelineDefinitionError,
 )
 from aura.collectors.rerun_evidence import RerunEvidenceCollector
+from aura.collectors.scaffold_evidence import ScaffoldEvidenceCollector
 from aura.collectors.tekton_inventory import TektonInventoryCollector
 from aura.collectors.workflow_inventory import WorkflowInventoryCollector
 from aura.cwa_store import (
@@ -84,7 +85,22 @@ from aura.proposal_store import (
     ProposalAlreadyStored,
     ProposalNotFound,
 )
-from aura.proposals import CLUSTER_NAME_PATTERN, Proposal, ProposalType
+from aura.proposals import (
+    CLUSTER_NAME_PATTERN,
+    SCAFFOLD_OPERATOR_FLAGS,
+    Proposal,
+    ProposalType,
+)
+from aura.scaffold import (
+    ScaffoldCheckoutError,
+    ScaffoldRequest,
+    ScaffoldRunError,
+)
+from aura.scaffold_runner import (
+    GitDefinitionCheck,
+    SubprocessScaffoldRunner,
+    kustomize_version,
+)
 from aura.services.cwa import (
     CWAAssemblyResult,
     CWAAssemblyPolicy,
@@ -105,6 +121,7 @@ from aura.services.cluster_state import (
 )
 from aura.services.cluster_edit import ClusterEditProposalGenerator
 from aura.services.rerun import PostProvisionRerunGenerator
+from aura.services.scaffold import ScaffoldProposalGenerator
 from aura.services.proposal import (
     DeprovisionProposalGenerator,
     InvalidProposalCommand,
@@ -250,11 +267,45 @@ _PROPOSAL_GENERATORS = {
     ProposalType.POST_PROVISION_RERUN.value: PostProvisionRerunGenerator,
 }
 _RERUN = ProposalType.POST_PROVISION_RERUN.value
+_SCAFFOLD = ProposalType.SCAFFOLD.value
 ProposalGenerator = (
     DeprovisionProposalGenerator
     | ClusterEditProposalGenerator
     | PostProvisionRerunGenerator
+    | ScaffoldProposalGenerator
 )
+
+
+def _proposal_generator(args: argparse.Namespace) -> ProposalGenerator:
+    if args.proposal_type != _SCAFFOLD:
+        return _PROPOSAL_GENERATORS[args.proposal_type]()
+    return ScaffoldProposalGenerator(
+        runner=SubprocessScaffoldRunner(
+            fleet_clusters=args.fleet_clusters,
+            scaffold=args.scaffold,
+        ),
+        definition_check=GitDefinitionCheck(args.fleet_clusters),
+    )
+
+
+def _scaffold_request(args: argparse.Namespace) -> ScaffoldRequest:
+    """Build the request, with operator flags in allow-list order."""
+
+    return ScaffoldRequest(
+        cloud=args.cloud,
+        cluster_name=args.cluster,
+        region=args.region,
+        tier=args.tier,
+        options=tuple(
+            (flag, value)
+            for flag in SCAFFOLD_OPERATOR_FLAGS
+            if (value := getattr(args, _flag_dest(flag))) is not None
+        ),
+    )
+
+
+def _flag_dest(flag: str) -> str:
+    return flag.removeprefix("--").replace("-", "_")
 
 
 def _add_propose_arguments(
@@ -331,6 +382,27 @@ def _add_propose_parsers(
         required=False,
         help="post-provision PipelineRun to rerun; omit for the latest",
     )
+    scaffold_parser = propose_command_parser.add_parser("scaffold")
+    _add_propose_arguments(scaffold_parser, ProposalType.SCAFFOLD)
+    scaffold_parser.add_argument(
+        "--scaffold",
+        type=Path,
+        required=True,
+        help="Path to a clean local fleet-cluster-scaffold checkout",
+    )
+    scaffold_parser.add_argument("--region", required=True, help="Region")
+    scaffold_parser.add_argument("--tier", required=True, help="Tier")
+    scaffold_parser.add_argument(
+        "--cloud",
+        default="aws",
+        help="Cloud provider; only aws is supported",
+    )
+    for flag in SCAFFOLD_OPERATOR_FLAGS:
+        scaffold_parser.add_argument(
+            flag,
+            dest=_flag_dest(flag),
+            help=f"Passed to the scaffold as {flag}",
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -907,6 +979,16 @@ def _selected_proposal_collector(
     args: argparse.Namespace,
     collector: EvidenceCollector | None,
 ) -> EvidenceCollector:
+    if collector is None and args.proposal_type == _SCAFFOLD:
+        return ScaffoldEvidenceCollector(
+            request=_scaffold_request(args),
+            git_collector=GitInventoryCollector(args.fleet_clusters),
+            openshift_client=OpenShiftCLIInventoryClient(
+                kubeconfig_path=args.openshift_kubeconfig,
+            ),
+            scaffold_checkout=args.scaffold,
+            kustomize_version=kustomize_version,
+        )
     if collector is not None or args.proposal_type != _RERUN:
         return _selected_cluster_state_collector(args, collector)
     return RerunEvidenceCollector(
@@ -1578,6 +1660,8 @@ def _run_proposal(
             OpenShiftCLIError,
             GitInventoryError,
             PipelineDefinitionError,
+            ScaffoldCheckoutError,
+            ScaffoldRunError,
         ),
         clock,
     )
@@ -1641,7 +1725,7 @@ def _assemble_and_propose(
         _assembly_request(result, roles, evidence_event, "proposal", clock),
         lambda assembly: _propose_and_trace(
             assembly,
-            _PROPOSAL_GENERATORS[args.proposal_type](),
+            _proposal_generator(args),
             clock,
         ),
     )
@@ -1737,6 +1821,8 @@ def _generated(
         raise ProposalGenerationError(
             f"generated proposal is invalid: {error.errors()[0]['msg']}"
         ) from error
+    except ScaffoldRunError as error:
+        raise ProposalGenerationError(str(error)) from error
 
 
 def _proposal_created_audit_event(
@@ -1799,6 +1885,15 @@ def _dispatch_command(
             **(
                 {"pipeline_run": args.pipeline_run}
                 if args.proposal_type == _RERUN
+                else {}
+            ),
+            **(
+                {
+                    "scaffold_request": _scaffold_request(args).model_dump(
+                        mode="json"
+                    )
+                }
+                if args.proposal_type == _SCAFFOLD
                 else {}
             ),
             "history": [],

@@ -87,7 +87,7 @@ flowchart LR
 | --- | --- |
 | Input | Cloud, cluster name, region, tier, and the allow-listed scaffold flags below |
 | Preconditions | Cloud is `aws`; name is a DNS-1123 label of at most 49 characters; no `provision/`, `archive/`, or `deprovision/` entry (with or without `-archive`) and no OpenShift ClusterDeployment or ManagedCluster uses the name or shares its infra prefix; `kustomize` is on `PATH`; the scaffold checkout is a clean Git checkout |
-| Generation | Pinned scaffold, exported with `git archive` and run in a temporary workspace holding an export of `fleet-clusters` at the base commit, with `--base-path provision --cluster-templates-dir cluster-templates` |
+| Generation | Pinned scaffold, exported from its Git objects and run in a temporary workspace holding an export of `fleet-clusters` at the base commit, with `--base-path provision --cluster-templates-dir cluster-templates` |
 | Artifact | Patch that adds only regular files (mode `100644`) under `provision/<id>/`, including every required definition file |
 | Validation | Scaffold `kustomize build` passes; the generated overlay passes Aura's re-implementation of the `fleet-clusters` new-overlay PR check; applying the patch to the base commit and running `GitInventoryCollector` yields one complete `cluster_definition` whose `cluster_name` is `<id>` |
 | Trigger effect | Merge starts pre-provision, provision, and post-provision |
@@ -119,7 +119,7 @@ Decisions, 2026-10-25:
 | `metadata.yaml` | Scaffold output is accepted unmodified |
 | PR check | Aura re-implements its rules, with a parity test for the infra prefix, instead of executing `fleet-clusters` code |
 | Run record | Scaffold proposals carry a `scaffold_run` record: the `kustomize` version, the scaffold arguments, the exit code, standard output and error, and the generated file list |
-| Pinning | `--scaffold <path>` names a local checkout; Aura records its `HEAD` as `scaffold_commit`, refuses a dirty tracked tree, and runs a `git archive` export of that commit |
+| Pinning | `--scaffold <path>` names a local checkout; Aura records its `HEAD` as `scaffold_commit`, refuses a dirty tracked tree, and runs an export of that commit written from `git ls-tree` and `git cat-file`, which export attributes cannot alter |
 
 Contract rules for scaffold proposals:
 
@@ -237,7 +237,7 @@ A proposal is stale when `fleet-clusters` `HEAD` moves past `base_commit` and to
 
 ## Scaffold Boundary
 
-- Run `fleet-cluster-scaffold` from a `git archive` export of a clean local checkout at a recorded commit, not its package version, so nothing is written into the checkout.
+- Run `fleet-cluster-scaffold` from an export of a clean local checkout, written from its Git objects, at a recorded commit, not its package version, so nothing is written into the checkout.
 - Run in a new temporary directory containing only an export of `fleet-clusters` at the base commit.
 - Pass no credentials and no kubeconfig; the scaffold needs neither.
 - Capture stdout, stderr, exit code, and the generated file list.

@@ -28,6 +28,14 @@ from aura.collectors.pipeline_definitions import PipelineDefinitionError
 from test_rerun_proposal import FULL_METADATA, LATEST, run, rerun_collector
 from test_git_inventory_collector import commit_repository, write_cluster
 from test_git_staleness import deprovision_proposal
+from aura.collectors.scaffold_evidence import ScaffoldEvidenceCollector
+from aura.scaffold import (
+    ScaffoldCheckoutError,
+    ScaffoldRequest,
+    ScaffoldRunError,
+)
+from fake_scaffold import fake_scaffold, fleet_with_templates
+from test_scaffold_proposal import FakeOpenShiftClient
 
 
 COMMAND_ID = UUID(int=7)
@@ -43,6 +51,7 @@ RECORD_DIRS = (
 SOURCE_ERRORS = (GitInventoryError, OpenShiftCLIError)
 STORE_ERRORS = (GitInventoryError, ProposalNotFound, ProposalRecordUnreadable)
 RERUN_ERRORS = (*SOURCE_ERRORS, PipelineDefinitionError)
+SCAFFOLD_ERRORS = (*SOURCE_ERRORS, ScaffoldCheckoutError, ScaffoldRunError)
 RECEIVED = "AuditEvent:command_received"
 EVIDENCE = ("EvidenceSnapshot", "AuditEvent:evidence_collected")
 ASSEMBLED = ("CWASnapshot",)
@@ -230,6 +239,50 @@ def rerun(*runs: dict):
     return build
 
 
+def scaffold(name: str):
+    def build(root: Path):
+        fleet = fleet_with_templates(root / "fleet-clusters")
+        checkout = fake_scaffold(root / "fleet-cluster-scaffold")
+        return (
+            [
+                "propose",
+                "scaffold",
+                "--cluster",
+                name,
+                "--region",
+                "us-east-1",
+                "--tier",
+                "base",
+                "--scaffold",
+                str(checkout),
+                "--fleet-clusters",
+                str(fleet),
+                "--openshift-kubeconfig",
+                str(root / "kubeconfig"),
+                *records(root, "snapshot", "audit", "cwa", "proposal"),
+                "--role",
+                "proposer",
+                *operator(root),
+            ],
+            ScaffoldEvidenceCollector(
+                request=ScaffoldRequest(
+                    cloud="aws",
+                    cluster_name=name,
+                    region="us-east-1",
+                    tier="base",
+                ),
+                git_collector=GitInventoryCollector(fleet),
+                openshift_client=FakeOpenShiftClient(
+                    ("existing",), ("existing",)
+                ),
+                scaffold_checkout=checkout,
+                kustomize_version=lambda: "v5.8.1",
+            ),
+        )
+
+    return build
+
+
 def proposal_status(*names: str):
     def build(root: Path):
         fleet = root / "fleet-clusters"
@@ -319,6 +372,19 @@ SCENARIOS = [
         REFUSED,
         CommandState.REFUSED,
         read_errors=RERUN_ERRORS,
+    ),
+    Scenario(
+        "scaffold",
+        scaffold("new-cluster"),
+        PROPOSED,
+        read_errors=SCAFFOLD_ERRORS,
+    ),
+    Scenario(
+        "scaffold-refused",
+        scaffold("existing"),
+        REFUSED,
+        CommandState.REFUSED,
+        read_errors=SCAFFOLD_ERRORS,
     ),
     Scenario(
         "proposal-status-minimal",

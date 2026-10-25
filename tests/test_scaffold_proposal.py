@@ -31,6 +31,8 @@ from aura.scaffold import (
 )
 from aura.services.proposal import ProposalRefused
 from aura.services.scaffold import ScaffoldProposalGenerator
+from aura.scaffold_runner import GitDefinitionCheck
+from fake_scaffold import overlay_files
 from test_cluster_state_collector import FakeGitCollector
 from test_cluster_state_diagnosis import make_cwa_snapshot
 from test_git_inventory_collector import commit_repository, write_cluster
@@ -44,55 +46,36 @@ KUSTOMIZE = "v5.8.1"
 REGULAR = "100644"
 
 
-def flags(arguments: list[str]) -> dict[str, str]:
-    return dict(zip(arguments[1::2], arguments[2::2], strict=True))
-
-
 def overlay(arguments: list[str]) -> dict[str, tuple[str, str]]:
-    """Files the real scaffold writes for these arguments, in miniature."""
+    """Files the fake scaffold writes for these arguments."""
 
-    values = flags(arguments)
-    name = values["--name"]
-    topology = values.get("--topology", "standard")
-    root = f"provision/{name}"
-    metadata = "platform: aws\naws-credentials-mode: scoped\n"
-    if "--htpasswd-provider-name" in values:
-        metadata += (
-            f"htpasswd-provider-name: {values['--htpasswd-provider-name']}\n"
-        )
-    templates = f"../../../cluster-templates/aws/{topology}"
-    files = {
-        "kustomization.yaml": "resources:\n- crossplane/\n- hive/\n",
-        "metadata.yaml": metadata,
-        "hive/kustomization.yaml": f"resources:\n- {templates}/hive\n",
-        "hive/patches/clusterdeployment.yaml": (
-            "- op: replace\n  path: /metadata/name\n"
-            f"  value: {name}\n"
-            "- op: replace\n  path: /spec/platform/aws/region\n"
-            f"  value: {values['--region']}\n"
-            "- op: replace\n  path: /spec/provisioning/imageSetRef/name\n"
-            f"  value: {values.get('--image-set', 'img4.21.13-x86-64-appsub')}\n"
-        ),
-        "hive/patches/managedcluster.yaml": (
-            "- op: add\n  path: /metadata/labels/tier\n"
-            f"  value: {values['--tier']}\n"
-            "- op: add\n  path: /metadata/labels/environment\n"
-            f"  value: {values.get('--environment', 'development')}\n"
-        ),
-        "crossplane/kustomization.yaml": (
-            f"resources:\n- {templates}/crossplane-scoped\n"
-        ),
-        "crossplane/patches/machine-api/policy.yaml": (
-            "- op: replace\n  path: /spec/forProvider/policy\n"
-            "  value: '{\"Resource\": \"arn:aws:iam::*:instance-profile/"
-            f"{infra_prefix(name)}-?????-worker-profile\"}}'\n"
-        ),
+    return {
+        path: (REGULAR, text) for path, text in overlay_files(arguments).items()
     }
-    if topology == "standard":
-        files["hive/patches/machinepool-worker.yaml"] = (
-            "- op: replace\n  path: /spec/replicas\n  value: 3\n"
+
+
+class PassingCheck:
+    """Records definition checks and reports the given reasons."""
+
+    def __init__(self, *reasons: str) -> None:
+        self.calls: list[dict[str, str]] = []
+        self._reasons = list(reasons)
+
+    def check(
+        self,
+        *,
+        base_commit: str,
+        patch: str,
+        cluster_name: str,
+    ) -> list[str]:
+        self.calls.append(
+            {
+                "base_commit": base_commit,
+                "patch": patch,
+                "cluster_name": cluster_name,
+            }
         )
-    return {f"{root}/{path}": (REGULAR, text) for path, text in files.items()}
+        return list(self._reasons)
 
 
 class FakeRunner:
@@ -103,6 +86,7 @@ class FakeRunner:
         edit: Callable[[dict[str, tuple[str, str]]], None] | None = None,
         *,
         exit_code: int = 0,
+        changed: tuple[str, ...] = (),
         stdout: str = "",
         stderr: str = "Cluster scaffolded successfully\n",
         error: Exception | None = None,
@@ -110,6 +94,7 @@ class FakeRunner:
         self.calls: list[dict[str, Any]] = []
         self._edit = edit
         self._exit_code = exit_code
+        self._changed = changed
         self._stdout = stdout
         self._stderr = stderr
         self._error = error
@@ -138,6 +123,7 @@ class FakeRunner:
             stdout=self._stdout,
             stderr=self._stderr,
             files=files,
+            changed=self._changed,
         )
 
 
@@ -245,8 +231,15 @@ def evidence(
     )
 
 
-def generate(snapshot: EvidenceSnapshot, runner: FakeRunner) -> Proposal:
-    return ScaffoldProposalGenerator(runner=runner).generate(
+def generate(
+    snapshot: EvidenceSnapshot,
+    runner: FakeRunner,
+    definition_check: object | None = None,
+) -> Proposal:
+    return ScaffoldProposalGenerator(
+        runner=runner,
+        definition_check=definition_check or PassingCheck(),
+    ).generate(
         make_cwa_snapshot(snapshot),
         cwa_trace_id=TRACE_ID,
         created_at=CREATED_AT,
@@ -399,6 +392,38 @@ def test_generator_states_the_provision_chain_and_commit(
     assert any("pre-provision" in risk for risk in proposal.risks)
     assert proposal.scaffold_commit in (proposal.commit_message or "")
     assert " ".join(expected_arguments()) in (proposal.commit_message or "")
+
+
+def test_generator_refuses_what_the_definition_check_reports(
+    tmp_path: Path,
+) -> None:
+    root = fleet(tmp_path)
+    check = PassingCheck("applying the patch yields nothing")
+    runner = FakeRunner()
+
+    with pytest.raises(ProposalRefused) as refusal:
+        generate(evidence(tmp_path, root=root), runner, check)
+
+    assert refusal.value.reasons == ["applying the patch yields nothing"]
+    [call] = check.calls
+    assert call["base_commit"] == head(root)
+    assert call["cluster_name"] == NEW
+    assert patch_changes(call["patch"]) == [
+        (path, "added")
+        for path in sorted(overlay(runner.calls[0]["arguments"]))
+    ]
+
+
+def test_generator_passes_the_real_definition_check(tmp_path: Path) -> None:
+    root = fleet(tmp_path)
+
+    proposal = generate(
+        evidence(tmp_path, root=root),
+        FakeRunner(),
+        GitDefinitionCheck(root),
+    )
+
+    assert proposal.cluster_name == NEW
 
 
 def test_generator_is_deterministic(tmp_path: Path) -> None:
@@ -835,6 +860,17 @@ def _empty(files: dict[str, tuple[str, str]]) -> None:
             f"contains the old render pattern instance-profile/{NEW}-*",
         ),
         (FakeRunner(_empty), "scaffold wrote no files"),
+        (
+            FakeRunner(
+                changed=(
+                    "modified cluster-templates/marker.txt",
+                    "special provision/new-cluster/pipe",
+                )
+            ),
+            "scaffold changed files other than adding them: "
+            "['modified cluster-templates/marker.txt', "
+            "'special provision/new-cluster/pipe']",
+        ),
     ],
 )
 def test_generator_refuses_unusable_scaffold_output(
