@@ -192,11 +192,17 @@ def _metadata(
     correlation: EvidenceItem,
     items_by_id: dict[str, EvidenceItem],
     cluster: str,
-) -> tuple[dict[str, Any], str | None]:
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Return metadata.yaml's keys, or None when they cannot be known.
+
+    Without exactly one definition the shared preconditions already
+    refuse, so no metadata comparison is reported.
+    """
+
     git_ids = correlation.data.get("git_evidence_ids", [])
     definition = items_by_id.get(git_ids[0]) if len(git_ids) == 1 else None
     if definition is None:
-        return {}, None
+        return None, None
     if definition.kind == "cluster_definition":
         document = yaml.safe_load(definition.data.get("metadata_text") or "")
         return (document if isinstance(document, dict) else {}), None
@@ -204,11 +210,11 @@ def _metadata(
     if "metadata.yaml" in missing:
         return {}, None
     if missing:
-        return {}, (
+        return None, (
             f"cannot check metadata.yaml for {cluster}: its definition is "
             f"missing {missing}"
         )
-    return {}, (
+    return None, (
         f"cannot check metadata.yaml for {cluster}: its definition is "
         f"invalid"
     )
@@ -217,7 +223,7 @@ def _metadata(
 def _run_reasons(
     source: EvidenceItem,
     definition: EvidenceItem,
-    metadata: dict[str, Any],
+    metadata: dict[str, Any] | None,
     cluster: str,
 ) -> list[str]:
     run = f"PipelineRun {source.data['pipeline_run_name']}"
@@ -247,7 +253,7 @@ def _run_reasons(
         for name, value in params.items()
         if value == REDACTED
     )
-    for key in RUN_KEYS:
+    for key in RUN_KEYS if metadata is not None else ():
         used = str(params.get(key, METADATA_DEFAULTS[key]))
         expected = str(metadata.get(key, METADATA_DEFAULTS[key]))
         if used != expected:

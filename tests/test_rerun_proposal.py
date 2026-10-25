@@ -21,6 +21,7 @@ from test_cluster_edit_proposal import ABSENT, fleet
 from test_cluster_inventory_collector import actual_state, openshift_collector
 from test_cluster_state_collector import EmptyCollector
 from test_cluster_state_diagnosis import make_cwa_snapshot
+from test_git_inventory_collector import write_cluster
 from test_pipeline_definitions import (
     POST_PROVISION,
     FakePipelineClient,
@@ -532,3 +533,24 @@ def test_generator_refuses_unmet_preconditions(
         generate(build(tmp_path))
 
     assert any(item.startswith(reason) for item in refusal.value.reasons)
+
+
+def _archive(root: Path) -> None:
+    write_cluster(root, directory="archive")
+
+
+def test_generator_skips_the_metadata_check_without_one_definition(
+    tmp_path: Path,
+) -> None:
+    source = run(
+        "post-provision-example-new",
+        "2026-01-02T00:00:00Z",
+        params={**TRIGGER_PARAMS, "htpasswd-provider-name": "Basic"},
+    )
+
+    with pytest.raises(ProposalRefused) as refusal:
+        generate(evidence(fleet(tmp_path, prepare=_archive), source))
+
+    assert refusal.value.reasons == [
+        "conflicting Git cluster definitions for example"
+    ]
