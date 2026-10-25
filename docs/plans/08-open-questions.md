@@ -30,7 +30,9 @@ Default: Aura may propose a PR but never merge it.
 
 ### Backfill `metadata.yaml` for definitions that predate it
 
-Status: open. On 2026-10-23 the operator chose to keep `metadata.yaml` required and to build `cluster_edit` backfill proposals that write all four keys under `provision/` only; see [Existing-Cluster Edits](05-phase-2-proposals.md#existing-cluster-edits).
+Status: resolved on 2026-10-25. On 2026-10-23 the operator chose to keep `metadata.yaml` required and to build `cluster_edit` backfill proposals that write all four keys under `provision/` only; see [Existing-Cluster Edits](05-phase-2-proposals.md#existing-cluster-edits). The operator then backfilled `metadata.yaml` under both `provision/` and `archive/` in `fleet-clusters` commit `3cf829d`, pushed with `[skip-provision]` in its message. That commit added 14 files and appended keys to 13, leaving every `metadata.yaml` with all four `fleet` keys. With `metadata.yaml` present, one archived definition then reported as `cluster_definition_invalid`: its ClusterDeployment patch lacked `/spec/provisioning/imageSetRef/name`, which the missing file had masked. The operator added the path in `a8a6bf0`. At `a8a6bf0`, Git inventory reports 27 complete definitions, none incomplete or invalid; see [Current Git Inventory](../validation.md#current-git-inventory).
+
+The history below records the state before the backfill.
 
 `metadata.yaml` is a required definition file. At `fleet-clusters` commit `492bc8e07afddcd557441ddb7d72158de60ab8cb`, 14 of 26 committed definitions do not contain it because they were created before the file was introduced:
 
@@ -45,7 +47,7 @@ Warning: adding `metadata.yaml` adds a file under `provision/<id>`, which the `f
 
 ### Backfill `platform` in legacy `metadata.yaml` files
 
-Status: open. On 2026-10-23 the operator chose to build `cluster_edit` proposals that add every missing key to these files, under `provision/` only.
+Status: resolved on 2026-10-25. On 2026-10-23 the operator chose to build `cluster_edit` proposals that add every missing key to these files, under `provision/` only. The same `3cf829d` backfill added `platform` and the other missing keys; at `a8a6bf0`, every definition has a non-null `cloud_provider`.
 
 At the same commit, 11 of the 12 complete definitions have a `metadata.yaml` without `platform`; only one, under `provision/`, declares it:
 

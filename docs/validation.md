@@ -101,6 +101,27 @@ Check that output contains:
 - Every incomplete definition has a `cluster_name` equal to its directory name.
 - 7 `deprovision_sentinel` items, all with `archive_suffix: false`.
 
+## Current Git Inventory
+
+Run the Git inventory command above against current `fleet-clusters` `HEAD` with a new idempotency key, saving its output to `inventory.json`. Count item kinds and list any definition that is not complete or has no `cloud_provider`:
+
+```bash
+jq -r '.items[].kind' inventory.json | sort | uniq -c
+jq -r '.items[] | select(.kind | startswith("cluster_definition")) | select(.kind != "cluster_definition" or .data.cloud_provider == null) | [.kind, .data.path] | @tsv' inventory.json
+```
+
+Latest result, recorded on 2026-10-25 against `fleet-clusters` commit `a8a6bf0`, after the operator's `metadata.yaml` backfill in `3cf829d` and a ClusterDeployment patch fix in `a8a6bf0`:
+
+| Item kind | Before backfill (`492bc8e`) | After backfill (`3cf829d`) | Current (`a8a6bf0`) |
+| --- | --- | --- | --- |
+| `cluster_definition` | 12 | 26 | 27 |
+| `cluster_definition_incomplete` | 14 | 0 | 0 |
+| `cluster_definition_invalid` | 0 | 1 | 0 |
+| Definitions without `cloud_provider` | 11 | 0 | 0 |
+| `deprovision_sentinel` | 7 | 7 | 7 |
+
+The invalid definition at `3cf829d` was archived; its ClusterDeployment patch lacked `/spec/provisioning/imageSetRef/name`. Before the backfill, its missing `metadata.yaml` masked that defect, because Aura reports missing files before parsing patches. Every committed `metadata.yaml` declares all four `fleet` keys.
+
 ## Live OpenShift Validation
 
 Use the isolated read-only kubeconfig:
@@ -311,7 +332,7 @@ Latest validation, run by the operator on 2026-10-24 after applying `deploy/` wi
 | Definition | One `post-provision` item with 20 parameters, `malformed_params: 0`, no `default` field, and empty `redactions` |
 | Required parameters | `cluster-name tier dns-zones`, matching `fleet` `HEAD` |
 | Missing Pipeline | `PipelineDefinitionError: requested Pipelines not found: ['does-not-exist']`, after one `oc` timeout on a mobile hotspot |
-| Existing commands | Pending: `inventory list --source combined` timed out on the hotspot and is to be re-run on a steadier connection |
+| Existing commands | Pending: `inventory list --source combined` timed out on the hotspot and is to be re-run on a steadier connection. Against `fleet-clusters` `a8a6bf0` or later, expect no `incomplete-definition` or `incomplete-metadata` drift; a backfilled cluster whose `platform` disagrees with OpenShift reports `detected` |
 
 The snapshot `source_version` was `pipelines=`: `oc get -o json` returns a client-side `List` with an empty `resourceVersion`, so OpenShift and Tekton source versions carry no version. This affects every `oc` client and is tracked under [Status](status.md#not-implemented).
 

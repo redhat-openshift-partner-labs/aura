@@ -2,7 +2,7 @@
 
 ## Phase 1
 
-Phase 1 functional scope and closure hardening are implemented and validated. Phase 1 is published: `main` was pushed to the public remote at `01f0f38`, and CI run `39474106779` passed. Two `fleet-clusters` data issues remain open in [Open Questions](plans/08-open-questions.md#fleet-clusters-data); Aura reports them rather than working around them.
+Phase 1 functional scope and closure hardening are implemented and validated. Phase 1 is published: `main` was pushed to the public remote at `01f0f38`, and CI run `39474106779` passed. The `metadata.yaml` and `platform` backfills were resolved in `fleet-clusters` on 2026-10-25; the stranded deprovision sentinels remain open in [Open Questions](plans/08-open-questions.md#fleet-clusters-data), and Aura reports them rather than working around them.
 
 Validation summary, recorded at Aura commit `6dc0eb3`:
 
@@ -184,6 +184,6 @@ The model protocol remains provider-independent. A future provider must consume 
 
 Phase 1 is published. Remaining work:
 
-1. `fleet-clusters` owners backfill `metadata.yaml` and its `platform` key for the definitions listed in [Open Questions](plans/08-open-questions.md#fleet-clusters-data), pushing any added `metadata.yaml` with `[skip-provision]` in the head commit message, and decide how to remediate the stranded deprovision sentinels.
-2. The operator re-runs the combined `inventory list` check from [Pipeline Definition Validation](validation.md#pipeline-definition-validation) on a steady connection; `deploy/` is applied and the RBAC and Pipeline collector are validated.
+1. `fleet-clusters` owners decide how to remediate the stranded deprovision sentinels listed in [Open Questions](plans/08-open-questions.md#stranded-deprovision-sentinels). The `metadata.yaml` and `platform` backfills are done; see [Current Git Inventory](validation.md#current-git-inventory).
+2. The operator re-runs the combined `inventory list` check from [Pipeline Definition Validation](validation.md#pipeline-definition-validation) on a steady connection against `fleet-clusters` `a8a6bf0` or later, confirming the backfill clears `incomplete-definition` and `incomplete-metadata` drift; `deploy/` is applied and the RBAC and Pipeline collector are validated.
 3. Implement scaffold proposals under the development workflow.
