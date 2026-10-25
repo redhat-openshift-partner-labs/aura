@@ -185,5 +185,6 @@ The model protocol remains provider-independent. A future provider must consume 
 Phase 1 is published. Remaining work:
 
 1. `fleet-clusters` owners decide how to remediate the stranded deprovision sentinels listed in [Open Questions](plans/08-open-questions.md#stranded-deprovision-sentinels). The `metadata.yaml` and `platform` backfills are done; see [Current Git Inventory](validation.md#current-git-inventory).
-2. `fleet-clusters` owners investigate the active definition that combined inventory reported as `missing-openshift` on 2026-10-25; see [Live OpenShift Validation](validation.md#live-openshift-validation). The combined re-run confirmed the backfill cleared all `incomplete-definition` and `incomplete-metadata` drift.
-3. Implement scaffold proposals under the development workflow.
+2. Implement scaffold proposals under the development workflow.
+
+The combined inventory and workflow re-runs on 2026-10-25 against `fleet-clusters` `4ead929` confirmed the backfill cleared all `incomplete-definition` and `incomplete-metadata` drift, and reported no `missing-openshift` drift and every workflow view correlated; see [Live OpenShift Validation](validation.md#live-openshift-validation).

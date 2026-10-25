@@ -164,31 +164,31 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura workflow inspect \
   --command-dir ./local/commands
 ```
 
-Latest validation observed. The previous column was recorded at Aura commit `655a0ac` against `fleet-clusters` `492bc8e`. The current column was run on 2026-10-25 with the `aura:aura-readonly` kubeconfig, at Aura commit `f782a7d` against `fleet-clusters` `a8a6bf0`, after the [metadata backfill](#current-git-inventory); `workflow inspect` was not re-run.
+Latest validation observed, run with the `aura:aura-readonly` kubeconfig. The previous column was recorded at Aura commit `655a0ac` against `fleet-clusters` `492bc8e`. The current column was run on 2026-10-25 at Aura commit `af39b4f` against `fleet-clusters` `main` at `4ead929`, after the [metadata backfill](#current-git-inventory), read from a scratch clone because the local checkout was behind `main`.
 
 | Metric | Previous | Current |
 | --- | --- | --- |
 | OpenShift cluster states | 13 | 12 |
-| PipelineRuns | 34 | 44 |
+| PipelineRuns | 34 | 45 |
 | Combined inventory records | 25 | 26 |
-| Combined inventory evidence items | 105 | 116 |
-| `missing-git` or `detected` drift | 0 | 0 |
-| `missing-openshift` drift | 0 | 1 |
+| Combined inventory evidence items | 105 | 117 |
+| `missing-git`, `missing-openshift`, or `detected` drift | 0 | 0 |
 | `incomplete-definition` drift | 5 | 0 |
 | `incomplete-metadata` drift | 6 | 0 |
 | `none` drift | Not recorded | 11 |
-| `archived` drift | Not recorded | 7 |
+| `archived` drift | Not recorded | 8 |
 | `definition-conflict` drift | Not recorded | 1 |
 | `deprovision-requested` drift | 6, all `deprovision_status: stranded` | 6, all `deprovision_status: stranded` |
 | `leftover` deprovision status | 1 | 1 |
 | Combined snapshot redactions | None; no live parameter name contains a non-allowlisted secret term | None |
-| Record files | Not recorded | 1 command, 1 snapshot, 3 audit, 1 CWA snapshot, 1 CWA trace; no `.tmp` files |
-| Workflow evidence items | 114 | Not re-run |
-| Workflow views | 34 | Not re-run |
-| Correlated workflow views | 34 | Not re-run |
-| Uncorrelated workflow views | 0 | Not re-run |
+| Combined record files | Not recorded | 1 command, 1 snapshot, 3 audit, 1 CWA snapshot, 1 CWA trace; no `.tmp` files |
+| Workflow evidence items | 114 | 136 |
+| Workflow views | 34 | 45 |
+| Correlated workflow views | 34 | 45 |
+| Uncorrelated workflow views | 0 | 0 |
+| Workflow record files | Not recorded | 1 command, 1 snapshot, 2 audit; no `.tmp` files |
 
-The backfill cleared every `incomplete-definition` and `incomplete-metadata` record, and no backfilled `platform` disagrees with OpenShift. The new `missing-openshift` record is an active `provision/<cluster-name>` definition with no deprovision sentinel, no ClusterDeployment or ManagedCluster, and no retained PipelineRun; it had OpenShift resources in the previous run. Aura cannot tell from read-only evidence why they were removed.
+The backfill cleared every `incomplete-definition` and `incomplete-metadata` record, and no backfilled `platform` disagrees with OpenShift. An earlier run the same day, against `a8a6bf0`, reported one `missing-openshift` record: an active definition whose OpenShift resources and PipelineRuns were gone, with no deprovision sentinel. The operator resolved it with a standalone `deprovision/<cluster-name>-archive` commit; the `deprovision` PipelineRun succeeded in 38 seconds with no OpenShift resources present, and the `archive-cluster` Action moved the definition to `archive/` in `4ead929`. The current run reports it as `archived`, citing that PipelineRun.
 
 ## Live Diagnosis Validation
 
@@ -339,7 +339,7 @@ Latest validation, run by the operator on 2026-10-24 after applying `deploy/` wi
 | Definition | One `post-provision` item with 20 parameters, `malformed_params: 0`, no `default` field, and empty `redactions` |
 | Required parameters | `cluster-name tier dns-zones`, matching `fleet` `HEAD` |
 | Missing Pipeline | `PipelineDefinitionError: requested Pipelines not found: ['does-not-exist']`, after one `oc` timeout on a mobile hotspot |
-| Existing commands | `inventory list --source combined` timed out on the hotspot; re-run on 2026-10-25 against `fleet-clusters` `a8a6bf0`, exit code `0`; see [Live OpenShift Validation](#live-openshift-validation) |
+| Existing commands | `inventory list --source combined` timed out on the hotspot; re-run on 2026-10-25 against `fleet-clusters` `4ead929` with `workflow inspect`, both exit code `0`; see [Live OpenShift Validation](#live-openshift-validation) |
 
 The snapshot `source_version` was `pipelines=`: `oc get -o json` returns a client-side `List` with an empty `resourceVersion`, so OpenShift and Tekton source versions carry no version. This affects every `oc` client and is tracked under [Status](status.md#not-implemented).
 
