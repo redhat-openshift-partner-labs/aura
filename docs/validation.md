@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-633 passed
+634 passed
 ```
 
 Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `b9cdcb0`, passed with 633 tests on Python 3.13.17 in `linux/arm64`.
@@ -63,6 +63,7 @@ The test classes every change must include are defined in [Development Workflow]
 - Deprovision contract rejection of non-empty or non-regular sentinel files.
 - The failure-injection matrix: every command's documented write order, a failure of each write in turn before writing and after linking, and each route's read errors, with invariants I1–I4 checked after every run.
 - Fixture validity and secret redaction, including field spelling variants.
+- Read-only RBAC manifests: every `oc` client, built as the CLI builds it, has exactly its `list` grant in `deploy/`, and a new client subclass fails until it is checked.
 
 ## Local Fixture
 
