@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 1 is implemented, validated, and published. The [Phase 2](05-phase-2-proposals.md) plan is approved; its prerequisites P0, P1, P3, and P4 are implemented, and deprovision proposals are generated. [Phase 3](06-phase-3-approved-execution.md) is a draft aligned with Phase 2 and awaits approval.
+Phase 1 is implemented, validated, and published. The [Phase 2](05-phase-2-proposals.md) plan is approved; all four proposal types are implemented and validated against the live hub, and [Phase 2 Acceptance](09-phase-2-acceptance.md) records four criteria not yet met. [Phase 3](06-phase-3-approved-execution.md) is a draft aligned with Phase 2 and awaits approval.
 
 ## Objective
 
@@ -38,6 +38,7 @@ Aura will help a human operator understand current state, diagnose problems, pre
 | [Phase 0: Baseline](03-phase-0-baseline.md) | Contracts, access, and evidence model before product work |
 | [Phase 1: Read-Only Assistant](04-phase-1-read-only-assistant.md) | Inventory and diagnosis without side effects |
 | [Phase 2: Proposals](05-phase-2-proposals.md) | Patch, pipeline, and action proposals without execution |
+| [Phase 2 Acceptance](09-phase-2-acceptance.md) | Criterion-by-criterion evidence and grades for Phase 2 sign-off |
 | [Phase 3: Approved Execution](06-phase-3-approved-execution.md) | Guarded execution after explicit human approval |
 | [Testing, Security, and Rollout](07-testing-security-rollout.md) | Validation strategy and release gates |
 | [Open Questions](08-open-questions.md) | Decisions needed before implementation |

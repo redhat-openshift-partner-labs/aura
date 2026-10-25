@@ -260,7 +260,7 @@ Patches must be Git-format diffs. Every proposal names exactly one cluster, and 
 | `kustomize_version` | Non-empty |
 | `arguments` | Start with `aws`; then flag and value pairs, each flag at most once and each with a value. Flags are limited to `--name`, `--region`, `--tier`, `--base-path`, `--cluster-templates-dir`, and the operator flags `--topology`, `--environment`, `--base-domain`, `--control-plane-type`, `--worker-type`, `--control-plane-replicas`, `--worker-replicas`, `--image-set`, `--zones`, `--install-attempts-limit`, and `--htpasswd-provider-name`. They must include `--name <id>`, `--base-path provision`, and `--cluster-templates-dir cluster-templates`, and never `--force`, `--skip-validation`, or `--legacy-mint-credentials` |
 | `exit_code` | Exactly `0` |
-| `stdout` and `stderr` | The scaffold's captured streams. The contract does not check them; the scaffold generator, not yet implemented, must redact them before storage |
+| `stdout` and `stderr` | The scaffold's captured streams. The contract does not check them; the scaffold generator redacts them before storage |
 | `files` | Exactly the paths the patch adds, sorted; the patch adds each path once, and each with no mode line but `new file mode 100644` |
 
 `GitProposalStaleness` reports a Git proposal as stale when its `base_commit` is not an ancestor of `fleet-clusters` `HEAD`, or when any commit since `base_commit` changed `provision/<id>`, `archive/<id>`, `deprovision/<id>`, or `deprovision/<id>-archive`. Changes to other clusters do not make it stale. Post-provision reruns have no base commit; their evidence is rechecked when they are generated or executed.
