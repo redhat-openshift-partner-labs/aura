@@ -684,7 +684,11 @@ def _validate_commit_message(
 
 
 def _validate_rerun_proposal(proposal: Proposal) -> None:
-    for field in ("base_commit", "commit_message", "patch"):
+    if proposal.base_commit is None:
+        raise ValueError(
+            "base_commit is required for post_provision_rerun proposals"
+        )
+    for field in ("commit_message", "patch"):
         if getattr(proposal, field) is not None:
             raise ValueError(
                 f"post_provision_rerun proposals must not include {field}"

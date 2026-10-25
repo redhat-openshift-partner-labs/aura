@@ -244,7 +244,7 @@ The contract enforces these invariants regardless of which generator produced th
 | Rule | Scaffold | Deprovision | Cluster edit | Post-provision rerun |
 | --- | --- | --- | --- | --- |
 | Artifact | `patch` | `patch` | `patch` | `pipeline_run` |
-| `base_commit` | Required | Required | Required | Absent |
+| `base_commit` | Required | Required | Required | Required: the `fleet-clusters` revision the evidence read |
 | Patch scope | Adds only regular files (mode `100644`) under `provision/<id>/`, including `crossplane/kustomization.yaml`, `hive/patches/clusterdeployment.yaml`, `hive/patches/managedcluster.yaml`, and `metadata.yaml`, which declares `platform: aws` and `aws-credentials-mode: scoped` | Adds only the empty regular file (mode `100644`) `deprovision/<id>-archive` | Adds `provision/<id>/metadata.yaml`, or appends to it in one hunk that starts at line 1 and covers the whole file; only keys the file lacks, from the four `fleet` keys, and the result declares at least `platform`, `aws-credentials-mode`, and `htpasswd-provider-name` | None |
 | Commit message | Names the cluster; no `[skip-provision]` | Names the cluster; no `[skip-deprovision]` | Names the cluster; contains `[skip-provision]` when a file is added | None |
 | `trigger_effect` | `pre-provision`, `provision`, `post-provision` | `deprovision`, `archive-cluster` | None | `post-provision` |
@@ -263,7 +263,7 @@ Patches must be Git-format diffs. Every proposal names exactly one cluster, and 
 | `stdout` and `stderr` | The scaffold's captured streams. The contract does not check them; the scaffold generator redacts them before storage |
 | `files` | Exactly the paths the patch adds, sorted; the patch adds each path once, and each with no mode line but `new file mode 100644` |
 
-`GitProposalStaleness` reports a Git proposal as stale when its `base_commit` is not an ancestor of `fleet-clusters` `HEAD`, or when any commit since `base_commit` changed `provision/<id>`, `archive/<id>`, `deprovision/<id>`, or `deprovision/<id>-archive`. Changes to other clusters do not make it stale. Post-provision reruns have no base commit; their evidence is rechecked when they are generated or executed.
+`GitProposalStaleness` reports a proposal of any type as stale when its `base_commit` is not an ancestor of `fleet-clusters` `HEAD`, or when any commit since `base_commit` changed `provision/<id>`, `archive/<id>`, `deprovision/<id>`, or `deprovision/<id>-archive`. Changes to other clusters do not make it stale. A rerun's base commit is the revision whose `metadata.yaml` and definition its evidence read, so a later change to `provision/<id>/metadata.yaml` makes the rerun stale. A proposal without a base commit is reported stale with `proposal has no base commit`; the contract makes this unreachable for stored proposals. Live OpenShift and Tekton state is not compared; the Phase 3 execution guard re-collects it.
 
 ### Deprovision Proposal
 
@@ -421,7 +421,7 @@ The render rules mirror `fleet-clusters` `scripts/check_new_overlays.py`; Aura r
 | `proposal_id`, `proposal_type`, `cluster_name`, `proposal_digest` | Copied from the verified stored proposal |
 | `base_commit` | Proposal base commit; `null` for post-provision reruns |
 | `head` | Pinned `fleet-clusters` `HEAD`, also the snapshot `source_version` |
-| `git_checked` | `false` when the proposal has no base commit, so Git staleness does not apply |
+| `git_checked` | `true` for every proposal with a base commit, which the contract requires of every type |
 | `stale` | Whether `HEAD` moved past `base_commit` and touched the cluster, or `base_commit` is not an ancestor of `HEAD` |
 | `reasons` | Changed cluster paths or the history problem |
 

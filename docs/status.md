@@ -70,7 +70,7 @@ Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-prop
 | Redaction | Matches secret field names across case and separator variants |
 | Idempotency | Binds keys to one request and suppresses concurrent or sequential terminal-key reuse |
 | Deprovision proposals | Generates a deterministic, digest-verified proposal that adds only `deprovision/<id>-archive` as a standalone commit, or refuses with every unmet precondition; stores proposal, CWA, and `proposal_created` audit records and writes nothing to Git |
-| Proposal staleness | Checks stored proposals against one pinned `fleet-clusters` `HEAD` and fails on tampered or malformed records; Git-only |
+| Proposal staleness | Checks stored proposals against one pinned `fleet-clusters` `HEAD` and fails on tampered or malformed records; Git-only, for every proposal type including reruns |
 | Authorization | Allows Phase 1 commands for `viewer` and `admin`, `propose` commands for `proposer` and `admin`, and `proposal status` for `viewer`, `proposer`, and `admin`; supplied `--role` values replace the `viewer` default |
 | Cluster-edit proposals | Generates a deterministic proposal that adds `metadata.yaml` with the `fleet` keys the cluster's tier needs, `openshift-ai-version` only for `ai`, or appends the missing keys, from ClusterDeployment, post-provision PipelineRun, or `fleet` default values; refuses on any contradictory evidence |
 | Pipeline definitions | Reads which parameters each Pipeline in `openshift-pipelines` declares and requires, through a separate client; stores no default values, counts malformed entries, and fails on missing or unnamed Pipelines |

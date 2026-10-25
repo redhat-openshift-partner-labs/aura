@@ -31,6 +31,7 @@ from aura.services.proposal import (
     ProposalRefused,
     cluster_preconditions,
     correlation_item,
+    pinned_git_revision,
 )
 
 
@@ -66,6 +67,9 @@ class PostProvisionRerunGenerator:
         cluster = str(correlation.data["cluster_name"])
         items_by_id = {str(item.item_id): item for item in items}
         reasons = cluster_preconditions(correlation, items_by_id, cluster)
+        base_commit = pinned_git_revision(snapshot)
+        if base_commit is None:
+            reasons.append("no pinned Git base commit in evidence")
         openshift = items_by_id.get(
             str(correlation.data.get("openshift_evidence_id"))
         )
@@ -115,6 +119,7 @@ class PostProvisionRerunGenerator:
             proposal_type=proposal_type,
             cluster_name=cluster,
             created_at=created_at,
+            base_commit=base_commit,
             evidence_snapshot_id=snapshot.evidence_snapshot_id,
             evidence_snapshot_digest=snapshot.evidence_snapshot_digest,
             cwa_snapshot_id=snapshot.snapshot_id,

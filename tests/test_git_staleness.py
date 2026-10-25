@@ -18,7 +18,7 @@ from aura.proposal_store import JsonProposalStore, ProposalNotFound
 from aura.proposals import Proposal
 from failure_injection import deny_access
 from test_git_inventory_collector import commit_repository, write_cluster
-from test_proposals import added_file, make_proposal
+from test_proposals import CLUSTER, added_file, make_proposal
 
 
 def deprovision_proposal(
@@ -110,14 +110,54 @@ def test_staleness_reports_unknown_base(repository) -> None:
     )
 
 
-def test_staleness_skips_git_check_for_reruns(repository) -> None:
-    root, base = repository
+def rerun_repository(tmp_path: Path) -> tuple[Path, str, Proposal]:
+    root = tmp_path / "fleet-clusters"
+    write_cluster(root, cluster_name=CLUSTER)
+    write_cluster(root, cluster_name="other")
+    base = commit_repository(root)
+    return root, base, make_proposal("post_provision_rerun", base_commit=base)
 
-    result = GitProposalStaleness(root).check(
-        make_proposal("post_provision_rerun")
-    )
+
+def test_staleness_reports_a_fresh_rerun_at_its_base(tmp_path) -> None:
+    root, base, rerun = rerun_repository(tmp_path)
+
+    result = GitProposalStaleness(root).check(rerun)
 
     assert (result.stale, result.head, result.reasons) == (False, base, ())
+
+
+def test_staleness_reports_a_rerun_whose_metadata_changed(tmp_path) -> None:
+    root, base, rerun = rerun_repository(tmp_path)
+    path = f"provision/{CLUSTER}/metadata.yaml"
+    (root / path).write_text("htpasswd-provider-name: changed\n")
+    commit_repository(root)
+
+    result = GitProposalStaleness(root).check(rerun)
+
+    assert result.stale is True
+    assert result.reasons == (f"{path} changed since base commit {base}",)
+
+
+def test_staleness_fails_closed_without_a_base_commit(tmp_path) -> None:
+    root, base, rerun = rerun_repository(tmp_path)
+    unpinned = Proposal.model_construct(
+        **{**dict(rerun), "base_commit": None}
+    )
+
+    result = GitProposalStaleness(root).check(unpinned)
+
+    assert (result.stale, result.reasons) == (
+        True,
+        ("proposal has no base commit",),
+    )
+
+
+def test_staleness_ignores_other_clusters_for_a_rerun(tmp_path) -> None:
+    root, _, rerun = rerun_repository(tmp_path)
+    (root / "provision" / "other" / "metadata.yaml").write_text("x: y\n")
+    commit_repository(root)
+
+    assert GitProposalStaleness(root).check(rerun).stale is False
 
 
 def collect_staleness(
@@ -143,7 +183,9 @@ def test_staleness_collector_reports_each_stored_proposal(
     store = JsonProposalStore(tmp_path / "proposals")
     store.save(deprovision_proposal(base))
     store.save(deprovision_proposal(base, "other", UUID(int=501)))
-    rerun = make_proposal("post_provision_rerun", proposal_id=UUID(int=502))
+    rerun = make_proposal(
+        "post_provision_rerun", proposal_id=UUID(int=502), base_commit=base
+    )
     store.save(rerun)
     (root / "provision" / "example" / "metadata.yaml").write_text(
         "changed\n", encoding="utf-8"
@@ -191,9 +233,9 @@ def test_staleness_collector_reports_each_stored_proposal(
             "proposal_type": "post_provision_rerun",
             "cluster_name": rerun.cluster_name,
             "proposal_digest": rerun.proposal_digest,
-            "base_commit": None,
+            "base_commit": base,
             "head": head,
-            "git_checked": False,
+            "git_checked": True,
             "stale": False,
             "reasons": [],
         },

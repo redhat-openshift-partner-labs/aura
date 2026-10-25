@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,7 +21,7 @@ from aura.services.proposal import ProposalRefused
 from aura.services.rerun import PostProvisionRerunGenerator
 from test_cluster_edit_proposal import ABSENT, fleet
 from test_cluster_inventory_collector import actual_state, openshift_collector
-from test_cluster_state_collector import EmptyCollector
+from test_cluster_state_collector import EmptyCollector, FakeGitCollector
 from test_cluster_state_diagnosis import assert_references, make_cwa_snapshot
 from test_git_inventory_collector import write_cluster
 from test_pipeline_definitions import (
@@ -125,9 +127,10 @@ def rerun_collector(
     openshift: object | None = None,
     definition: dict[str, Any] = POST_PROVISION,
     pipeline_run: str | None = None,
+    git: object | None = None,
 ) -> RerunEvidenceCollector:
     cluster_state = ClusterStateCollector(
-        git_collector=GitInventoryCollector(root),
+        git_collector=git or GitInventoryCollector(root),
         openshift_collector=openshift
         or openshift_collector(actual_state("example")),
         tekton_collector=TektonInventoryCollector(client=RunsClient(*runs)),
@@ -194,7 +197,12 @@ def test_generator_copies_the_source_run(tmp_path: Path) -> None:
     assert proposal.proposal_type is ProposalType.POST_PROVISION_RERUN
     assert proposal.trigger_effect == [TriggerEffect.POST_PROVISION]
     assert proposal.reversibility is Reversibility.IRREVERSIBLE
-    assert proposal.base_commit is None
+    assert proposal.base_commit == subprocess.run(
+        ["git", "-C", str(tmp_path / "fleet-clusters"), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
     assert proposal.pipeline_run == {
         "apiVersion": "tekton.dev/v1",
         "kind": "PipelineRun",
@@ -348,6 +356,19 @@ def _case(
 
 
 NEW = "PipelineRun post-provision-example-new"
+
+
+def test_generator_refuses_without_a_pinned_git_revision(
+    tmp_path: Path,
+) -> None:
+    snapshot = evidence(
+        fleet(tmp_path, FULL_METADATA), LATEST, git=FakeGitCollector()
+    )
+
+    with pytest.raises(ProposalRefused) as refusal:
+        generate(snapshot)
+
+    assert "no pinned Git base commit in evidence" in refusal.value.reasons
 
 
 @pytest.mark.parametrize(

@@ -42,8 +42,9 @@ def cluster_paths(cluster_name: str) -> list[str]:
 class GitProposalStaleness:
     """Reports whether HEAD changed a proposal's cluster since its base commit.
 
-    Post-provision reruns have no base commit; their evidence is rechecked
-    when the proposal is generated or executed.
+    Every proposal type carries a base commit; for a rerun it is the
+    revision whose metadata.yaml and definition the evidence read. Live
+    state is rechecked by the Phase 3 execution guard, not here.
     """
 
     def __init__(self, root: Path) -> None:
@@ -59,7 +60,11 @@ class GitProposalStaleness:
     ) -> ProposalStaleness:
         head = head or self.head()
         base = proposal.base_commit
-        if base is None or base == head:
+        if base is None:
+            return ProposalStaleness(
+                stale=True, head=head, reasons=("proposal has no base commit",)
+            )
+        if base == head:
             return ProposalStaleness(stale=False, head=head, reasons=())
         history_error = self._history_error(base, head)
         if history_error is not None:

@@ -241,6 +241,7 @@ TYPE_FIELDS: dict[str, dict[str, Any]] = {
     },
     "post_provision_rerun": {
         "proposal_type": "post_provision_rerun",
+        "base_commit": BASE_COMMIT,
         "trigger_effect": ["post-provision"],
         "reversibility": "irreversible",
         "pipeline_run": rerun_manifest(tier="base"),
@@ -550,6 +551,11 @@ def test_proposal_rejects_changed_content_under_old_digest() -> None:
             "post_provision_rerun",
             {"patch": added_file("provision/x/metadata.yaml")},
             "must not include patch",
+        ),
+        (
+            "post_provision_rerun",
+            {"base_commit": None},
+            "base_commit is required for post_provision_rerun proposals",
         ),
         (
             "post_provision_rerun",
