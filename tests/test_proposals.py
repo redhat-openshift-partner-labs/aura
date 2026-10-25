@@ -25,10 +25,10 @@ CLUSTER = "0171d46a-scopedaws"
 METADATA_PATH = f"provision/{CLUSTER}/metadata.yaml"
 
 
-def added_file(path: str, content: str = "") -> str:
+def added_file(path: str, content: str = "", mode: str = "100644") -> str:
     lines = [
         f"diff --git a/{path} b/{path}",
-        "new file mode 100644",
+        f"new file mode {mode}",
         "index 0000000..e69de29",
     ]
     if content:
@@ -161,6 +161,59 @@ BASE_FIELDS: dict[str, Any] = {
     "rollback": "Discard the patch before merge; nothing reverses it after.",
 }
 
+SCAFFOLD_FILES = {
+    "crossplane/kustomization.yaml": "resources: []",
+    "hive/patches/clusterdeployment.yaml": "[]",
+    "hive/patches/managedcluster.yaml": "[]",
+    "kustomization.yaml": "resources:\n- crossplane/\n- hive/",
+    "metadata.yaml": "platform: aws\naws-credentials-mode: scoped",
+}
+
+
+def scaffold_arguments(cluster: str = CLUSTER, *extra: str) -> list[str]:
+    return [
+        "aws",
+        "--name",
+        cluster,
+        "--region",
+        "us-east-1",
+        "--tier",
+        "base",
+        *extra,
+        "--base-path",
+        "provision",
+        "--cluster-templates-dir",
+        "cluster-templates",
+    ]
+
+
+def scaffold_fields(
+    cluster: str = CLUSTER,
+    contents: dict[str, str] = SCAFFOLD_FILES,
+    *,
+    modes: dict[str, str] | None = None,
+    **run: Any,
+) -> dict[str, Any]:
+    paths = {name: f"provision/{cluster}/{name}" for name in contents}
+    return {
+        "cluster_name": cluster,
+        "commit_message": f"feat: provision {cluster}",
+        "patch": "".join(
+            added_file(paths[name], content, (modes or {}).get(name, "100644"))
+            for name, content in contents.items()
+        ),
+        "scaffold_run": {
+            "kustomize_version": "v5.8.1",
+            "arguments": scaffold_arguments(cluster),
+            "exit_code": 0,
+            "stdout": "",
+            "stderr": f"Cluster '{cluster}' scaffolded successfully\n",
+            "files": sorted(paths.values()),
+            **run,
+        },
+    }
+
+
 TYPE_FIELDS: dict[str, dict[str, Any]] = {
     "deprovision": {
         "proposal_type": "deprovision",
@@ -173,12 +226,10 @@ TYPE_FIELDS: dict[str, dict[str, Any]] = {
     "scaffold": {
         "proposal_type": "scaffold",
         "base_commit": BASE_COMMIT,
-        "scaffold_commit": "e5346c3" + "0" * 33,
+        "scaffold_commit": "2f6c7b4" + "0" * 33,
         "trigger_effect": ["pre-provision", "provision", "post-provision"],
         "reversibility": "reversible_before_merge",
-        "commit_message": f"feat: provision {CLUSTER}",
-        "patch": added_file(f"provision/{CLUSTER}/metadata.yaml", "platform: aws")
-        + added_file(f"provision/{CLUSTER}/kustomization.yaml", "resources: []"),
+        **scaffold_fields(),
     },
     "cluster_edit": {
         "proposal_type": "cluster_edit",
@@ -687,6 +738,221 @@ def test_proposal_rejects_changed_content_under_old_digest() -> None:
     ],
 )
 def test_proposal_rejects_invalid_contract(
+    proposal_type: str,
+    overrides: dict[str, Any],
+    message: str,
+) -> None:
+    with pytest.raises(ValidationError, match=re.escape(message)):
+        make_proposal(proposal_type, **overrides)
+
+
+SCAFFOLD_PATHS = sorted(f"provision/{CLUSTER}/{name}" for name in SCAFFOLD_FILES)
+ALLOWED_FLAGS = (
+    "--topology",
+    "compact",
+    "--environment",
+    "production",
+    "--base-domain",
+    "example.com",
+    "--control-plane-type",
+    "m7i.8xlarge",
+    "--worker-type",
+    "c5.metal",
+    "--control-plane-replicas",
+    "3",
+    "--worker-replicas",
+    "0",
+    "--image-set",
+    "img4.21.24-x86-64-appsub",
+    "--zones",
+    "us-east-1a,us-east-1b",
+    "--install-attempts-limit",
+    "2",
+    "--htpasswd-provider-name",
+    "Acme Corp",
+)
+
+
+def test_proposal_accepts_scaffold_with_every_allowed_flag() -> None:
+    arguments = scaffold_arguments(CLUSTER, *ALLOWED_FLAGS)
+
+    proposal = make_proposal(
+        "scaffold", **scaffold_fields(arguments=arguments)
+    )
+
+    assert proposal.scaffold_run is not None
+    assert proposal.scaffold_run.arguments == arguments
+    assert Proposal.model_validate_json(proposal.model_dump_json()) == proposal
+
+
+def _arguments(*extra: str, drop: str | None = None) -> list[str]:
+    arguments = scaffold_arguments(CLUSTER, *extra)
+    if drop is not None:
+        index = arguments.index(drop)
+        del arguments[index : index + 2]
+    return arguments
+
+
+def _without(name: str) -> dict[str, str]:
+    return {key: value for key, value in SCAFFOLD_FILES.items() if key != name}
+
+
+LONG_NAME = "a" * 50
+
+
+@pytest.mark.parametrize(
+    ("proposal_type", "overrides", "message"),
+    [
+        (
+            "scaffold",
+            {"scaffold_run": None},
+            "scaffold_run is required for scaffold proposals only",
+        ),
+        (
+            "deprovision",
+            {"scaffold_run": scaffold_fields()["scaffold_run"]},
+            "scaffold_run is required for scaffold proposals only",
+        ),
+        (
+            "scaffold",
+            scaffold_fields(exit_code=1),
+            "scaffold_run exit_code must be 0",
+        ),
+        (
+            "scaffold",
+            scaffold_fields(files=SCAFFOLD_PATHS[:-1]),
+            "scaffold_run files must list exactly the files the patch adds, "
+            "sorted",
+        ),
+        (
+            "scaffold",
+            scaffold_fields(files=[*SCAFFOLD_PATHS, f"provision/{CLUSTER}/x"]),
+            "scaffold_run files must list exactly the files the patch adds, "
+            "sorted",
+        ),
+        (
+            "scaffold",
+            scaffold_fields(files=SCAFFOLD_PATHS[::-1]),
+            "scaffold_run files must list exactly the files the patch adds, "
+            "sorted",
+        ),
+        (
+            "scaffold",
+            scaffold_fields(arguments=["gcp", *_arguments()[1:]]),
+            "scaffold_run arguments must start with aws",
+        ),
+        (
+            "scaffold",
+            scaffold_fields(arguments=scaffold_arguments("other")),
+            f"scaffold_run arguments must pass --name {CLUSTER}",
+        ),
+        (
+            "scaffold",
+            scaffold_fields(
+                arguments=[
+                    *_arguments(drop="--base-path"),
+                    "--base-path",
+                    "elsewhere",
+                ]
+            ),
+            "scaffold_run arguments must pass --base-path provision",
+        ),
+        (
+            "scaffold",
+            scaffold_fields(arguments=_arguments(drop="--cluster-templates-dir")),
+            "scaffold_run arguments must pass --cluster-templates-dir "
+            "cluster-templates",
+        ),
+        *(
+            (
+                "scaffold",
+                scaffold_fields(arguments=[*_arguments(), flag]),
+                f"scaffold_run arguments must not pass {flag}",
+            )
+            for flag in (
+                "--force",
+                "--skip-validation",
+                "--legacy-mint-credentials",
+            )
+        ),
+        (
+            "scaffold",
+            scaffold_fields(
+                arguments=_arguments("--base-domain", "a", "--base-domain", "b")
+            ),
+            "scaffold_run arguments repeat --base-domain",
+        ),
+        (
+            "scaffold",
+            scaffold_fields(arguments=_arguments("--foo", "x")),
+            "scaffold_run arguments pass unsupported flag --foo",
+        ),
+        (
+            "scaffold",
+            scaffold_fields(arguments=_arguments("--zones=a,b")),
+            "scaffold_run arguments pass unsupported flag --zones=a,b",
+        ),
+        (
+            "scaffold",
+            scaffold_fields(arguments=[*_arguments(), "--zones"]),
+            "scaffold_run arguments give --zones no value",
+        ),
+        (
+            "scaffold",
+            scaffold_fields(arguments=_arguments("--topology", "--image-set", "x")),
+            "scaffold_run arguments give --topology no value",
+        ),
+        (
+            "scaffold",
+            scaffold_fields(arguments=_arguments("stray")),
+            "scaffold_run arguments pass stray value stray",
+        ),
+        *(
+            (
+                "scaffold",
+                scaffold_fields(modes={"kustomization.yaml": mode}),
+                "scaffold proposal may only add regular files with mode 100644",
+            )
+            for mode in ("120000", "100755")
+        ),
+        *(
+            (
+                "scaffold",
+                scaffold_fields(contents=_without(name)),
+                f"scaffold proposal must add provision/{CLUSTER}/{name}",
+            )
+            for name in (
+                "crossplane/kustomization.yaml",
+                "hive/patches/clusterdeployment.yaml",
+                "hive/patches/managedcluster.yaml",
+                "metadata.yaml",
+            )
+        ),
+        *(
+            (
+                "scaffold",
+                scaffold_fields(
+                    contents={**SCAFFOLD_FILES, "metadata.yaml": metadata}
+                ),
+                "scaffold metadata.yaml must declare platform aws and "
+                "aws-credentials-mode scoped",
+            )
+            for metadata in (
+                "platform: aws\naws-credentials-mode: legacy",
+                "platform: azure\naws-credentials-mode: scoped",
+                "platform: aws",
+                "- aws",
+                "platform: [",
+            )
+        ),
+        (
+            "scaffold",
+            scaffold_fields(LONG_NAME),
+            "scaffold cluster_name must be at most 49 characters",
+        ),
+    ],
+)
+def test_proposal_rejects_invalid_scaffold(
     proposal_type: str,
     overrides: dict[str, Any],
     message: str,

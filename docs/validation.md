@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-650 passed
+682 passed
 ```
 
 Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `77db9cd`, passed with 650 tests on Python 3.13.17 in `linux/arm64`.
@@ -52,6 +52,7 @@ The test classes every change must include are defined in [Development Workflow]
 - Immutable JSON stores, record write failures, and unreadable command records.
 - CLI argument combinations and output.
 - Proposal contract invariants, the proposal store, and Git proposal staleness.
+- Scaffold proposal contract: `scaffold_run` presence by type, exit code, file list, argument allow list and required values, regular-file modes, required definition files, scoped AWS `metadata.yaml`, and the 49-character name limit.
 - Deprovision proposal generation over real temporary Git trees, including `git apply --check` against the base commit and every refusal reason.
 - `propose deprovision` authorization, stored records, audit chain, refusal, and argument validation.
 - Proposal staleness collection against one pinned `HEAD`, requested-ID selection, and rejection of missing, misnamed, or tampered records.

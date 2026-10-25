@@ -35,6 +35,42 @@ AI_METADATA_KEYS = ("openshift-ai-version",)
 METADATA_KEYS = (*TIER_INDEPENDENT_METADATA_KEYS, *AI_METADATA_KEYS)
 AI_TIER = "ai"
 CLUSTER_NAME_PATTERN = r"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
+SCAFFOLD_NAME_MAX = 49
+SCAFFOLD_CLOUD = "aws"
+SCAFFOLD_BASE_PATH = "provision"
+SCAFFOLD_TEMPLATES_DIR = "cluster-templates"
+SCAFFOLD_OPERATOR_FLAGS = (
+    "--topology",
+    "--environment",
+    "--base-domain",
+    "--control-plane-type",
+    "--worker-type",
+    "--control-plane-replicas",
+    "--worker-replicas",
+    "--image-set",
+    "--zones",
+    "--install-attempts-limit",
+    "--htpasswd-provider-name",
+)
+SCAFFOLD_AURA_FLAGS = (
+    "--name",
+    "--region",
+    "--tier",
+    "--base-path",
+    "--cluster-templates-dir",
+)
+SCAFFOLD_FORBIDDEN_FLAGS = (
+    "--force",
+    "--skip-validation",
+    "--legacy-mint-credentials",
+)
+SCAFFOLD_REQUIRED_FILES = (
+    "crossplane/kustomization.yaml",
+    "hive/patches/clusterdeployment.yaml",
+    "hive/patches/managedcluster.yaml",
+    "metadata.yaml",
+)
+_REGULAR_FILE_MODE = "100644"
 
 
 class ProposalType(StrEnum):
@@ -136,6 +172,19 @@ def deprovision_sentinel_patch(cluster_name: str) -> str:
     )
 
 
+class ScaffoldRun(BaseModel):
+    """How the pinned scaffold produced a scaffold proposal's patch."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kustomize_version: str = Field(min_length=1)
+    arguments: list[str]
+    exit_code: int
+    stdout: str
+    stderr: str
+    files: list[str]
+
+
 class Proposal(BaseModel):
     """Immutable, evidence-linked proposal that Phase 2 never executes."""
 
@@ -157,6 +206,7 @@ class Proposal(BaseModel):
     scaffold_commit: str | None = Field(
         default=None, pattern=r"^[0-9a-f]{40}$"
     )
+    scaffold_run: ScaffoldRun | None = None
     summary: str = Field(min_length=1)
     expected_effect: str = Field(min_length=1)
     trigger_effect: list[TriggerEffect]
@@ -263,6 +313,12 @@ def _validate_type_rules(proposal: Proposal) -> None:
         raise ValueError(
             "scaffold_commit is required for scaffold proposals only"
         )
+    if (proposal.proposal_type is ProposalType.SCAFFOLD) != (
+        proposal.scaffold_run is not None
+    ):
+        raise ValueError(
+            "scaffold_run is required for scaffold proposals only"
+        )
 
 
 def _validate_git_proposal(proposal: Proposal) -> None:
@@ -300,14 +356,131 @@ def _validate_patch_scope(
     if outside:
         raise ValueError(f"patch changes files outside {prefix}: {outside}")
     kinds = {change for _, change in changes}
-    if proposal.proposal_type is ProposalType.SCAFFOLD and kinds != {"added"}:
-        raise ValueError("scaffold proposal may only add files")
+    if proposal.proposal_type is ProposalType.SCAFFOLD:
+        if kinds != {"added"}:
+            raise ValueError("scaffold proposal may only add files")
+        _validate_scaffold(proposal, prefix)
+        return
     if kinds - {"added", "modified"}:
         raise ValueError(
             "cluster_edit proposal may not delete or rename files"
         )
     if proposal.proposal_type is ProposalType.CLUSTER_EDIT:
         _validate_metadata_edit(proposal.patch or "", f"{prefix}metadata.yaml")
+
+
+def _validate_scaffold(proposal: Proposal, prefix: str) -> None:
+    """Check a scaffold patch and the run that produced it."""
+
+    if len(proposal.cluster_name) > SCAFFOLD_NAME_MAX:
+        raise ValueError(
+            f"scaffold cluster_name must be at most {SCAFFOLD_NAME_MAX} "
+            "characters"
+        )
+    added = _added_files(proposal.patch or "")
+    if any(mode != _REGULAR_FILE_MODE for mode, _ in added.values()):
+        raise ValueError(
+            "scaffold proposal may only add regular files with mode "
+            f"{_REGULAR_FILE_MODE}"
+        )
+    for name in SCAFFOLD_REQUIRED_FILES:
+        if f"{prefix}{name}" not in added:
+            raise ValueError(f"scaffold proposal must add {prefix}{name}")
+    metadata = _yaml_mapping(added[f"{prefix}metadata.yaml"][1])
+    if (
+        metadata.get("platform") != SCAFFOLD_CLOUD
+        or metadata.get("aws-credentials-mode") != "scoped"
+    ):
+        raise ValueError(
+            "scaffold metadata.yaml must declare platform aws and "
+            "aws-credentials-mode scoped"
+        )
+    run = proposal.scaffold_run
+    if run is None:
+        raise ValueError(
+            "scaffold_run is required for scaffold proposals only"
+        )
+    if run.exit_code != 0:
+        raise ValueError("scaffold_run exit_code must be 0")
+    if run.files != sorted(added):
+        raise ValueError(
+            "scaffold_run files must list exactly the files the patch adds, "
+            "sorted"
+        )
+    _validate_scaffold_arguments(run.arguments, proposal.cluster_name)
+
+
+def _added_files(patch: str) -> dict[str, tuple[str, list[str]]]:
+    """Map each added file to its mode and content lines."""
+
+    added: dict[str, tuple[str, list[str]]] = {}
+    for block in re.split(r"(?m)^(?=diff --git )", patch):
+        lines = block.splitlines()
+        modes = [
+            line.removeprefix("new file mode ")
+            for line in lines
+            if line.startswith("new file mode ")
+        ]
+        header = _DIFF_HEADER.match(lines[0]) if lines else None
+        if header is None or not modes:
+            continue
+        hunk = next(
+            (
+                index
+                for index, line in enumerate(lines)
+                if line.startswith("@@")
+            ),
+            len(lines),
+        )
+        content = [
+            line[1:] for line in lines[hunk + 1 :] if line.startswith("+")
+        ]
+        added[header.group(2)] = (modes[0], content)
+    return added
+
+
+def _yaml_mapping(lines: list[str]) -> dict[str, Any]:
+    try:
+        document = yaml.safe_load("\n".join(lines))
+    except yaml.YAMLError:
+        return {}
+    return document if isinstance(document, dict) else {}
+
+
+def _validate_scaffold_arguments(arguments: list[str], cluster: str) -> None:
+    if not arguments or arguments[0] != SCAFFOLD_CLOUD:
+        raise ValueError(
+            f"scaffold_run arguments must start with {SCAFFOLD_CLOUD}"
+        )
+    allowed = {*SCAFFOLD_OPERATOR_FLAGS, *SCAFFOLD_AURA_FLAGS}
+    values: dict[str, str] = {}
+    index = 1
+    while index < len(arguments):
+        flag = arguments[index]
+        if not flag.startswith("--"):
+            raise ValueError(f"scaffold_run arguments pass stray value {flag}")
+        if flag in SCAFFOLD_FORBIDDEN_FLAGS:
+            raise ValueError(f"scaffold_run arguments must not pass {flag}")
+        if flag not in allowed:
+            raise ValueError(
+                f"scaffold_run arguments pass unsupported flag {flag}"
+            )
+        if flag in values:
+            raise ValueError(f"scaffold_run arguments repeat {flag}")
+        value = arguments[index + 1] if index + 1 < len(arguments) else None
+        if value is None or value.startswith("--"):
+            raise ValueError(f"scaffold_run arguments give {flag} no value")
+        values[flag] = value
+        index += 2
+    for flag, expected in (
+        ("--name", cluster),
+        ("--base-path", SCAFFOLD_BASE_PATH),
+        ("--cluster-templates-dir", SCAFFOLD_TEMPLATES_DIR),
+    ):
+        if values.get(flag) != expected:
+            raise ValueError(
+                f"scaffold_run arguments must pass {flag} {expected}"
+            )
 
 
 def _validate_metadata_edit(patch: str, metadata: str) -> None:
@@ -616,6 +789,12 @@ __all__ = [
     "ProposalStatus",
     "ProposalType",
     "Reversibility",
+    "ScaffoldRun",
+    "SCAFFOLD_AURA_FLAGS",
+    "SCAFFOLD_FORBIDDEN_FLAGS",
+    "SCAFFOLD_NAME_MAX",
+    "SCAFFOLD_OPERATOR_FLAGS",
+    "SCAFFOLD_REQUIRED_FILES",
     "SKIP_DEPROVISION",
     "SKIP_PROVISION",
     "TriggerEffect",
