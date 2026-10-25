@@ -332,7 +332,17 @@ jq '.pipeline_run' "$OUT/rerun.json"
 | A cluster with any unfinished `post-provision` run | Exit code `2`; `have not finished` |
 | Hub | No new PipelineRun appears |
 
-Partial validation, run by the operator on 2026-10-24 against Aura commit `a439dd7`: `pchriste` was refused for conflicting Git definitions, which is correct. Its stored `post-provision` run passed evidence collection without any field a rerun cannot copy, confirming the zero-value handling on a real object. The refusal also reported a `metadata.yaml` conflict against defaults, which was misleading with two definitions; fixed in `01df26b`. The successful path is not yet exercised live.
+Partial validation, run by the operator on 2026-10-24 against Aura commit `a439dd7`: `pchriste` was refused for conflicting Git definitions, which is correct. Its stored `post-provision` run passed evidence collection without any field a rerun cannot copy, confirming the zero-value handling on a real object. The refusal also reported a `metadata.yaml` conflict against defaults, which was misleading with two definitions; fixed in `01df26b`.
+
+Latest validation, run by the operator on 2026-10-25 against Aura commit `30878cd` for `10a9746b-virtualc`:
+
+| Check | Result |
+| --- | --- |
+| Exit and source | Exit code `0`; source `post-provision-10a9746b-virtualc-p8dpl`, the latest finished run |
+| Manifest | `generateName: post-provision-10a9746b-virtualc-` in `openshift-pipelines` with both Aura annotations |
+| Parameters | `cluster-name`, `tier: virt`, `dns-zones`, `htpasswd-provider-name: VirtualCable`, and `openshift-ai-version: v3`, the five the `trigger-post-provision` task passes |
+| `metadata.yaml` agreement | `VirtualCable` matches the declared value; `v3` matches the default for the absent key |
+| Workspace and run template | Identical to `fleet` `9464f0b`: `shared-workspace` 1Gi `gp3-csi` claim template, `fleet-pipeline` service account, `fsGroup: 0`, and `fleet-pipeline-pull-secret` |
 
 ## Idempotency Validation
 
