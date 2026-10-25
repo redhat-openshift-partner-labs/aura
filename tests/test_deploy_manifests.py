@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -19,11 +20,13 @@ from aura.collectors.openshift_cli_tekton_client import (
 
 
 DEPLOY = Path(__file__).parent.parent / "deploy"
-CLIENTS = (
-    OpenShiftCLIInventoryClient,
-    OpenShiftCLITektonClient,
-    OpenShiftCLIPipelineClient,
+CONSTRUCTIONS = (
+    (OpenShiftCLIInventoryClient, {}),
+    (OpenShiftCLITektonClient, {}),
+    (OpenShiftCLITektonClient, {"namespace": "inspected-namespace"}),
+    (OpenShiftCLIPipelineClient, {}),
 )
+SHARED_OPTIONS = {"self", "kubeconfig_path", "command_runner"}
 API_GROUPS = {
     "clusterdeployments": "hive.openshift.io",
     "managedclusters": "cluster.open-cluster-management.io",
@@ -102,31 +105,57 @@ def client_reads() -> set[tuple[str | None, str]]:
     """(namespace, resource) for every read, from built clients.
 
     Clients are built rather than read from the class, because the Tekton
-    client sets its specs per instance; its default reads all namespaces.
+    client sets its specs per instance from its namespace option.
     """
 
     return {
         (options.get("namespace"), resource)
-        for client in CLIENTS
+        for client, kwargs in CONSTRUCTIONS
         for resource, options in client(
             kubeconfig_path=Path("unused"),
             command_runner=refuse_oc,
+            **kwargs,
         ).resource_specs.items()
     }
 
 
-def concrete_subclasses(cls: type) -> set[type]:
+def aura_subclasses(cls: type) -> set[type]:
     found = set()
     for subclass in cls.__subclasses__():
-        found |= {subclass} | concrete_subclasses(subclass)
+        if subclass.__module__.startswith("aura."):
+            found.add(subclass)
+        found |= aura_subclasses(subclass)
     return found
 
 
 def test_every_oc_client_is_checked_against_the_manifests() -> None:
-    assert concrete_subclasses(OpenShiftCLIResourceClient) == set(CLIENTS), (
-        "a new oc client needs a list-only grant in deploy/ and an entry "
-        "in CLIENTS"
-    )
+    assert aura_subclasses(OpenShiftCLIResourceClient) == {
+        client for client, _ in CONSTRUCTIONS
+    }, "a new oc client needs a list-only grant in deploy/ and a construction"
+
+
+def test_every_client_option_is_built() -> None:
+    for client in {client for client, _ in CONSTRUCTIONS}:
+        options = set(inspect.signature(client.__init__).parameters)
+        built = {
+            option
+            for constructed, kwargs in CONSTRUCTIONS
+            if constructed is client
+            for option in kwargs
+        }
+        assert options - SHARED_OPTIONS <= built, client.__name__
+
+
+def test_every_read_is_granted() -> None:
+    [cluster_role] = by_kind("ClusterRole")
+    [role] = by_kind("Role")
+    roles = {role["metadata"]["namespace"]: granted(role)}
+
+    for namespace, resource in client_reads():
+        rule = (API_GROUPS[resource], resource)
+        assert rule in granted(cluster_role) or rule in roles.get(
+            namespace, set()
+        ), (namespace, resource)
 
 
 def test_cluster_role_grants_exactly_the_cluster_wide_reads() -> None:
@@ -141,16 +170,12 @@ def test_cluster_role_grants_exactly_the_cluster_wide_reads() -> None:
 
 def test_pipeline_role_grants_pipelines_in_their_namespace_only() -> None:
     [role] = by_kind("Role")
-    namespaced = {
-        (namespace, resource)
-        for namespace, resource in client_reads()
-        if namespace is not None
-    }
 
     assert role["metadata"]["namespace"] == PIPELINE_NAMESPACE
-    assert {namespace for namespace, _ in namespaced} == {PIPELINE_NAMESPACE}
     assert granted(role) == {
-        (API_GROUPS[resource], resource) for _, resource in namespaced
+        (API_GROUPS[resource], resource)
+        for namespace, resource in client_reads()
+        if namespace == PIPELINE_NAMESPACE
     }
 
 
