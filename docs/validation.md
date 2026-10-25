@@ -11,10 +11,10 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-632 passed
+633 passed
 ```
 
-Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `75d149b`, passed with 632 tests on Python 3.13.17 in `linux/arm64`.
+Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `01df26b`, passed with 633 tests on Python 3.13.17 in `linux/arm64`.
 
 Run diff hygiene:
 
@@ -317,7 +317,7 @@ The snapshot `source_version` was `pipelines=`: `oc get -o json` returns a clien
 
 ### Post-Provision Rerun Proposals
 
-Not yet run live. Choose a live, provisioned cluster with a finished `post-provision` run, and run [`propose post-provision-rerun`](cli.md#propose-post-provision-rerun) with a new idempotency key. Aura creates nothing.
+Choose a live, provisioned cluster with a finished `post-provision` run, and run [`propose post-provision-rerun`](cli.md#propose-post-provision-rerun) with a new idempotency key. Aura creates nothing.
 
 ```bash
 jq '.pipeline_run' "$OUT/rerun.json"
@@ -331,6 +331,8 @@ jq '.pipeline_run' "$OUT/rerun.json"
 | Parameters | Match the source run's `spec.params` (`oc get pipelinerun <name> -n openshift-pipelines -o json`) |
 | A cluster with any unfinished `post-provision` run | Exit code `2`; `have not finished` |
 | Hub | No new PipelineRun appears |
+
+Partial validation, run by the operator on 2026-10-24 against Aura commit `a439dd7`: `pchriste` was refused for conflicting Git definitions, which is correct. Its stored `post-provision` run passed evidence collection without any field a rerun cannot copy, confirming the zero-value handling on a real object. The refusal also reported a `metadata.yaml` conflict against defaults, which was misleading with two definitions; fixed in `01df26b`. The successful path is not yet exercised live.
 
 ## Idempotency Validation
 
