@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft for operator sign-off, prepared 2026-10-25 at Aura commit `c2d64a3`. Each row grades one [Phase 2 acceptance criterion](05-phase-2-proposals.md#acceptance-criteria) against cited evidence. The grades are reconciled: the author graded first, an independent reviewer then graded an ungraded copy of the evidence without seeing those grades, and where they differed the stricter grade was kept once its evidence was reproduced; see [Independent Grading](#independent-grading). **Phase 2 is not accepted:** A9, A11, F1, and F4 are not met. Phase 3 starts only after the operator accepts this record and those rows are closed or the criteria are changed.
+Draft for operator sign-off, prepared 2026-10-25 at Aura commit `c2d64a3`. Each row grades one [Phase 2 acceptance criterion](05-phase-2-proposals.md#acceptance-criteria) against cited evidence. The grades are reconciled: the author graded first, an independent reviewer then graded an ungraded copy of the evidence without seeing those grades, and where they differed the stricter grade was kept once its evidence was reproduced; see [Independent Grading](#independent-grading). **Phase 2 is not accepted:** A9 and A11 are not met; F1 and F4 were closed on 2026-10-25, see [Resolutions](#resolutions). Phase 3 starts only after the operator accepts this record and those rows are closed or the criteria are changed.
 
 Grades:
 
@@ -37,7 +37,7 @@ Evidence notation: `file::test` names a test in `tests/`; a parametrized case is
 | A6 | An edit proposal that adds a file under an existing `provision/<id>` always requires `[skip-provision]` | Not applicable | `test_proposals::test_proposal_rejects_invalid_contract` (`must contain [skip-provision]`); backfill test asserts it and the head-commit risk | Not applicable | Not applicable; contract forbids it (`must not contain [skip-provision]`) | Met |
 | A7 | A deprovision proposal always uses `-archive` and is refused when any sentinel already exists | Contract negatives `must add only deprovision/<id>-archive` and `as an empty regular file`; `test_deprovision_proposal::test_generator_refuses_unmet_preconditions` for both sentinel forms; `test_cli_propose::test_cli_propose_deprovision_refuses_existing_sentinel` | Not applicable | Not applicable | Not applicable | Met |
 | A8 | A post-provision rerun proposal is refused when a required parameter is missing or an unknown parameter is present | Not applicable | Not applicable | `test_rerun_proposal::test_generator_refuses_unmet_preconditions` (`lacks required parameters`, `does not declare`) | Not applicable | Met |
-| A9 | Every proposal references its evidence snapshot, CWA trace, and base commit, and carries a verified `proposal_digest` | Fields asserted in `test_generator_proposes_standalone_archive_sentinel`; `test_proposals::test_proposal_rejects_changed_content_under_old_digest`; `test_proposal_store::test_json_proposal_store_rejects_tampered_record` | Digest tests only; no test asserts the evidence or CWA references | `base_commit` absent by design; no test asserts the evidence or CWA references | `scaffold_commit` asserted; no test asserts the evidence or CWA references | Not met |
+| A9 | Every proposal references its evidence snapshot, CWA trace, and base commit, and carries a verified `proposal_digest` | References asserted by `test_cluster_state_diagnosis::assert_references` in `test_generator_proposes_standalone_archive_sentinel`; `test_proposals::test_proposal_rejects_changed_content_under_old_digest`; `test_proposal_store::test_json_proposal_store_rejects_tampered_record` | References asserted by `assert_references` in the backfill test | References asserted in `test_generator_copies_the_source_run`; `base_commit` absent by design | References asserted in `test_generator_proposes_the_scaffold_output`, plus `scaffold_commit` | Not met |
 | A10 | Proposals contain no secret values | Fixed sentinel content | Values from evidence; redacted run values refuse (`parameter … is redacted`) | Contract negatives `must not contain secret material`; redacted-parameter refusal | `test_scaffold_proposal` secret-field and invalid-YAML refusals and stream-redaction tests | Met with caveat |
 | A11 | A stale proposal is reported as stale | `test_git_staleness::test_staleness_reports_changes_to_target_cluster`; `test_cli_proposal_status::test_cli_proposal_status_reports_stale_proposal` | Same Git check | `test_git_staleness::test_staleness_skips_git_check_for_reruns`: never stale | `test_scaffold_proposal::test_scaffold_proposal_goes_stale_when_its_paths_change` | Not met |
 | A12 | No Git write, Kubernetes write, or pipeline start occurs | `oc` clients issue only `get`: `test_openshift_cli_client`, `test_tekton_cli_client`, `test_pipeline_definitions`; `test_deploy_manifests` (list-only grants); Live (`fleet-clusters` unchanged) | Same | Same; the manifest is never applied | Same; `test_scaffold_runner::test_runner_changes_neither_checkout`, `test_check_ignores_inherited_git_environment`, `test_runner_and_check_run_no_git_hooks` | Met with caveat |
@@ -47,10 +47,10 @@ Evidence notation: `file::test` names a test in `tests/`; a parametrized case is
 
 | # | Criterion | Evidence | Grade |
 | --- | --- | --- | --- |
-| F1 | Each contract rule that says only, exactly, or empty is enforced by the contract and has a negative test | `test_proposals::test_proposal_rejects_invalid_contract` and `test_proposal_rejects_invalid_scaffold` (35 scaffold cases, mutation-checked); no negative for `scaffold_commit` on a non-scaffold proposal | Not met |
+| F1 | Each contract rule that says only, exactly, or empty is enforced by the contract and has a negative test | `test_proposals::test_proposal_rejects_invalid_contract` and `test_proposal_rejects_invalid_scaffold` (35 scaffold cases, mutation-checked); `scaffold_commit is required for scaffold proposals only` for each other type | Met |
 | F2 | A proposal file is written only after its CWA trace and `proposal_created` event | `test_failure_matrix::test_clean_run_writes_in_documented_order` for `propose`, `cluster-edit-*`, `rerun`, `scaffold` (`PROPOSED`: CWA trace, `context_assembled`, `proposal_created`, then the proposal); `test_cli_propose::test_cli_propose_deprovision_stores_proposal_after_provenance` | Met |
 | F3 | Every `propose` and `proposal` command failing after the idempotency check stores a `failed` record, and `command_failed` links to the last stored event | `test_failure_matrix::test_each_write_failure_fails_closed`, `test_evidence_read_failure_fails_closed`; `test_cli_scaffold::test_cli_fails_when_the_definition_check_fails` | Met with caveat |
-| F4 | `proposal status` fails when the store is missing or unreadable, or a record is misnamed, unreadable, or tampered | `test_cli_proposal_status::test_cli_proposal_status_fails_for_*`; `test_git_staleness::test_staleness_collector_rejects_*` | Not met |
+| F4 | `proposal status` fails when the store is missing or unreadable, or a record is misnamed, unreadable, or tampered | `test_cli_proposal_status::test_cli_proposal_status_fails_for_*`, including `fails_for_a_blank_digest`; `test_git_staleness::test_staleness_collector_rejects_*`, including blank-digest and renamed records; `test_proposal_store::test_json_proposal_store_requires_the_stored_digest`, `rejects_a_record_under_another_name` | Met |
 | F5 | Each proposal type has failure tests for every row of its matrix | `test_failure_matrix` scenarios `propose`, `propose-refused`, `cluster-edit-file`, `cluster-edit-keys`, `cluster-edit-refused`, `rerun`, `rerun-refused`, `scaffold`, `scaffold-refused`, `proposal-status*`: 103 tests in the file | Met with caveat |
 
 ## Findings
@@ -79,6 +79,16 @@ Outside the criteria, found during grading:
 14. **Scaffold commit guidance.** Scaffold risks do not say to push the commit alone, though only the first cluster name in a push triggers a pipeline.
 15. **Documents.** `docs/evidence.md` still calls the scaffold generator "not yet implemented"; `docs/development.md` says 101 matrix tests (103 now); and the plan's note says only deprovision and cluster-edit meet the failure-mode criteria.
 16. **Open questions and review.** The four open questions in the Phase 2 plan remain open, and the review fixes in `0ba7124` have not had a second independent review.
+
+## Resolutions
+
+| Row | Change | Commit | Evidence | Remaining |
+| --- | --- | --- | --- | --- |
+| F4 | The proposal store requires a non-empty stored `proposal_digest`; every JSON record store rejects a record whose ID differs from its file name | `341f9a3` | Store, staleness, and CLI tests for blank, null, and missing digests and a renamed record; disabling either check fails them | Anchoring the digest to the `proposal_created` event or CWA trace remains a Phase 3 guard |
+| F1 | Contract negatives for `scaffold_commit` on deprovision, cluster-edit, and rerun proposals | `9ca51b3` | `test_proposals::test_proposal_rejects_invalid_contract` | Generator-only type rules are by design; the spec should say F1 covers rules the contract can see |
+| A9, references | Every generator's success test asserts its evidence snapshot ID and digest, CWA snapshot ID, and trace ID | `9ca51b3` | Swapping any of the three references in any of the four generators fails a test (12 mutations) | The rerun base commit decision |
+
+After these changes, 835 tests pass at `ca37a83` locally and under `act`, and the quality gate reports zero gating findings on that committed tree.
 
 ## Independent Grading
 
