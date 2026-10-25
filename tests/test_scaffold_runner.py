@@ -5,7 +5,6 @@ import json
 import os
 import subprocess
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -14,7 +13,6 @@ import pytest
 
 from aura.proposals import added_file_patch
 from aura.collectors.scaffold_evidence import ScaffoldEvidenceCollector
-from aura.contracts import EvidenceSnapshot
 from aura.scaffold import ScaffoldRequest, ScaffoldRunError
 from aura.scaffold_runner import (
     GitDefinitionCheck,
@@ -22,6 +20,7 @@ from aura.scaffold_runner import (
     kustomize_version,
 )
 from fake_scaffold import fake_scaffold, fleet_with_templates, overlay_files
+from test_cluster_state_collector import EmptyCollector
 from test_git_inventory_collector import commit_repository, write_cluster
 
 
@@ -386,7 +385,7 @@ def test_collector_does_not_rewrite_the_scaffold_index(
         request=ScaffoldRequest(
             cloud="aws", cluster_name=NEW, region="us-east-1", tier="base"
         ),
-        git_collector=_NoGit(),
+        git_collector=EmptyCollector(),
         openshift_client=_NoOpenShift(),
         scaffold_checkout=scaffold,
         kustomize_version=lambda: None,
@@ -395,20 +394,6 @@ def test_collector_does_not_rewrite_the_scaffold_index(
     assert hashlib.sha256(
         (scaffold / ".git" / "index").read_bytes()
     ).digest() == index.digest()
-
-
-class _NoGit:
-    def collect(self, **_: object) -> EvidenceSnapshot:
-        return EvidenceSnapshot(
-            snapshot_id=UUID(int=2),
-            command_id=UUID(int=1),
-            collector="git_inventory",
-            collector_version="test",
-            collected_at=datetime(2026, 1, 1, tzinfo=UTC),
-            source="fleet-clusters",
-            source_version="git-version",
-            items=[],
-        )
 
 
 class _NoOpenShift:

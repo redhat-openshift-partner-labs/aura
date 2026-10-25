@@ -1841,6 +1841,24 @@ def _proposal_created_audit_event(
     )
 
 
+def _proposal_command_input(args: argparse.Namespace) -> dict[str, object]:
+    """Return the request a proposal command's idempotency key binds."""
+
+    command_input: dict[str, object] = {
+        "query": args.query,
+        "proposal_type": args.proposal_type,
+        "cluster_name": args.cluster,
+    }
+    if args.proposal_type == _RERUN:
+        command_input["pipeline_run"] = args.pipeline_run
+    if args.proposal_type == _SCAFFOLD:
+        command_input["scaffold_request"] = _scaffold_request(args).model_dump(
+            mode="json"
+        )
+    command_input["history"] = []
+    return command_input
+
+
 def _dispatch_command(
     args: argparse.Namespace,
     *,
@@ -1878,26 +1896,7 @@ def _dispatch_command(
             if args.proposal_type == _RERUN
             else CommandType.PROPOSE_PATCH
         ),
-        {
-            "query": args.query,
-            "proposal_type": args.proposal_type,
-            "cluster_name": args.cluster,
-            **(
-                {"pipeline_run": args.pipeline_run}
-                if args.proposal_type == _RERUN
-                else {}
-            ),
-            **(
-                {
-                    "scaffold_request": _scaffold_request(args).model_dump(
-                        mode="json"
-                    )
-                }
-                if args.proposal_type == _SCAFFOLD
-                else {}
-            ),
-            "history": [],
-        },
+        _proposal_command_input(args),
         lambda command: _run_proposal(args, command, collector, clock),
         command_id_factory=command_id_factory,
         clock=clock,
