@@ -11,6 +11,7 @@ from uuid import UUID, uuid5
 
 from aura.collectors.git_inventory import GitInventoryError, read_git
 from aura.contracts import ARCHIVE_SUFFIX, EvidenceItem, EvidenceSnapshot
+from aura.git_isolation import GIT_ISOLATION, isolated_git_environment
 from aura.proposal_store import JsonProposalStore
 from aura.proposals import Proposal
 
@@ -88,6 +89,7 @@ class GitProposalStaleness:
             result = subprocess.run(
                 [
                     "git",
+                    *GIT_ISOLATION,
                     "-C",
                     str(self.root),
                     "merge-base",
@@ -96,7 +98,9 @@ class GitProposalStaleness:
                     head,
                 ],
                 capture_output=True,
+                stdin=subprocess.DEVNULL,
                 text=True,
+                env=isolated_git_environment(),
             )
         except OSError as error:
             raise GitInventoryError(

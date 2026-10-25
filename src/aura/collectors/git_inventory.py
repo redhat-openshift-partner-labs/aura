@@ -10,6 +10,7 @@ from uuid import UUID, uuid4, uuid5
 
 import yaml
 
+from aura.git_isolation import GIT_ISOLATION, isolated_git_environment
 from aura.contracts import ARCHIVE_SUFFIX, EvidenceItem, EvidenceSnapshot
 
 
@@ -90,9 +91,11 @@ def _run_git(root: Path, arguments: list[str]) -> str:
     if not root.is_dir():
         raise GitInventoryError(f"git checkout is not usable: {root}")
     result = subprocess.run(
-        ["git", "-C", str(root), *arguments],
+        ["git", *GIT_ISOLATION, "-C", str(root), *arguments],
         check=True,
         capture_output=True,
+        stdin=subprocess.DEVNULL,
+        env=isolated_git_environment(),
     )
     return _decode(result.stdout)
 

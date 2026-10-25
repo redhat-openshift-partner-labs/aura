@@ -467,3 +467,18 @@ def test_git_inventory_collector_ignores_untracked_cluster_directories(
 
     assert [item.data["cluster_name"] for item in snapshot.items] == ["example"]
 
+
+
+def test_git_inventory_collector_ignores_an_inherited_git_dir(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    write_cluster(tmp_path / "fleet", cluster_name="wanted")
+    commit_repository(tmp_path / "fleet")
+    write_cluster(tmp_path / "other", cluster_name="unwanted")
+    commit_repository(tmp_path / "other")
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "other" / ".git"))
+
+    snapshot = collect_snapshot(tmp_path / "fleet")
+
+    assert [item.data["cluster_name"] for item in snapshot.items] == ["wanted"]
