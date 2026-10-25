@@ -33,6 +33,9 @@ An `EvidenceSnapshot` is the frozen result of one collector invocation.
 | `workflow_view` | Workflow correlator | Operator-facing PipelineRun view |
 | `cluster_state_correlation` | Cluster-state correlator | Per-cluster evidence links and missing evidence |
 | `proposal_staleness` | Proposal staleness collector | Git staleness of one stored proposal |
+| `scaffold_request` | Scaffold evidence collector | The requested new cluster and scaffold options; see [Scaffold Proposal](#scaffold-proposal) |
+| `scaffold_checkout` | Scaffold evidence collector | The pinned `fleet-cluster-scaffold` commit and whether its tracked files are clean |
+| `kustomize` | Scaffold evidence collector | The `kustomize` version, or `null` when it is not on `PATH` |
 
 ## Cluster Inventory Fields
 
@@ -348,6 +351,54 @@ Refusal reasons, reported together with the shared live-cluster reasons (no defi
 A generated manifest that the contract still rejects, such as a declared parameter whose value contains a secret-named key, fails the command with `generated proposal is invalid:` rather than refusing it.
 
 The `metadata.yaml` check compares `htpasswd-provider-name`, and `openshift-ai-version` only when the source run's `tier` parameter is `ai`, the condition under which `apply-ai-workloads` reads it. The risks name the keys compared. When the source run did not set a key, the rerun's value is assumed to be the `fleet` `9464f0b` Pipeline default, because Pipeline definition evidence stores no default values.
+
+### Scaffold Proposal
+
+`ScaffoldEvidenceCollector` (collector `scaffold`) combines the Git inventory and the OpenShift inventory with three items of its own. Its `source_version` is `git=<sha>;openshift=<version>;scaffold=<commit>`.
+
+| Item kind | Data |
+| --- | --- |
+| `scaffold_request` | `cloud`, `cluster_name`, `region`, `tier`, and `options`, the operator's scaffold flags as ordered `[flag, value]` pairs |
+| `scaffold_checkout` | The local `fleet-cluster-scaffold` checkout `path`, its `HEAD` `commit`, and `clean`, false when tracked files have uncommitted changes. An unreadable checkout fails the command with `ScaffoldCheckoutError` |
+| `kustomize` | `version`, or `null` when `kustomize` is not on `PATH` |
+
+`ScaffoldProposalGenerator` (`scaffold-deterministic`, version `0.1.0`) checks every precondition, and only then runs the pinned scaffold through a `ScaffoldRunner` with the arguments `aws --name <id> --region <region> --tier <tier>`, the operator options in request order, and `--base-path provision --cluster-templates-dir cluster-templates`. The runner receives the scaffold commit and the base commit; a runner that cannot run the scaffold at all, for example on a timeout, raises `ScaffoldRunError` and fails the command. The patch adds each generated file in path order. Lines of the scaffold's standard output and error shaped `name: value` or `name=value` with a secret-named `name` are stored with the value replaced by `[REDACTED]`.
+
+Refusal reasons before the scaffold runs, reported together:
+
+| Unmet precondition | Reason |
+| --- | --- |
+| Cloud other than AWS | `scaffold supports only cloud aws, not <cloud>` |
+| Invalid name | `cluster name <id> is not a DNS-1123 label` |
+| Name over 49 characters | `cluster name <id> is <n> characters; scoped AWS names allow at most 49` |
+| Unknown tier | `tier <tier> is not one of base, virt, ai` |
+| Unknown topology | `topology <topology> is not one of standard, compact, sno` |
+| Flag outside the operator allow list | `scaffold option <flag> is not allowed` |
+| Repeated flag | `scaffold option <flag> is repeated` |
+| Definition with the name under `provision/` or `archive/` | `cluster <id> already has a definition at <path>` |
+| Deprovision sentinel for the name, with or without `-archive` | `deprovision sentinel already exists: <path>` |
+| OpenShift ClusterDeployment or ManagedCluster with the name | `OpenShift resources already exist for cluster <id>` |
+| Another Git definition, sentinel, or OpenShift cluster shares the infra prefix | `infra prefix <prefix> is also used by <path or OpenShift cluster name>` |
+| `kustomize` missing | `kustomize is not on PATH` |
+| Dirty scaffold checkout | `scaffold checkout has uncommitted changes to tracked files` |
+| No pinned revision | `no pinned Git base commit in evidence` |
+
+The infra prefix replaces characters outside `[A-Za-z0-9-]` with `-`, collapses repeated `-`, keeps 21 characters, and strips trailing `-`, as in `fleet` and the `fleet-clusters` PR check.
+
+Refusal reasons after the scaffold runs:
+
+| Problem with the output | Reason |
+| --- | --- |
+| Non-zero exit | `scaffold exited <code>: <last standard error line>` |
+| No files | `scaffold wrote no files` |
+| A path outside `provision/<id>/` | `scaffold wrote outside provision/<id>/: [...]` |
+| A symlink or other non-regular file | `scaffold wrote a non-regular file <path> with mode <mode>` |
+| A YAML field the redaction policy would remove | `scaffold output <path> contains secret-named fields: [...]` |
+| Metadata that is not scoped AWS | `scaffold metadata.yaml must declare platform aws and aws-credentials-mode scoped` |
+| An old wildcard render under `crossplane/patches/` | `<path> contains the old render pattern <pattern>` |
+| No current `machine-api` pattern | `<path> is missing`, or `<path> lacks instance-profile/<prefix>-?????-worker-profile` |
+
+The render rules mirror `fleet-clusters` `scripts/check_new_overlays.py`; Aura re-implements them rather than running that script. The PR check's `kustomize build` of the whole overlay is not repeated: the scaffold builds `hive/` and `crossplane/` and exits non-zero on a failed build or surviving placeholder names.
 
 ### Proposal Staleness Fields
 

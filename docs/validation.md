@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-682 passed
+728 passed
 ```
 
 Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `a46e4b4`, passed with 682 tests on Python 3.13.17 in `linux/arm64`.
@@ -60,6 +60,7 @@ The test classes every change must include are defined in [Development Workflow]
 - Write order: a failed trace, audit, or proposal write leaves no proposal file, and `command_failed` links to the last stored audit event.
 - Pipeline definition collection: parameters, required parameters, `null` defaults, no stored default values, malformed and duplicate entries, unknown types, missing or unnamed Pipelines, and a forbidden `oc` response.
 - Post-provision rerun generation over real Git, Tekton, and Pipeline definition collectors: copied parameters, workspaces, and run template; named and latest source runs; every refusal reason, including a `metadata.yaml` conflict, which compares `openshift-ai-version` only for `ai` runs; and the tightened rerun contract.
+- Scaffold generation over real temporary `fleet-clusters` and scaffold Git trees with a fake scaffold runner: arguments, commits, and the run record; patches that apply with `git apply --check` and yield a complete definition; staleness; stream redaction; every refusal reason before and after the scaffold runs, with no run when a precondition fails; and infra-prefix parity with `fleet-clusters`.
 - Cluster-edit generation over real temporary Git trees: added and appended `metadata.yaml` files that apply with `git apply --check`, preserve existing bytes, and leave a complete definition; values from runs and defaults; `openshift-ai-version` only for tier `ai`, with tier from Git cross-checked against OpenShift; every refusal reason.
 - Deprovision contract rejection of non-empty or non-regular sentinel files.
 - The failure-injection matrix: every command's documented write order, a failure of each write in turn before writing and after linking, and each route's read errors, with invariants I1–I4 checked after every run.

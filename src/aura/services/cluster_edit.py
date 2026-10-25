@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, final
@@ -19,6 +18,8 @@ from aura.proposals import (
     SKIP_PROVISION,
     Proposal,
     ProposalType,
+    added_file_patch,
+    git_blob_abbrev,
     tier_metadata_keys,
 )
 from aura.services.diagnosis import cwa_evidence_items
@@ -347,28 +348,12 @@ def _extended(current: str | None, appended: str) -> str:
     return current + separator + appended
 
 
-def _blob(text: str) -> str:
-    content = text.encode("utf-8")
-    header = f"blob {len(content)}\0".encode()
-    return hashlib.sha1(header + content).hexdigest()[:7]
-
-
 def _patch(path: str, current: str | None, updated: str) -> str:
     """Return a Git patch that creates the file or appends to its end."""
 
-    new_lines = updated.splitlines()
     if current is None:
-        return "".join(
-            [
-                f"diff --git a/{path} b/{path}\n",
-                "new file mode 100644\n",
-                f"index 0000000..{_blob(updated)}\n",
-                "--- /dev/null\n",
-                f"+++ b/{path}\n",
-                f"@@ -0,0 +1,{len(new_lines)} @@\n",
-                *(f"+{line}\n" for line in new_lines),
-            ]
-        )
+        return added_file_patch(path, updated)
+    new_lines = updated.splitlines()
     # The whole file is context, so the patch shows it before and after.
     old_lines = current.splitlines()
     body = [f" {line}\n" for line in old_lines]
@@ -382,7 +367,8 @@ def _patch(path: str, current: str | None, updated: str) -> str:
     return "".join(
         [
             f"diff --git a/{path} b/{path}\n",
-            f"index {_blob(current)}..{_blob(updated)} 100644\n",
+            f"index {git_blob_abbrev(current)}..{git_blob_abbrev(updated)} "
+            "100644\n",
             f"--- a/{path}\n",
             f"+++ b/{path}\n",
             f"@@ -1,{len(old_lines)} +1,{len(old_lines) + len(added)} @@\n",

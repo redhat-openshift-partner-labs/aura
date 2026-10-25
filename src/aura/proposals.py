@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from enum import StrEnum
 from typing import Any
@@ -169,6 +170,39 @@ def deprovision_sentinel_patch(cluster_name: str) -> str:
         f"diff --git a/{sentinel} b/{sentinel}\n"
         "new file mode 100644\n"
         "index 0000000..e69de29\n"
+    )
+
+
+def git_blob_abbrev(text: str) -> str:
+    """Return the abbreviated Git blob ID a patch index line names."""
+
+    content = text.encode("utf-8")
+    header = f"blob {len(content)}\0".encode()
+    return hashlib.sha1(header + content).hexdigest()[:7]
+
+
+def added_file_patch(path: str, text: str) -> str:
+    """Return a Git patch that adds a regular file holding text."""
+
+    header = [
+        f"diff --git a/{path} b/{path}\n",
+        "new file mode 100644\n",
+        f"index 0000000..{git_blob_abbrev(text)}\n",
+    ]
+    if not text:
+        return "".join(header)
+    lines = text.splitlines()
+    body = [f"+{line}\n" for line in lines]
+    if not text.endswith("\n"):
+        body.append(f"{_NO_NEWLINE}\n")
+    return "".join(
+        [
+            *header,
+            "--- /dev/null\n",
+            f"+++ b/{path}\n",
+            f"@@ -0,0 +1,{len(lines)} @@\n",
+            *body,
+        ]
     )
 
 
@@ -798,8 +832,10 @@ __all__ = [
     "SKIP_DEPROVISION",
     "SKIP_PROVISION",
     "TriggerEffect",
+    "added_file_patch",
     "compute_proposal_digest",
     "deprovision_sentinel_patch",
+    "git_blob_abbrev",
     "patch_changes",
     "tier_metadata_keys",
 ]
