@@ -262,10 +262,10 @@ def _incomplete_sources(
     tree: _GitTree,
     cluster_path: str,
     missing_files: list[str],
-) -> dict[str, str | None]:
+) -> dict[str, Any]:
     """Read what the present files of an incomplete definition declare."""
 
-    sources: dict[str, str | None] = {
+    sources: dict[str, Any] = {
         "patch_platform": None,
         "crossplane_template": None,
         "tier": None,

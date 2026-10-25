@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-648 passed
+650 passed
 ```
 
 Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `c4bf10e`, passed with 636 tests on Python 3.13.17 in `linux/arm64`.
@@ -375,6 +375,8 @@ Latest validation, run by the operator on 2026-10-25 against Aura commit `30878c
 | Parameters | `cluster-name`, `tier: virt`, `dns-zones`, `htpasswd-provider-name: <provider-name>`, and `openshift-ai-version: v3`, the five the `trigger-post-provision` task passes |
 | `metadata.yaml` agreement | `<provider-name>` matches the declared value; `v3` matches the default for the absent key |
 | Workspace and run template | Identical to `fleet` `9464f0b`: `shared-workspace` 1Gi `gp3-csi` claim template, `fleet-pipeline` service account, `fsGroup: 0`, and `fleet-pipeline-pull-secret` |
+
+This result predates the 2026-10-25 tier revision. For this `virt` run, Aura now compares only `htpasswd-provider-name`; the `openshift-ai-version` agreement above is no longer checked. It has not been re-run live.
 
 ## Idempotency Validation
 

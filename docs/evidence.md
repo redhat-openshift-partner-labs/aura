@@ -286,7 +286,7 @@ Refusal reasons, all reported together:
 | `platform` | The ClusterDeployment patch cloud, which must match the OpenShift ClusterDeployment platform. A valid definition always has it; without it the proposal is refused. `fleet` `9464f0b` writes `platform` as a task result but no task reads it, so this key records the cloud without changing pipeline behavior. |
 | `aws-credentials-mode` | `legacy`, the value the pipeline uses when the key is absent |
 | `htpasswd-provider-name` | The latest `post-provision` run's parameter; else `htpasswd` |
-| `openshift-ai-version` | Tier `ai` only: the latest `post-provision` run's parameter; else `v3`. For another tier it is never added, and an existing value is not compared with the run |
+| `openshift-ai-version` | Tier `ai` only: the latest `post-provision` run's parameter when that run's `tier` parameter is `ai`, since only such a run applied it; else `v3`. For another tier it is never added, and an existing value is not compared with the run |
 
 Defaults are those of `read-cluster-metadata` at `fleet` commit `9464f0b`. A new file lists the keys in the order above. Appended keys follow the existing text, after a newline is added to an unterminated last line, and the patch carries the whole existing file as context so the contract can check the result without the repository. The `summary` names each value's source.
 

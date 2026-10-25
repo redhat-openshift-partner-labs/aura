@@ -314,10 +314,12 @@ def _run_value(
     existing: dict[str, Any],
     conflicts: list[str],
 ) -> _Value:
-    if run is None or key not in run.data.get("params", {}):
+    params = run.data.get("params", {}) if run is not None else {}
+    # A run of another tier never applied a tier-gated key to the spoke.
+    if key not in params or key not in tier_metadata_keys(params.get("tier")):
         return _default(key)
     name = run.data.get("pipeline_run_name")
-    used = run.data["params"][key]
+    used = params[key]
     if used == REDACTED:
         conflicts.append(f"PipelineRun {name} parameter {key} is redacted")
     elif key in existing and str(existing[key]) != str(used):

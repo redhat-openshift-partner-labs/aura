@@ -196,7 +196,8 @@ def test_generator_appends_missing_keys(tmp_path: Path, original: str) -> None:
 def test_generator_prefers_run_values_over_defaults(tmp_path: Path) -> None:
     root = fleet(tmp_path, "platform: aws\n", prepare=_ai_tier)
     run = post_provision(
-        **{"htpasswd-provider-name": "Partner", "openshift-ai-version": "v2"}
+        tier="ai",
+        **{"htpasswd-provider-name": "Partner", "openshift-ai-version": "v2"},
     )
 
     updated = apply(
@@ -278,6 +279,27 @@ def test_generator_ignores_openshift_ai_version_run_conflict_off_ai_tier(
         "aws-credentials-mode": "legacy",
         "htpasswd-provider-name": "Partner",
     }
+
+
+@pytest.mark.parametrize(
+    ("metadata", "summary"),
+    [
+        (ABSENT, "openshift-ai-version: v3 from fleet 9464f0b default"),
+        ("openshift-ai-version: v3\n", "aws-credentials-mode: legacy"),
+    ],
+)
+def test_generator_ignores_run_ai_version_from_another_tier(
+    tmp_path: Path,
+    metadata: object,
+    summary: str,
+) -> None:
+    root = fleet(tmp_path, metadata, prepare=_ai_tier)
+    run = post_provision(tier="base", **{"openshift-ai-version": "v2"})
+
+    proposal = generate(evidence(root, openshift=_openshift("ai"), runs=(run,)))
+
+    assert summary in proposal.summary
+    assert yaml.safe_load(apply(root, proposal))["openshift-ai-version"] == "v3"
 
 
 def test_generator_uses_git_tier_without_openshift_label(
@@ -368,7 +390,9 @@ RUN = "PipelineRun post-provision-example-abc"
                 "openshift-ai-version: v3\n",
                 prepare=_ai_tier,
                 openshift=_openshift("ai"),
-                runs=(post_provision(**{"openshift-ai-version": "v2"}),),
+                runs=(
+                    post_provision(tier="ai", **{"openshift-ai-version": "v2"}),
+                ),
             ),
             f"metadata.yaml declares openshift-ai-version v3 but {RUN} "
             "used v2",
