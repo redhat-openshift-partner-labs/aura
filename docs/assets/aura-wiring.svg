@@ -1,0 +1,320 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1262 780" width="1262" height="780" role="img" aria-labelledby="title desc">
+  <title id="title">Aura component wiring</title>
+  <desc id="desc">An operator runs the aura CLI. The command passes an idempotency gate and a service that enforces the authorization policy, then collectors read fleet-clusters Git, the OpenShift hub, and Tekton with list-only access. The result is frozen into a digested evidence snapshot, assembled into a nine-slot CWA snapshot, and passed to a deterministic model or proposal generator that returns a diagnosis, proposal, or refusal. Every stage persists append-only JSON records and a linear audit chain. Aura never writes to Git, Kubernetes, pipelines, Portal, RabbitMQ, or external models.</desc>
+
+  <style>
+    .bg { fill: #ffffff; stroke: #d0d7de; }
+    .frame { fill: #f6f8fa; stroke: #d0d7de; }
+    .t { fill: #1f2328; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .m { fill: #59636e; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .c { fill: #1f2328; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .h1 { font-size: 24px; font-weight: 700; }
+    .h2 { font-size: 14px; font-weight: 650; }
+    .lbl { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; }
+    .b { font-size: 12px; }
+    .s { font-size: 11px; }
+
+    .src  { fill: #e6f6f4; stroke: #1f8f84; }
+    .gate { fill: #fff4e0; stroke: #c27c0e; }
+    .core { fill: #ecf2ff; stroke: #3b6fd8; }
+    .out  { fill: #f3ecff; stroke: #7a4fd6; }
+    .store{ fill: #eaf7ec; stroke: #2e8b46; }
+    .deny { fill: #fdecec; stroke: #d1242f; }
+    .user { fill: #f6f8fa; stroke: #8c959f; }
+    .pill { fill: #ffffff; stroke: #d0d7de; }
+    .rail { fill: #ffffff; stroke: #2e8b46; }
+
+    .badge-src  { fill: #1f8f84; }
+    .badge-gate { fill: #c27c0e; }
+    .badge-core { fill: #3b6fd8; }
+    .badge-out  { fill: #7a4fd6; }
+    .badge-t    { fill: #ffffff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 11px; font-weight: 700; }
+
+    .flow  { stroke: #57606a; stroke-width: 1.8; fill: none; }
+    .read  { stroke: #1f8f84; stroke-width: 1.8; fill: none; }
+    .save  { stroke: #2e8b46; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+    .chain { stroke: #8c959f; stroke-width: 1.4; fill: none; }
+    .rule  { stroke: #d0d7de; stroke-width: 1; }
+    .ah-flow { fill: #57606a; }
+    .ah-read { fill: #1f8f84; }
+    .ah-save { fill: #2e8b46; }
+    .ah-chain{ fill: #8c959f; }
+    .x { stroke: #d1242f; stroke-width: 2; }
+
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; stroke: #30363d; }
+      .frame { fill: #151b23; stroke: #30363d; }
+      .t, .c { fill: #e6edf3; }
+      .m { fill: #9198a1; }
+      .src  { fill: #0f2a28; stroke: #3fb8a9; }
+      .gate { fill: #2e2310; stroke: #e3a33b; }
+      .core { fill: #14213d; stroke: #6d9bff; }
+      .out  { fill: #251a40; stroke: #a888ff; }
+      .store{ fill: #112a19; stroke: #4cc06a; }
+      .deny { fill: #3a1417; stroke: #ff6b6b; }
+      .user { fill: #161b22; stroke: #6e7681; }
+      .pill { fill: #161b22; stroke: #30363d; }
+      .rail { fill: #0d1117; stroke: #4cc06a; }
+      .badge-src  { fill: #3fb8a9; }
+      .badge-gate { fill: #e3a33b; }
+      .badge-core { fill: #6d9bff; }
+      .badge-out  { fill: #a888ff; }
+      .badge-t    { fill: #0d1117; }
+      .flow  { stroke: #8b949e; }
+      .read  { stroke: #3fb8a9; }
+      .save  { stroke: #4cc06a; }
+      .chain { stroke: #6e7681; }
+      .rule  { stroke: #30363d; }
+      .ah-flow { fill: #8b949e; }
+      .ah-read { fill: #3fb8a9; }
+      .ah-save { fill: #4cc06a; }
+      .ah-chain{ fill: #6e7681; }
+      .x { stroke: #ff6b6b; }
+    }
+  </style>
+
+  <defs>
+    <marker id="a-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-flow" d="M0 0 L10 5 L0 10 z"/></marker>
+    <marker id="a-read" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-read" d="M0 0 L10 5 L0 10 z"/></marker>
+    <marker id="a-save" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="ah-save" d="M0 0 L10 5 L0 10 z"/></marker>
+    <marker id="a-chain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="ah-chain" d="M0 0 L10 5 L0 10 z"/></marker>
+  </defs>
+
+  <!-- Canvas -->
+  <rect class="bg" x="0.5" y="0.5" width="1261" height="779" rx="16"/>
+
+  <!-- Title -->
+  <text class="t h1" x="40" y="46">How Aura is wired</text>
+  <text class="m b" x="40" y="68">Observe → freeze → explain. One command, one pass, every step recorded — and nothing outside Aura is ever written.</text>
+
+  <!-- ===== Top band: operator, sources of truth, never-written ===== -->
+  <text class="m lbl" x="330" y="90">SOURCES OF TRUTH · READ-ONLY</text>
+
+  <!-- Operator -->
+  <rect class="user" x="40" y="98" width="146" height="110" rx="12"/>
+  <circle class="m" cx="66" cy="124" r="7"/>
+  <path class="m" d="M54 145 q12 -16 24 0 z"/>
+  <text class="t h2" x="88" y="130">Operator</text>
+  <text class="t b" x="56" y="168">you, at a terminal</text>
+  <text class="c s" x="56" y="188">--operator --role</text>
+
+  <!-- Git -->
+  <rect class="src" x="330" y="98" width="190" height="110" rx="12"/>
+  <text class="t h2" x="346" y="122">fleet-clusters (Git)</text>
+  <text class="m s" x="346" y="139">desired state</text>
+  <text class="c s" x="346" y="160">provision/  archive/</text>
+  <text class="c s" x="346" y="176">deprovision/</text>
+  <text class="m s" x="346" y="196">committed HEAD, pinned once</text>
+
+  <!-- OpenShift -->
+  <rect class="src" x="534" y="98" width="190" height="110" rx="12"/>
+  <text class="t h2" x="550" y="122">OpenShift hub</text>
+  <text class="m s" x="550" y="139">actual state</text>
+  <text class="c s" x="550" y="160">ClusterDeployment</text>
+  <text class="c s" x="550" y="176">ManagedCluster</text>
+  <text class="m s" x="550" y="196">oc get … (list only)</text>
+
+  <!-- Tekton -->
+  <rect class="src" x="738" y="98" width="190" height="110" rx="12"/>
+  <text class="t h2" x="754" y="122">Tekton</text>
+  <text class="m s" x="754" y="139">workflow state</text>
+  <text class="c s" x="754" y="160">PipelineRun  TaskRun</text>
+  <text class="c s" x="754" y="176">Pipeline</text>
+  <text class="m s" x="754" y="196">oc get … (list only)</text>
+
+  <!-- Never written -->
+  <rect class="deny" x="990" y="98" width="232" height="110" rx="12" stroke-dasharray="6 4"/>
+  <circle cx="1012" cy="120" r="8" fill="none" class="x"/>
+  <line x1="1006.5" y1="125.5" x2="1017.5" y2="114.5" class="x"/>
+  <text class="t h2" x="1028" y="125">Never written</text>
+  <text class="t b" x="1008" y="150">Git · Kubernetes objects</text>
+  <text class="t b" x="1008" y="168">PipelineRuns · Portal</text>
+  <text class="t b" x="1008" y="186">RabbitMQ · external models</text>
+  <text class="m s" x="1008" y="202">invariant I5, Phases 1–2</text>
+
+  <!-- ===== Middle band: the command pipeline ===== -->
+  <rect class="frame" x="24" y="244" width="1214" height="240" rx="14"/>
+  <rect class="bg" x="140" y="234" width="196" height="20" rx="10"/>
+  <text class="m lbl" x="152" y="248">AURA · THIS REPOSITORY</text>
+
+  <!-- Operator → CLI -->
+  <path class="flow" d="M113 208 V268" marker-end="url(#a-flow)"/>
+
+  <!-- Sources → Collectors -->
+  <path class="read" d="M425 208 V230 H595 V268" marker-end="url(#a-read)"/>
+  <path class="read" d="M629 208 V268" marker-end="url(#a-read)"/>
+  <path class="read" d="M833 208 V230 H663 V268" marker-end="url(#a-read)"/>
+  <text class="m s" x="434" y="225">read @ HEAD</text>
+  <text class="m s" x="740" y="225">list</text>
+  <text class="m s" x="636" y="225">list</text>
+
+  <!-- 1 CLI -->
+  <rect class="core" x="40" y="270" width="146" height="200" rx="12"/>
+  <circle class="badge-core" cx="58" cy="290" r="10"/><text class="badge-t" x="58" y="294" text-anchor="middle">1</text>
+  <text class="t h2" x="74" y="295">aura CLI</text>
+  <line class="rule" x1="52" y1="310" x2="174" y2="310"/>
+  <text class="c s" x="52" y="332">inventory list</text>
+  <text class="c s" x="52" y="350">workflow inspect</text>
+  <text class="c s" x="52" y="368">diagnose state</text>
+  <text class="c s" x="52" y="386">propose …</text>
+  <text class="c s" x="52" y="404">proposal status</text>
+  <text class="m s" x="52" y="452">JSON on stdout</text>
+
+  <!-- 2 Idempotency gate -->
+  <rect class="gate" x="212" y="270" width="146" height="200" rx="12"/>
+  <circle class="badge-gate" cx="230" cy="290" r="10"/><text class="badge-t" x="230" y="294" text-anchor="middle">2</text>
+  <text class="t h2" x="246" y="295">Idempotency</text>
+  <line class="rule" x1="224" y1="310" x2="346" y2="310"/>
+  <text class="t b" x="224" y="332">locks --command-dir</text>
+  <text class="t b" x="224" y="350">key ↔ request digest</text>
+  <text class="t b" x="224" y="368">one terminal record</text>
+  <text class="t b" x="224" y="386">per key</text>
+  <text class="m s" x="224" y="434">reused key → exit 2,</text>
+  <text class="m s" x="224" y="452">before any read</text>
+
+  <!-- 3 Service + policy -->
+  <rect class="gate" x="384" y="270" width="146" height="200" rx="12"/>
+  <circle class="badge-gate" cx="402" cy="290" r="10"/><text class="badge-t" x="402" y="294" text-anchor="middle">3</text>
+  <text class="t h2" x="418" y="295">Service</text>
+  <line class="rule" x1="396" y1="310" x2="518" y2="310"/>
+  <text class="t b" x="396" y="332">AuthorizationPolicy</text>
+  <text class="c s" x="396" y="350">viewer · proposer</text>
+  <text class="c s" x="396" y="366">admin</text>
+  <text class="t b" x="396" y="390">checks command type</text>
+  <text class="m s" x="396" y="434">received →</text>
+  <text class="m s" x="396" y="452">collecting_evidence</text>
+
+  <!-- 4 Collectors -->
+  <rect class="src" x="556" y="270" width="146" height="200" rx="12"/>
+  <circle class="badge-src" cx="574" cy="290" r="10"/><text class="badge-t" x="574" y="294" text-anchor="middle">4</text>
+  <text class="t h2" x="590" y="295">Collectors</text>
+  <line class="rule" x1="568" y1="310" x2="690" y2="310"/>
+  <text class="t b" x="568" y="332">Git · OpenShift</text>
+  <text class="t b" x="568" y="350">Tekton · Pipelines</text>
+  <text class="t b" x="568" y="374">correlate by</text>
+  <text class="t b" x="568" y="392">cluster name</text>
+  <text class="m s" x="568" y="434">drift · deprovision</text>
+  <text class="m s" x="568" y="452">workflow views</text>
+
+  <!-- 5 Evidence snapshot -->
+  <rect class="core" x="728" y="270" width="146" height="200" rx="12"/>
+  <circle class="badge-core" cx="746" cy="290" r="10"/><text class="badge-t" x="746" y="294" text-anchor="middle">5</text>
+  <text class="t h2" x="762" y="295">Evidence</text>
+  <line class="rule" x1="740" y1="310" x2="862" y2="310"/>
+  <text class="t b" x="740" y="332">typed items</text>
+  <text class="t b" x="740" y="350">secrets redacted</text>
+  <text class="t b" x="740" y="368">pinned source</text>
+  <text class="t b" x="740" y="386">version</text>
+  <text class="m s" x="740" y="434">frozen with a</text>
+  <text class="m s" x="740" y="452">SHA-256 digest</text>
+
+  <!-- 6 CWA assembler -->
+  <rect class="core" x="900" y="270" width="146" height="200" rx="12"/>
+  <circle class="badge-core" cx="918" cy="290" r="10"/><text class="badge-t" x="918" y="294" text-anchor="middle">6</text>
+  <text class="t h2" x="934" y="295">CWA</text>
+  <line class="rule" x1="912" y1="310" x2="1034" y2="310"/>
+  <text class="t b" x="912" y="332">9 required slots</text>
+  <text class="c s" x="912" y="352">governance · state</text>
+  <text class="c s" x="912" y="368">evidence</text>
+  <text class="c s" x="912" y="384">interaction</text>
+  <text class="m s" x="912" y="434">context window,</text>
+  <text class="m s" x="912" y="452">digested + traced</text>
+
+  <!-- 7 Model / generator -->
+  <rect class="out" x="1072" y="270" width="146" height="200" rx="12"/>
+  <circle class="badge-out" cx="1090" cy="290" r="10"/><text class="badge-t" x="1090" y="294" text-anchor="middle">7</text>
+  <text class="t h2" x="1106" y="295">Model</text>
+  <line class="rule" x1="1084" y1="310" x2="1206" y2="310"/>
+  <text class="t b" x="1084" y="332">deterministic, local</text>
+  <text class="t b" x="1084" y="350">strict schema</text>
+  <text class="t b" x="1084" y="374">diagnosis</text>
+  <text class="t b" x="1084" y="392">proposal</text>
+  <text class="t b" x="1084" y="410">or refusal</text>
+  <text class="m s" x="1084" y="452">never applied</text>
+
+  <!-- Pipeline arrows -->
+  <path class="flow" d="M186 370 H210" marker-end="url(#a-flow)"/>
+  <path class="flow" d="M358 370 H382" marker-end="url(#a-flow)"/>
+  <path class="flow" d="M530 370 H554" marker-end="url(#a-flow)"/>
+  <path class="flow" d="M702 370 H726" marker-end="url(#a-flow)"/>
+  <path class="flow" d="M874 370 H898" marker-end="url(#a-flow)"/>
+  <path class="flow" d="M1046 370 H1070" marker-end="url(#a-flow)"/>
+
+  <!-- ===== Persistence rail ===== -->
+  <path class="save" d="M113 470 V506"/>
+  <path class="save" d="M285 470 V506"/>
+  <path class="save" d="M801 470 V506"/>
+  <path class="save" d="M973 470 V506"/>
+  <path class="save" d="M1145 470 V506"/>
+  <line x1="113" y1="506" x2="1145" y2="506" class="save"/>
+
+  <path class="save" d="M131 506 V532" marker-end="url(#a-save)"/>
+  <path class="save" d="M331 506 V532" marker-end="url(#a-save)"/>
+  <path class="save" d="M531 517 V532" marker-end="url(#a-save)"/>
+  <path class="save" d="M731 517 V532" marker-end="url(#a-save)"/>
+  <path class="save" d="M931 506 V532" marker-end="url(#a-save)"/>
+  <path class="save" d="M1131 506 V532" marker-end="url(#a-save)"/>
+
+  <rect class="rail" x="516" y="495" width="230" height="22" rx="11"/>
+  <text class="m lbl" x="631" y="510" text-anchor="middle">PERSIST · APPEND-ONLY JSON</text>
+
+  <!-- Stores -->
+  <rect class="store" x="40" y="534" width="182" height="62" rx="10"/>
+  <text class="c b" x="54" y="557">--command-dir</text>
+  <text class="m s" x="54" y="579">terminal record per key</text>
+
+  <rect class="store" x="240" y="534" width="182" height="62" rx="10"/>
+  <text class="c b" x="254" y="557">--audit-dir</text>
+  <text class="m s" x="254" y="579">linear event chain</text>
+
+  <rect class="store" x="440" y="534" width="182" height="62" rx="10"/>
+  <text class="c b" x="454" y="557">--snapshot-dir</text>
+  <text class="m s" x="454" y="579">frozen evidence</text>
+
+  <rect class="store" x="640" y="534" width="182" height="62" rx="10"/>
+  <text class="c b" x="654" y="557">--cwa-dir</text>
+  <text class="m s" x="654" y="579">snapshots + traces</text>
+
+  <rect class="store" x="840" y="534" width="182" height="62" rx="10"/>
+  <text class="c b" x="854" y="557">--diagnosis-dir</text>
+  <text class="m s" x="854" y="579">diagnosis records</text>
+
+  <rect class="store" x="1040" y="534" width="182" height="62" rx="10"/>
+  <text class="c b" x="1054" y="557">--proposal-dir</text>
+  <text class="m s" x="1054" y="579">written last, never applied</text>
+
+  <!-- ===== Audit chain ===== -->
+  <text class="m lbl" x="40" y="636">AUDIT CHAIN · ONE LINEAR CHAIN PER COMMAND</text>
+
+  <rect class="pill" x="40" y="648" width="130" height="28" rx="14"/>
+  <text class="c s" x="105" y="666" text-anchor="middle">command_received</text>
+  <path class="chain" d="M170 662 H196" marker-end="url(#a-chain)"/>
+
+  <rect class="pill" x="198" y="648" width="142" height="28" rx="14"/>
+  <text class="c s" x="269" y="666" text-anchor="middle">evidence_collected</text>
+  <path class="chain" d="M340 662 H366" marker-end="url(#a-chain)"/>
+
+  <rect class="pill" x="368" y="648" width="136" height="28" rx="14"/>
+  <text class="c s" x="436" y="666" text-anchor="middle">context_assembled</text>
+  <path class="chain" d="M504 662 H530" marker-end="url(#a-chain)"/>
+
+  <rect class="pill" x="532" y="648" width="232" height="28" rx="14"/>
+  <text class="c s" x="648" y="666" text-anchor="middle">model_called · proposal_created</text>
+
+  <rect class="deny" x="806" y="648" width="238" height="28" rx="14"/>
+  <text class="c s" x="925" y="666" text-anchor="middle">command_failed · command_refused</text>
+  <path class="chain" d="M764 662 H804" marker-end="url(#a-chain)" stroke-dasharray="3 3"/>
+  <text class="m s" x="1056" y="666">links to the last</text>
+  <text class="m s" x="1056" y="681">stored event</text>
+
+  <!-- ===== Legend ===== -->
+  <line class="rule" x1="40" y1="712" x2="1222" y2="712"/>
+  <path class="flow" d="M40 742 H76" marker-end="url(#a-flow)"/>
+  <text class="m s" x="86" y="746">command flow</text>
+  <path class="read" d="M190 742 H226" marker-end="url(#a-read)"/>
+  <text class="m s" x="236" y="746">read-only access (list RBAC from deploy/)</text>
+  <path class="save" d="M490 742 H526" marker-end="url(#a-save)"/>
+  <text class="m s" x="536" y="746">record persisted (atomic, exclusive-create)</text>
+  <rect class="deny" x="800" y="734" width="22" height="16" rx="4" stroke-dasharray="4 3"/>
+  <text class="m s" x="832" y="746">outside Aura’s write boundary / failure path</text>
+</svg>

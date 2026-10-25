@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 340" width="1100" height="340" role="img" aria-labelledby="title desc">
+  <title id="title">Aura idempotency gate</title>
+  <desc id="desc">A command with idempotency key K locks the command directory and looks for a record for K. With no record, the command runs once and stores one terminal record: succeeded, failed, or refused. With a record for the same request, it exits 2 before any read and reports the prior state. With a record for a different request, it exits 2 because the key belongs to that other request.</desc>
+
+  <style>
+    .bg { fill: #ffffff; stroke: #d0d7de; }
+    .t { fill: #1f2328; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .m { fill: #59636e; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .c { fill: #1f2328; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .h2 { font-size: 14px; font-weight: 650; }
+    .lbl { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; }
+    .b { font-size: 12px; }
+    .s { font-size: 11px; }
+
+    .core { fill: #ecf2ff; stroke: #3b6fd8; }
+    .gate { fill: #fff4e0; stroke: #c27c0e; }
+    .store{ fill: #eaf7ec; stroke: #2e8b46; }
+    .deny { fill: #fdecec; stroke: #d1242f; }
+
+    .flow { stroke: #57606a; stroke-width: 1.8; fill: none; }
+    .ok   { stroke: #2e8b46; stroke-width: 1.8; fill: none; }
+    .stop { stroke: #c27c0e; stroke-width: 1.8; fill: none; }
+    .no   { stroke: #d1242f; stroke-width: 1.8; fill: none; }
+    .ah-flow { fill: #57606a; }
+    .ah-ok   { fill: #2e8b46; }
+    .ah-stop { fill: #c27c0e; }
+    .ah-no   { fill: #d1242f; }
+
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; stroke: #30363d; }
+      .t, .c { fill: #e6edf3; }
+      .m { fill: #9198a1; }
+      .core { fill: #14213d; stroke: #6d9bff; }
+      .gate { fill: #2e2310; stroke: #e3a33b; }
+      .store{ fill: #112a19; stroke: #4cc06a; }
+      .deny { fill: #3a1417; stroke: #ff6b6b; }
+      .flow { stroke: #8b949e; }
+      .ok   { stroke: #4cc06a; }
+      .stop { stroke: #e3a33b; }
+      .no   { stroke: #ff6b6b; }
+      .ah-flow { fill: #8b949e; }
+      .ah-ok   { fill: #4cc06a; }
+      .ah-stop { fill: #e3a33b; }
+      .ah-no   { fill: #ff6b6b; }
+    }
+  </style>
+
+  <defs>
+    <marker id="i-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-flow" d="M0 0 L10 5 L0 10 z"/></marker>
+    <marker id="i-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-ok" d="M0 0 L10 5 L0 10 z"/></marker>
+    <marker id="i-stop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-stop" d="M0 0 L10 5 L0 10 z"/></marker>
+    <marker id="i-no" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-no" d="M0 0 L10 5 L0 10 z"/></marker>
+  </defs>
+
+  <rect class="bg" x="0.5" y="0.5" width="1099" height="339" rx="16"/>
+
+  <!-- Command -->
+  <rect class="core" x="30" y="130" width="200" height="80" rx="12"/>
+  <text class="t h2" x="46" y="156">Your command</text>
+  <text class="c s" x="46" y="178">aura COMMAND</text>
+  <text class="c s" x="46" y="195">--idempotency-key K</text>
+  <path class="flow" d="M230 170 H262" marker-end="url(#i-flow)"/>
+
+  <!-- Decision -->
+  <path class="gate" d="M264 170 L384 96 L504 170 L384 244 Z"/>
+  <text class="t h2" x="384" y="160" text-anchor="middle">Lock --command-dir</text>
+  <text class="t b" x="384" y="182" text-anchor="middle">record for K?</text>
+
+  <!-- Branches -->
+  <path class="flow" d="M504 170 H530"/>
+  <path class="ok" d="M530 170 V75 H618" marker-end="url(#i-ok)"/>
+  <path class="stop" d="M530 170 H618" marker-end="url(#i-stop)"/>
+  <path class="no" d="M530 170 V265 H618" marker-end="url(#i-no)"/>
+  <text class="m s" x="542" y="68">no record</text>
+  <text class="m s" x="542" y="163">same request</text>
+  <text class="m s" x="542" y="258">other request</text>
+
+  <!-- No record: run once -->
+  <rect class="store" x="620" y="40" width="200" height="70" rx="12"/>
+  <text class="t h2" x="636" y="66">Run once</text>
+  <text class="m b" x="636" y="88">collect · explain · persist</text>
+  <path class="ok" d="M820 75 H856" marker-end="url(#i-ok)"/>
+  <rect class="store" x="858" y="40" width="212" height="70" rx="12"/>
+  <text class="t h2" x="874" y="66">One terminal record</text>
+  <text class="c s" x="874" y="88">succeeded · failed · refused</text>
+
+  <!-- Same request: replay suppressed -->
+  <rect class="gate" x="620" y="135" width="450" height="70" rx="12"/>
+  <text class="t h2" x="636" y="161">Exit 2 before any Git or oc read</text>
+  <text class="m b" x="636" y="183">Reports the prior terminal state. No new records are created.</text>
+
+  <!-- Different request: rejected -->
+  <rect class="deny" x="620" y="230" width="450" height="70" rx="12"/>
+  <text class="t h2" x="636" y="256">Exit 2: the key belongs to a different request</text>
+  <text class="m b" x="636" y="278">Keys are bound to a digest of the request. Use a new key.</text>
+
+  <!-- Footnote -->
+  <text class="m s" x="30" y="322">The lock serializes concurrent runs of one key, so only one of them collects evidence. Every terminal state is final: a new attempt needs a new key.</text>
+</svg>

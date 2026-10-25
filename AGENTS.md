@@ -91,7 +91,8 @@ docs(phase-1): record validation
 - Update `docs/wiring.md` when command wiring changes.
 - Update `docs/validation.md` when validation procedures or expected results change.
 - Update `docs/development.md` when the workflow, project invariants, or failure-mode matrix change.
-- Use raw Mermaid blocks for diagrams.
+- Draw diagrams for human readers, such as those in `README.md`, as SVG files under `docs/assets/` that render in light and dark mode, with descriptive alt text.
+- Use raw Mermaid blocks for diagrams in agent guidance and reference docs under `docs/`.
 
 ## Local Artifacts
 
