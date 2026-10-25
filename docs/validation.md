@@ -400,6 +400,16 @@ jq -r .patch "$OUT/proposal.json" | git -C ../fleet-clusters apply --check -v -
 
 A local smoke run on 2026-10-25 used the real `SubprocessScaffoldRunner` and `GitDefinitionCheck` against `fleet-cluster-scaffold` `2f6c7b4` and `fleet-clusters` `4ead929` with `kustomize` v5.8.1, without the hub: the `standard` and `sno` scaffolds wrote 41 and 40 files in about five seconds each, mostly spent exporting and hashing `fleet-clusters`; neither changed any other file, no output check fired, each patch yielded one complete definition, and the status, refs, object counts, and index files of both checkouts were unchanged.
 
+Latest validation, run on 2026-10-25 with the `aura:aura-readonly` kubeconfig at Aura commit `42ad38f`, against `fleet-clusters` `4ead929` and `fleet-cluster-scaffold` `2f6c7b4`, both clean and equal to remote `main`, with `kustomize` v5.8.1. No existing name is longer than 19 characters, so the prefix-collision case used an active cluster's name with one hyphen doubled, which the infra-prefix rule collapses to the same prefix. Nothing was merged.
+
+| Check | Result |
+| --- | --- |
+| Unused name, `sno` | Exit code `0` in 11.5 seconds; 40 files, all under `provision/<id>/`; `git apply --check` passed; `platform: aws` and `aws-credentials-mode: scoped`; `scaffold_commit` `2f6c7b4`, `base_commit` `4ead929`, exit code `0` |
+| Contract and provenance | Proposal and digest valid; `scaffold_run.files` equals the patch's added files; not stale; trace `aura`/`scaffold-deterministic` with the proposal digest; audit `command_received`, `evidence_collected`, `context_assembled`, `proposal_created`; command `succeeded` |
+| Name in use, `<cluster-name>` | Exit code `2`; refused with `already has a definition at provision/<cluster-name>` and `OpenShift resources already exist`; no proposal; audit ends `command_refused` |
+| Shared infra prefix | Exit code `2`; refused with `infra prefix <prefix> is also used by` both the OpenShift cluster and `provision/<cluster-name>`; no proposal |
+| Checkouts | Status, refs, object counts, and index files of both checkouts unchanged after all three runs; no tracked change in any protected repository |
+
 ## Idempotency Validation
 
 Repeat a command with an idempotency key that has already reached a terminal state.
