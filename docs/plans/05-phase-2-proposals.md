@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved on 2026-10-20. Prerequisites P0 and P1 are implemented and validated against the live hub, P3 and P4 are implemented, and P2 is implemented and validated against the live hub. The deprovision sentinel proposal type is implemented as `propose deprovision` and was validated against the live hub on 2026-10-23. The cluster-edit proposal type is implemented as `propose cluster-edit` and was validated against the live hub on 2026-10-24. The post-provision rerun type is implemented as `propose post-provision-rerun` and was validated against the live hub on 2026-10-25. Revised after validation on 2026-10-20 against `fleet` commit `b8302da`, `fleet-clusters` commit `492bc8e07afddcd557441ddb7d72158de60ab8cb`, `fleet-cluster-scaffold` commit `e5346c3`, and the live hub. Implementation starts only after this plan is approved.
+Approved on 2026-10-20. Prerequisites P0 and P1 are implemented and validated against the live hub, P3 and P4 are implemented, and P2 is implemented and validated against the live hub. The deprovision sentinel proposal type is implemented as `propose deprovision` and was validated against the live hub on 2026-10-23. The cluster-edit proposal type is implemented as `propose cluster-edit` and was validated against the live hub on 2026-10-24. The post-provision rerun type is implemented as `propose post-provision-rerun` and was validated against the live hub on 2026-10-25. The scaffold type is in development; its rules were revised on 2026-10-25 after re-verification against `fleet-cluster-scaffold` commit `2f6c7b4`, `fleet-clusters` commit `4ead929`, and `fleet` commit `9464f0b`. Revised after validation on 2026-10-20 against `fleet` commit `b8302da`, `fleet-clusters` commit `492bc8e07afddcd557441ddb7d72158de60ab8cb`, `fleet-cluster-scaffold` commit `e5346c3`, and the live hub. Implementation starts only after this plan is approved.
 
 ## Objective
 
@@ -85,14 +85,52 @@ flowchart LR
 
 | Aspect | Rule |
 | --- | --- |
-| Input | Cloud, cluster name, region, tier, topology, and optional scaffold flags |
-| Preconditions | Name is a DNS-1123 label; no `provision/`, `archive/`, or `deprovision/` entry and no OpenShift resource uses the name; cloud is `aws` |
-| Generation | Pinned scaffold, run with `--cluster-templates-dir` pointing at `cluster-templates/` exported from the base commit |
-| Artifact | Patch that adds only `provision/<id>/**` |
-| Validation | Scaffold `kustomize build` passes; applying the patch to the base commit and running `GitInventoryCollector` yields one complete `cluster_definition` whose `cluster_name` is `<id>` |
+| Input | Cloud, cluster name, region, tier, and the allow-listed scaffold flags below |
+| Preconditions | Cloud is `aws`; name is a DNS-1123 label of at most 49 characters; no `provision/`, `archive/`, or `deprovision/` entry (with or without `-archive`) and no OpenShift ClusterDeployment or ManagedCluster uses the name or shares its infra prefix; `kustomize` is on `PATH`; the scaffold checkout is a clean Git checkout |
+| Generation | Pinned scaffold, exported with `git archive` and run in a temporary workspace holding an export of `fleet-clusters` at the base commit, with `--base-path provision --cluster-templates-dir cluster-templates` |
+| Artifact | Patch that adds only regular files (mode `100644`) under `provision/<id>/`, including every required definition file |
+| Validation | Scaffold `kustomize build` passes; the generated overlay passes Aura's re-implementation of the `fleet-clusters` new-overlay PR check; applying the patch to the base commit and running `GitInventoryCollector` yields one complete `cluster_definition` whose `cluster_name` is `<id>` |
 | Trigger effect | Merge starts pre-provision, provision, and post-provision |
 | Commit message | Must not contain `[skip-provision]` |
 | Reversibility | Before merge, discard. After merge, only a deprovision reverses it. |
+
+Facts at `fleet-cluster-scaffold` `2f6c7b4`, verified 2026-10-25 by running a `git archive` export in a scratch workspace:
+
+| Fact | Consequence |
+| --- | --- |
+| Entry point `scaffold.cli:main(args)`; only `aws` is usable | Aura passes `aws` and refuses other clouds |
+| Output is `<--base-path>/<name>/`; base references are relative paths from `--base-path` to `--cluster-templates-dir` | Run inside the `fleet-clusters` export with `--base-path provision --cluster-templates-dir cluster-templates`, which yields the `../../../cluster-templates/aws/<topology>/...` paths committed definitions use |
+| AWS `cluster-templates/` are byte-identical in the scaffold and `fleet-clusters` `4ead929` | The `fleet-clusters` templates at the base commit are authoritative |
+| Default output is scoped AWS: `metadata.yaml` with `platform: aws` and `aws-credentials-mode: scoped`, and `htpasswd-provider-name` only when supplied; never `openshift-ai-version` | Accepted unmodified: absent keys take `fleet` defaults, and `openshift-ai-version` applies only to `ai` clusters, whose default is `v3` |
+| Output is deterministic, contains no secret material and no symlinks; regenerating a committed scoped definition with its parameters reproduces it | Same inputs give the same patch |
+| Scoped names longer than 49 characters exit 1 (IAM `<name>-<operator>` ≤ 64) | Aura checks the limit first and refuses with a structured reason |
+| With `kustomize` missing, the overlay is written first, then the run exits 1 | Aura checks `kustomize` before running and discards the workspace on any non-zero exit |
+| Logs go to standard error; standard output is empty; argument errors exit 2 | Both streams are captured |
+| No network, credentials, or kubeconfig; the only subprocess is `kustomize` | Run with a minimal environment |
+
+The `fleet-clusters` PR check `scripts/check_new_overlays.py` rejects a new overlay with non-scoped AWS metadata, a name over 49 characters, an old wildcard render or a missing current `machine-api` pattern, a failed `kustomize build` or surviving `cluster-placeholder` names, or an infra prefix shared with any `provision/` or `archive/` directory. The `fleet` pre-provision task `check-prefix-collision` also scans `deprovision/`, hub ClusterDeployments and ManagedClusters, and Crossplane IAM labels, and it ignores `oc` failures. The infra prefix replaces characters outside `[A-Za-z0-9-]` with `-`, collapses repeated `-`, keeps 21 characters, and strips trailing `-`.
+
+Decisions, 2026-10-25:
+
+| Decision | Position |
+| --- | --- |
+| Infra prefix | Refuse when any name in `provision/`, `archive/`, or `deprovision/` (stripping `-archive`), or any OpenShift ClusterDeployment or ManagedCluster, shares the infra prefix. Crossplane IAM labels are not read: that needs a new `list` grant, and `fleet` checks them before provisioning |
+| Scaffold flags | The operator may pass `--topology`, `--environment`, `--base-domain`, `--control-plane-type`, `--worker-type`, `--control-plane-replicas`, `--worker-replicas`, `--image-set`, `--zones`, `--install-attempts-limit`, and `--htpasswd-provider-name`. Aura alone sets `--name`, `--region`, `--tier`, `--base-path`, and `--cluster-templates-dir` from its own inputs. `--force`, `--skip-validation`, and `--legacy-mint-credentials` are never passed |
+| `metadata.yaml` | Scaffold output is accepted unmodified |
+| PR check | Aura re-implements its rules, with a parity test for the infra prefix, instead of executing `fleet-clusters` code |
+| Run record | Scaffold proposals carry a `scaffold_run` record: the `kustomize` version, the scaffold arguments, the exit code, standard output and error, and the generated file list |
+| Pinning | `--scaffold <path>` names a local checkout; Aura records its `HEAD` as `scaffold_commit`, refuses a dirty tracked tree, and runs a `git archive` export of that commit |
+
+Contract rules for scaffold proposals:
+
+- `scaffold_commit` and `scaffold_run` are present on scaffold proposals and absent on every other type.
+- `scaffold_run.exit_code` is exactly `0`.
+- `scaffold_run.files` equals exactly the paths the patch adds.
+- `scaffold_run.arguments` start with `aws`, carry `--name <id>`, `--base-path provision`, and `--cluster-templates-dir cluster-templates`, use only the flags above, each at most once and each with a value, and never `--force`, `--skip-validation`, or `--legacy-mint-credentials`.
+- The patch adds only regular files with mode `100644`; never a symlink or an executable file.
+- The patch adds every required definition file: `crossplane/kustomization.yaml`, `hive/patches/clusterdeployment.yaml`, `hive/patches/managedcluster.yaml`, and `metadata.yaml`.
+- The added `metadata.yaml` declares `platform: aws` and `aws-credentials-mode: scoped`.
+- `cluster_name` is at most 49 characters.
 
 ### Deprovision Sentinel
 
@@ -182,7 +220,8 @@ Because an absent key means its default, writing a key whose value equals what t
 | `base_commit` | `fleet-clusters` commit the patch applies to |
 | `evidence_snapshot_id` and `evidence_snapshot_digest` | Evidence the proposal was derived from |
 | `cwa_snapshot_id` and `cwa_trace_id` | CWA provenance |
-| `generator` and `generator_version` | Deterministic generator, plus scaffold commit when used |
+| `generator` and `generator_version` | Deterministic generator |
+| `scaffold_commit` and `scaffold_run` | Scaffold commit and run record, for scaffold proposals only |
 | `summary` | Operator-facing description |
 | `expected_effect` | Intended outcome |
 | `trigger_effect` | Pipelines or Actions that merging or applying will start, or `none` |
@@ -198,7 +237,7 @@ A proposal is stale when `fleet-clusters` `HEAD` moves past `base_commit` and to
 
 ## Scaffold Boundary
 
-- Run `fleet-cluster-scaffold` from a local checkout at a recorded commit, not its package version.
+- Run `fleet-cluster-scaffold` from a `git archive` export of a clean local checkout at a recorded commit, not its package version, so nothing is written into the checkout.
 - Run in a new temporary directory containing only an export of `fleet-clusters` at the base commit.
 - Pass no credentials and no kubeconfig; the scaffold needs neither.
 - Capture stdout, stderr, exit code, and the generated file list.
