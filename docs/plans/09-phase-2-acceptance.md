@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft for operator sign-off, prepared 2026-10-25 at Aura commit `c2d64a3`. Each row grades one [Phase 2 acceptance criterion](05-phase-2-proposals.md#acceptance-criteria) against cited evidence. The grades are reconciled: the author graded first, an independent reviewer then graded an ungraded copy of the evidence without seeing those grades, and where they differed the stricter grade was kept once its evidence was reproduced; see [Independent Grading](#independent-grading). **Phase 2 is not accepted:** A9 and A11 are not met; F1 and F4 were closed on 2026-10-25, see [Resolutions](#resolutions). Phase 3 starts only after the operator accepts this record and those rows are closed or the criteria are changed.
+Draft for operator sign-off, prepared 2026-10-25 at Aura commit `c2d64a3`. Each row grades one [Phase 2 acceptance criterion](05-phase-2-proposals.md#acceptance-criteria) against cited evidence. The grades are reconciled: the author graded first, an independent reviewer then graded an ungraded copy of the evidence without seeing those grades, and where they differed the stricter grade was kept once its evidence was reproduced; see [Independent Grading](#independent-grading). **Phase 2 is not accepted:** A9 and A11 are not met; F1 and F4 were closed on 2026-10-25, see [Resolutions](#resolutions). The operator decided on 2026-10-25 to pin reruns to a `fleet-clusters` base commit (A9) and to narrow A11 to Git staleness, with live-state staleness as a Phase 3 execution guard; both rows close once reruns are pinned and Git-staleness-checked. Phase 3 starts only after the operator accepts this record and those rows are closed or the criteria are changed.
 
 Grades:
 
@@ -86,6 +86,7 @@ Outside the criteria, found during grading:
 | --- | --- | --- | --- | --- |
 | F4 | The proposal store requires a non-empty stored `proposal_digest`; every JSON record store rejects a record whose ID differs from its file name | `341f9a3` | Store, staleness, and CLI tests for blank, null, and missing digests and a renamed record; disabling either check fails them | Anchoring the digest to the `proposal_created` event or CWA trace remains a Phase 3 guard |
 | F1 | Contract negatives for `scaffold_commit` on deprovision, cluster-edit, and rerun proposals | `9ca51b3` | `test_proposals::test_proposal_rejects_invalid_contract` | Generator-only type rules are by design; the spec should say F1 covers rules the contract can see |
+| A9 and A11, decision | Pin reruns to the `fleet-clusters` revision their evidence read; narrow A11 to Git staleness and move live staleness to the Phase 3 guard | Spec updated | Phase 2 plan: Proposal Contract, staleness, Acceptance Criteria, Phase 3 Impact | Implement rerun pinning and remove the rerun exemption from Git staleness |
 | A9, references | Every generator's success test asserts its evidence snapshot ID and digest, CWA snapshot ID, and trace ID | `9ca51b3` | Swapping any of the three references in any of the four generators fails a test (12 mutations) | The rerun base commit decision |
 
 After these changes, 835 tests pass at `ca37a83` locally and under `act`, and the quality gate reports zero gating findings on that committed tree.

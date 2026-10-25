@@ -217,7 +217,7 @@ Because an absent key means its default, writing a key whose value equals what t
 | `proposal_type` | `scaffold`, `deprovision`, `post_provision_rerun`, or `cluster_edit` |
 | `cluster_name` | The single target cluster |
 | `status` | `proposal_ready` in Phase 2 |
-| `base_commit` | `fleet-clusters` commit the patch applies to |
+| `base_commit` | `fleet-clusters` commit the patch applies to; for a rerun, the commit whose `metadata.yaml` and definition its evidence read. Required for every type (decided 2026-10-25; reruns are not yet pinned) |
 | `evidence_snapshot_id` and `evidence_snapshot_digest` | Evidence the proposal was derived from |
 | `cwa_snapshot_id` and `cwa_trace_id` | CWA provenance |
 | `generator` and `generator_version` | Deterministic generator |
@@ -233,7 +233,7 @@ Because an absent key means its default, writing a key whose value equals what t
 | `pipeline_run` | PipelineRun manifest, for rerun proposals |
 | `proposal_digest` | SHA-256 over canonical JSON of all fields above |
 
-A proposal is stale when `fleet-clusters` `HEAD` moves past `base_commit` and touches the target cluster, or when its evidence no longer matches live state. Phase 2 reports staleness; Phase 3 refuses stale proposals.
+A proposal is stale when `fleet-clusters` `HEAD` moves past `base_commit` and touches the target cluster's paths. Phase 2 reports this Git staleness for every type, reruns included once they are pinned. Live state is not compared in Phase 2: decided 2026-10-25, the Phase 3 execution guard re-collects evidence immediately before executing and refuses when the regenerated proposal's digest differs from the approved one, because a live check at status time would itself be out of date by execution time.
 
 ## Scaffold Boundary
 
@@ -257,7 +257,7 @@ A proposal is stale when `fleet-clusters` `HEAD` moves past `base_commit` and to
 - A post-provision rerun proposal is refused when a required parameter is missing or an unknown parameter is present.
 - Every proposal references its evidence snapshot, CWA trace, and base commit, and carries a verified `proposal_digest`.
 - Proposals contain no secret values.
-- A stale proposal is reported as stale.
+- A proposal whose target cluster's `fleet-clusters` paths changed after its `base_commit` is reported as stale. Revised 2026-10-25 from "a stale proposal is reported as stale": live-state staleness is a Phase 3 guard.
 - No Git write, Kubernetes write, or pipeline start occurs.
 - No protected repository is modified.
 
@@ -287,6 +287,8 @@ Approval of this plan requires these changes to [Phase 3](06-phase-3-approved-ex
 - The Git adapter is the execution path for scaffold, deprovision, and edit proposals, and it must push the proposal as the head commit with the required message.
 - The Tekton adapter is limited to post-provision reruns, created through the Kubernetes API.
 - The guard refuses stale proposals and proposals whose `proposal_digest` changed.
+- The guard re-collects evidence immediately before executing, regenerates the proposal, and refuses when the regenerated `proposal_digest` differs from the approved one. This is where live-state staleness is enforced.
+- The guard checks a stored proposal's digest against the `proposal_created` audit event or the CWA trace's `response_digest`, not only against itself.
 
 ## Open Questions
 
