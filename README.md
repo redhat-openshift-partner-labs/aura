@@ -63,7 +63,7 @@ Each stage persists [append-only JSON records](docs/wiring.md#record-wiring): at
 
 ## Quickstart
 
-Five minutes, no cluster required. You need [Python 3.12+](https://www.python.org/downloads/), [`uv`](https://docs.astral.sh/uv/), and `git`; step 3 also needs a local `fleet-clusters` checkout next to this repository.
+Five minutes, no cluster required. You need [Python 3.12+](https://www.python.org/downloads/), [`uv`](https://docs.astral.sh/uv/), and `git`. Steps 1 and 2 work for anyone. Steps 3 and 4 also need a local checkout of `redhat-openshift-partner-labs/fleet-clusters` next to this repository; that repository is private, so without access, stop after step 2.
 
 **1. Clone and install**
 
@@ -211,6 +211,7 @@ Every command takes `--operator`, `--idempotency-key`, and `--command-dir`, and 
 | --- | --- |
 | `0` | Success, including a proposal that is merely stale |
 | `2` | Argument error, unauthorized role, refusal, failed write, duplicate record, or reused idempotency key |
+| Other non-zero | Unhandled collector or process failure; expected failures exit `2`, so treat this as a bug ([invariant I7](docs/development.md#project-invariants)) |
 
 A refusal still stores its evidence, CWA, and audit records, so you can see exactly what was missing. See [Output and Exit Codes](docs/cli.md#output-and-exit-codes).
 
