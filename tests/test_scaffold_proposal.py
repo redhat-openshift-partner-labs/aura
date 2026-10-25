@@ -34,7 +34,7 @@ from aura.services.scaffold import ScaffoldProposalGenerator
 from aura.scaffold_runner import GitDefinitionCheck
 from fake_scaffold import overlay_files
 from test_cluster_state_collector import FakeGitCollector
-from test_cluster_state_diagnosis import make_cwa_snapshot
+from test_cluster_state_diagnosis import assert_references, make_cwa_snapshot
 from test_git_inventory_collector import commit_repository, write_cluster
 
 
@@ -289,6 +289,7 @@ def test_generator_proposes_the_scaffold_output(tmp_path: Path) -> None:
 
     proposal = generate(snapshot, runner)
 
+    assert_references(proposal, snapshot, TRACE_ID)
     scaffold_commit = head(tmp_path / "fleet-cluster-scaffold")
     arguments = expected_arguments()
     assert runner.calls == [

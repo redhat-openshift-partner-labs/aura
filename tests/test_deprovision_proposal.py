@@ -38,7 +38,7 @@ from test_cluster_state_collector import (
     FakeOpenShiftCollector,
     FakeTektonCollector,
 )
-from test_cluster_state_diagnosis import make_cwa_snapshot
+from test_cluster_state_diagnosis import assert_references, make_cwa_snapshot
 from test_git_inventory_collector import commit_repository, write_cluster
 
 
@@ -85,9 +85,7 @@ def test_generator_proposes_standalone_archive_sentinel(
     assert proposal.cluster_name == "example"
     assert proposal.base_commit == base
     assert proposal.command_id == UUID(int=1)
-    assert proposal.evidence_snapshot_id == evidence.snapshot_id
-    assert proposal.evidence_snapshot_digest == evidence.snapshot_digest
-    assert proposal.cwa_trace_id == TRACE_ID
+    assert_references(proposal, evidence, TRACE_ID)
     assert proposal.generator == "deprovision-sentinel-deterministic"
     assert patch_changes(proposal.patch or "") == [
         ("deprovision/example-archive", "added")

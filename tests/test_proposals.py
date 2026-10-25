@@ -392,6 +392,18 @@ def test_proposal_rejects_changed_content_under_old_digest() -> None:
             "must not contain [skip-provision]",
         ),
         ("scaffold", {"scaffold_commit": None}, "scaffold_commit is required"),
+        *(
+            (
+                proposal_type,
+                {"scaffold_commit": "2f6c7b4" + "0" * 33},
+                "scaffold_commit is required for scaffold proposals only",
+            )
+            for proposal_type in (
+                "deprovision",
+                "cluster_edit",
+                "post_provision_rerun",
+            )
+        ),
         (
             "cluster_edit",
             {"commit_message": f"fix: backfill metadata for {CLUSTER}"},

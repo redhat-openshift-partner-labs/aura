@@ -60,6 +60,19 @@ def make_snapshot(*, complete: bool = True):
     )
 
 
+def assert_references(proposal, evidence_snapshot, trace_id) -> None:
+    """Assert a proposal cites exactly its evidence, CWA snapshot, and trace."""
+
+    assert proposal.evidence_snapshot_id == evidence_snapshot.snapshot_id
+    assert proposal.evidence_snapshot_digest == evidence_snapshot.snapshot_digest
+    assert (
+        proposal.cwa_snapshot_id
+        == make_cwa_snapshot(evidence_snapshot).snapshot_id
+    )
+    assert proposal.cwa_trace_id == trace_id
+    assert proposal.evidence_snapshot_id != proposal.cwa_snapshot_id
+
+
 def make_cwa_snapshot(evidence_snapshot):
     command = CommandEnvelope(
         command_id=UUID(int=1),

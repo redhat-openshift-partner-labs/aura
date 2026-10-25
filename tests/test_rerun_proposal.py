@@ -20,7 +20,7 @@ from aura.services.rerun import PostProvisionRerunGenerator
 from test_cluster_edit_proposal import ABSENT, fleet
 from test_cluster_inventory_collector import actual_state, openshift_collector
 from test_cluster_state_collector import EmptyCollector
-from test_cluster_state_diagnosis import make_cwa_snapshot
+from test_cluster_state_diagnosis import assert_references, make_cwa_snapshot
 from test_git_inventory_collector import write_cluster
 from test_pipeline_definitions import (
     POST_PROVISION,
@@ -190,6 +190,7 @@ def test_generator_copies_the_source_run(tmp_path: Path) -> None:
 
     proposal = generate(snapshot)
 
+    assert_references(proposal, snapshot, TRACE_ID)
     assert proposal.proposal_type is ProposalType.POST_PROVISION_RERUN
     assert proposal.trigger_effect == [TriggerEffect.POST_PROVISION]
     assert proposal.reversibility is Reversibility.IRREVERSIBLE

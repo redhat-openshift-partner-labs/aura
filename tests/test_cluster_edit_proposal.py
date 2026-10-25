@@ -29,7 +29,7 @@ from test_cluster_inventory_collector import (
     tekton_collector,
 )
 from test_cluster_state_collector import EmptyCollector, FakeGitCollector
-from test_cluster_state_diagnosis import make_cwa_snapshot
+from test_cluster_state_diagnosis import assert_references, make_cwa_snapshot
 from test_git_inventory_collector import commit_repository, write_cluster
 
 
@@ -134,6 +134,7 @@ def test_generator_backfills_missing_metadata_file(tmp_path: Path) -> None:
 
     proposal = generate(snapshot)
 
+    assert_references(proposal, snapshot, TRACE_ID)
     assert proposal.proposal_type is ProposalType.CLUSTER_EDIT
     assert proposal.trigger_effect == []
     assert proposal.reversibility is Reversibility.REVERSIBLE
