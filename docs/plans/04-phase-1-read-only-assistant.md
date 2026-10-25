@@ -130,8 +130,8 @@ Recorded at Aura commit `6dc0eb3` against `fleet-clusters` commit `492bc8e07afdd
 | Combined inventory | 25 records; no `missing-git` or `detected` drift |
 | Workflow view | Correlated all 34 PipelineRuns to their `cluster-name` parameter |
 | Immutable records | One evidence snapshot, one CWA snapshot, one CWA trace, and three linked audit events with matching digests |
-| Live diagnosis | Diagnosed `0171d46a-scopedaws` and `2dcb6934-thalescs`, each citing Git, OpenShift, and Tekton evidence |
-| Refusals | `423d216c-vistergy` refused for incomplete definition files, `1bd62dc5-hpezerto` for missing OpenShift and Tekton evidence, and `pchriste` for conflicting definitions |
+| Live diagnosis | Diagnosed two clusters, each citing Git, OpenShift, and Tekton evidence |
+| Refusals | One cluster refused for incomplete definition files, one for missing OpenShift and Tekton evidence, and one for conflicting definitions |
 | Duplicate idempotency key | Rejected before collection with no new command record |
 | Read-only RBAC | `list` allowed on all four resources; `create`, `patch`, and `delete` denied |
 | Protected repositories | `fleet`, `fleet-cluster-scaffold`, `fleet-clusters`, and `portal` had no tracked modifications |

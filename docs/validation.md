@@ -66,12 +66,12 @@ The test classes every change must include are defined in [Development Workflow]
 
 ## Local Fixture
 
-This procedure is pinned to the `fleet-clusters` commit below; `0171d46a-scopedaws` has since been deprovisioned, so current `HEAD` no longer matches these results. The automated tests use a static copy of this fixture.
+This procedure is pinned to the `fleet-clusters` commit below; the fixture cluster has since been deprovisioned, so current `HEAD` no longer matches these results. The automated tests use a static copy of this fixture.
 
 Fixture cluster:
 
 ```text
-provision/0171d46a-scopedaws
+provision/<cluster-name>
 ```
 
 Validated `fleet-clusters` commit:
@@ -93,9 +93,9 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura inventory list \
 
 Check that output contains:
 
-- `provision/0171d46a-scopedaws`.
+- `provision/<cluster-name>`.
 - `status: active`.
-- `cluster_name: 0171d46a-scopedaws`.
+- `cluster_name: <cluster-name>`.
 - Archived definitions with `status: archived`.
 - 26 definitions at the validated commit: 12 `cluster_definition`, 14 `cluster_definition_incomplete`, and no `cluster_definition_invalid`.
 - Every incomplete definition has a `cluster_name` equal to its directory name.
@@ -155,7 +155,7 @@ Latest validation observed:
 | `incomplete-definition` drift | 5 |
 | `incomplete-metadata` drift | 6 |
 | `deprovision-requested` drift | 6, all `deprovision_status: stranded` |
-| `leftover` deprovision status | 1, `f6f3eba2-redisvirt` |
+| `leftover` deprovision status | 1 |
 | Combined snapshot redactions | None; no live parameter name contains a non-allowlisted secret term |
 | Workflow evidence items | 114 |
 | Workflow views | 34 |
@@ -180,23 +180,23 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura diagnose state \
   --command-dir ./local/commands
 ```
 
-The cluster results below are historical, recorded before `0171d46a-scopedaws` was deprovisioned; current cluster states differ. Run the same command with new idempotency keys against clusters in comparable states to validate refusals:
+The cluster results below are historical, recorded before the fixture cluster was deprovisioned; current cluster states differ. Run the same command with new idempotency keys against clusters in comparable states to validate refusals:
 
 | Cluster | Expected result |
 | --- | --- |
-| `2dcb6934-thalescs` | Exit code `0`; summary names a succeeded PipelineRun |
-| `423d216c-vistergy` | Exit code `2`; refused with `Git cluster definition files` and `Tekton PipelineRun status` |
-| `1bd62dc5-hpezerto` | Exit code `2`; refused with `OpenShift actual state` and `Tekton PipelineRun status` |
-| `pchriste` | Exit code `2`; refused with `Conflicting Git cluster definitions` |
-| `10f25620-vscopeocpv` | Exit code `0`; stranded deprovision summary citing its retained deprovision PipelineRun, confidence `0.9` |
-| `264c5202-codvoqs` | Exit code `0`; stranded deprovision summary stating `no PipelineRun is retained for it`, confidence `0.6` |
-| `f6f3eba2-redisvirt` | Exit code `2`; leftover sentinel, refused with `Git cluster definition files` and `OpenShift actual state` |
+| A cluster with a succeeded PipelineRun | Exit code `0`; summary names a succeeded PipelineRun |
+| A cluster with incomplete definition files | Exit code `2`; refused with `Git cluster definition files` and `Tekton PipelineRun status` |
+| A cluster with no OpenShift resources or retained run | Exit code `2`; refused with `OpenShift actual state` and `Tekton PipelineRun status` |
+| A cluster with conflicting definitions | Exit code `2`; refused with `Conflicting Git cluster definitions` |
+| A stranded cluster with a retained deprovision run | Exit code `0`; stranded deprovision summary citing its retained deprovision PipelineRun, confidence `0.9` |
+| A stranded cluster with no retained run | Exit code `0`; stranded deprovision summary stating `no PipelineRun is retained for it`, confidence `0.6` |
+| A cluster with a leftover sentinel | Exit code `2`; leftover sentinel, refused with `Git cluster definition files` and `OpenShift actual state` |
 
 Historical validation observed:
 
 | Check | Result |
 | --- | --- |
-| Fixture diagnosis | Exit code `0`; summary names PipelineRun `post-provision-0171d46a-scopedaws-p4w4v` as succeeded with confidence `0.9` |
+| Fixture diagnosis | Exit code `0`; summary names PipelineRun `post-provision-<cluster-name>-<suffix>` as succeeded with confidence `0.9` |
 | Evidence items | Snapshot holds 1 definition, 1 actual state, 1 PipelineRun, and 1 correlation; the response cites the first three |
 | Provenance | Evidence, CWA snapshot, CWA trace, diagnosis, and audit records linked by matching IDs and digests |
 | Refusals | All four refusal clusters exited `2` with the expected missing evidence; no diagnosis record was written for them |
@@ -251,7 +251,7 @@ Then rerun the command with new idempotency keys for a deprovisioned cluster (`-
 | Command records | `propose.patch` with `succeeded`, `refused`, and `failed` |
 | `fleet-clusters` | `git status --porcelain` is empty |
 
-Latest validation, run by the operator on 2026-10-23 against Aura commit `c5abafb` with `virt-cookbook` as the live cluster and `0171d46a-scopedaws` for refusal: every check above produced the expected result.
+Latest validation, run by the operator on 2026-10-23 against Aura commit `c5abafb` with one live cluster for the proposal and a deprovisioned cluster for refusal: every check above produced the expected result.
 
 ### Cluster-Edit Proposals
 
@@ -273,10 +273,10 @@ Latest validation, run by the operator on 2026-10-24 against Aura commit `dfe32d
 
 | Check | Result |
 | --- | --- |
-| Add file, `423d216c-vistergy` | Patch applied; `[skip-provision]` in the title; four keys in order; no retained post-provision run, so the run keys came from `fleet` defaults |
-| Append keys, `virt-cookbook` | One whole-file hunk kept `htpasswd-provider-name: VirtCookbook` and appended `platform`, `aws-credentials-mode`, and `openshift-ai-version`; no `[skip-provision]` |
-| Run value, `10a9746b-virtualc` | Its `metadata.yaml` lacked only `openshift-ai-version`; the proposal appended `v3` from its latest post-provision PipelineRun |
-| Deprovisioned cluster, `0171d46a-scopedaws` | Refused: defined under `archive/` and no OpenShift resources |
+| Add file, `<cluster-name>` | Patch applied; `[skip-provision]` in the title; four keys in order; no retained post-provision run, so the run keys came from `fleet` defaults |
+| Append keys, `<cluster-name>` | One whole-file hunk kept `htpasswd-provider-name: <provider-name>` and appended `platform`, `aws-credentials-mode`, and `openshift-ai-version`; no `[skip-provision]` |
+| Run value, `<cluster-name>` | Its `metadata.yaml` lacked only `openshift-ai-version`; the proposal appended `v3` from its latest post-provision PipelineRun |
+| Deprovisioned cluster, `<cluster-name>` | Refused: defined under `archive/` and no OpenShift resources |
 | Contract, staleness, traces, records | All proposals validated, were fresh, and had matching trace digests; `fleet-clusters` was unchanged |
 | `already declares every key` | Not exercised live; no cluster with all four keys was used |
 
@@ -332,16 +332,16 @@ jq '.pipeline_run' "$OUT/rerun.json"
 | A cluster with any unfinished `post-provision` run | Exit code `2`; `have not finished` |
 | Hub | No new PipelineRun appears |
 
-Partial validation, run by the operator on 2026-10-24 against Aura commit `a439dd7`: `pchriste` was refused for conflicting Git definitions, which is correct. Its stored `post-provision` run passed evidence collection without any field a rerun cannot copy, confirming the zero-value handling on a real object. The refusal also reported a `metadata.yaml` conflict against defaults, which was misleading with two definitions; fixed in `01df26b`.
+Partial validation, run by the operator on 2026-10-24 against Aura commit `a439dd7`: `<cluster-name>` was refused for conflicting Git definitions, which is correct. Its stored `post-provision` run passed evidence collection without any field a rerun cannot copy, confirming the zero-value handling on a real object. The refusal also reported a `metadata.yaml` conflict against defaults, which was misleading with two definitions; fixed in `01df26b`.
 
-Latest validation, run by the operator on 2026-10-25 against Aura commit `30878cd` for `10a9746b-virtualc`:
+Latest validation, run by the operator on 2026-10-25 against Aura commit `30878cd` for `<cluster-name>`:
 
 | Check | Result |
 | --- | --- |
-| Exit and source | Exit code `0`; source `post-provision-10a9746b-virtualc-p8dpl`, the latest finished run |
-| Manifest | `generateName: post-provision-10a9746b-virtualc-` in `openshift-pipelines` with both Aura annotations |
-| Parameters | `cluster-name`, `tier: virt`, `dns-zones`, `htpasswd-provider-name: VirtualCable`, and `openshift-ai-version: v3`, the five the `trigger-post-provision` task passes |
-| `metadata.yaml` agreement | `VirtualCable` matches the declared value; `v3` matches the default for the absent key |
+| Exit and source | Exit code `0`; source `post-provision-<cluster-name>-<suffix>`, the latest finished run |
+| Manifest | `generateName: post-provision-<cluster-name>-` in `openshift-pipelines` with both Aura annotations |
+| Parameters | `cluster-name`, `tier: virt`, `dns-zones`, `htpasswd-provider-name: <provider-name>`, and `openshift-ai-version: v3`, the five the `trigger-post-provision` task passes |
+| `metadata.yaml` agreement | `<provider-name>` matches the declared value; `v3` matches the default for the absent key |
 | Workspace and run template | Identical to `fleet` `9464f0b`: `shared-workspace` 1Gi `gp3-csi` claim template, `fleet-pipeline` service account, `fsGroup: 0`, and `fleet-pipeline-pull-secret` |
 
 ## Idempotency Validation

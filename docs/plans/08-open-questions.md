@@ -36,8 +36,8 @@ Status: open. On 2026-10-23 the operator chose to keep `metadata.yaml` required 
 
 | Directory | Definitions |
 | --- | --- |
-| `provision/` | `10f25620-vscopeocpv`, `264c5202-codvoqs`, `379b5094-ibmvirt`, `423d216c-vistergy`, `55b828b3-finaclen`, `639caee9-zenml1x3`, `835b1f6d-herouxz5`, `9d0b02b8-zoomcc42`, `aaa2607b-fortinet`, `bf2f78dc-vantiqfips`, `d8819a31-monetize` |
-| `archive/` | `f6f3eba2-redisvirt`, `test-cluster-01`, `virt-tier-cluster` |
+| `provision/` | 11 definitions |
+| `archive/` | 3 definitions |
 
 Aura reports these as `cluster_definition_incomplete` items with `missing_files: ["metadata.yaml"]`, includes them in combined inventory, and refuses diagnosis with `Git cluster definition files`. Aura does not modify `fleet-clusters`; resolution is a backfill by the repository owners.
 
@@ -47,12 +47,12 @@ Warning: adding `metadata.yaml` adds a file under `provision/<id>`, which the `f
 
 Status: open. On 2026-10-23 the operator chose to build `cluster_edit` proposals that add every missing key to these files, under `provision/` only.
 
-At the same commit, 11 of the 12 complete definitions have a `metadata.yaml` without `platform`; only `provision/0171d46a-scopedaws` declares it:
+At the same commit, 11 of the 12 complete definitions have a `metadata.yaml` without `platform`; only one, under `provision/`, declares it:
 
 | Directory | Definitions |
 | --- | --- |
-| `provision/` | `2dcb6934-thalescs`, `7676a3cc-edbvj8am`, `a238fb7d-validmin`, `d0519448-dh2idw57`, `ocp5rc`, `pchriste`, `virt-cookbook` |
-| `archive/` | `1bd62dc5-hpezerto`, `ai-test-cluster`, `ai-workload`, `pchriste` |
+| `provision/` | 7 definitions |
+| `archive/` | 4 definitions, one of which also has an active definition under `provision/` |
 
 Aura keeps the desired `cloud_provider` as `null` rather than inferring it. When every other compared field matches OpenShift, combined inventory reports `drift_indicator: incomplete-metadata` instead of `detected`.
 
@@ -62,7 +62,7 @@ Editing an existing `metadata.yaml` modifies a file and triggers nothing, so `[s
 
 Status: open.
 
-The `archive-cluster` Action requires `deprovision/<id>-archive`, but at the validated commit seven sentinels lack the suffix: `10f25620-vscopeocpv`, `264c5202-codvoqs`, `379b5094-ibmvirt`, `639caee9-zenml1x3`, `9d0b02b8-zoomcc42`, `bf2f78dc-vantiqfips`, and `f6f3eba2-redisvirt`. The first six clusters remain under `provision/` with no OpenShift resources, and Aura reports them as `deprovision_status: stranded`; `f6f3eba2-redisvirt` is already archived and reports `leftover`. Only `10f25620-vscopeocpv` and `639caee9-zenml1x3` still have a retained, succeeded deprovision PipelineRun; the other four have no PipelineRun on the hub, so whether their deprovision ran cannot be confirmed from Tekton. The `fleet-clusters` README documents the bare `deprovision/<id>` form. Remediation is undecided because re-adding a `-archive` sentinel re-runs deprovision. Any remediation sentinel must be a standalone commit that adds only `deprovision/<id>-archive`, with a commit message that states it remediates a stranded deprovision; Aura never creates or pushes it.
+The `archive-cluster` Action requires `deprovision/<id>-archive`, but at the validated commit seven sentinels lack the suffix. Six of those clusters remain under `provision/` with no OpenShift resources, and Aura reports them as `deprovision_status: stranded`; the seventh is already archived and reports `leftover`. Only two still have a retained, succeeded deprovision PipelineRun; the other four have no PipelineRun on the hub, so whether their deprovision ran cannot be confirmed from Tekton. The `fleet-clusters` README documents the bare `deprovision/<id>` form. Remediation is undecided because re-adding a `-archive` sentinel re-runs deprovision. Any remediation sentinel must be a standalone commit that adds only `deprovision/<id>-archive`, with a commit message that states it remediates a stranded deprovision; Aura never creates or pushes it.
 
 ## Operator Interface
 

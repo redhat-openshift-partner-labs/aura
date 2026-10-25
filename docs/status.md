@@ -10,7 +10,7 @@ Validation summary, recorded at Aura commit `6dc0eb3`:
 | --- | --- |
 | Automated tests | 270 passed |
 | Quality gate | `adb2c2b..HEAD` passed with zero gating findings |
-| Scoped-AWS fixture | `provision/0171d46a-scopedaws` |
+| Scoped-AWS fixture | `provision/<cluster-name>` |
 | Fixture source commit | `492bc8e07afddcd557441ddb7d72158de60ab8cb` |
 | Git definitions | 26: 12 complete, 14 incomplete, 0 invalid |
 | Live OpenShift cluster states | 13 |
@@ -20,7 +20,7 @@ Validation summary, recorded at Aura commit `6dc0eb3`:
 | Combined drift | 1 `none`, 6 `incomplete-metadata`, 5 `incomplete-definition`, 6 `missing-openshift`, 6 `archived`, 1 `definition-conflict`, 0 `detected`, 0 `missing-git` |
 | Workflow evidence items | 107 |
 | Correlated workflow views | 34 of 34 |
-| Live cluster diagnosis | `0171d46a-scopedaws` and `2dcb6934-thalescs` diagnosed, each citing three evidence items |
+| Live cluster diagnosis | Two clusters diagnosed, each citing three evidence items |
 | Refusals | Incomplete, archived non-provisioned, and conflicting definitions refused with structured missing evidence |
 | Duplicate idempotency key | Rejected before collection with no standard output |
 | Read-only RBAC | `list` allowed; `create`, `patch`, and `delete` denied |
@@ -30,7 +30,7 @@ Validation summary, recorded at Aura commit `6dc0eb3`:
 
 ## Phase 2 Prerequisites
 
-Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented. P2's Pipeline definition collector is implemented; its namespaced Role and RoleBinding in [`deploy/`](../deploy) were applied and validated on 2026-10-24. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`. P4 adds `propose deprovision`, authorized for `proposer` and `admin`, which generates the deprovision sentinel proposal type. `proposal status` reports Git staleness of stored proposals for `viewer`, `proposer`, and `admin`. The operator published through `4c2d2b5`, and CI run `40036888279` passed. `propose cluster-edit` generates `metadata.yaml` backfill proposals; the operator validated it against the live hub on 2026-10-24. `propose post-provision-rerun` generates rerun proposals; the operator validated a refusal on 2026-10-24 and a successful proposal on 2026-10-25 against the live hub. Automated tests at `01df26b`: 633 passed locally and under `act`, with zero gating quality findings. The shared failure-injection matrix and invariant check cover every command. The operator validated `propose deprovision` against the live hub on 2026-10-23 with `virt-cookbook`; see [Live Proposal Validation](validation.md#live-proposal-validation). Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
+Prerequisites P0, P1, P3, and P4 of the approved [Phase 2](plans/05-phase-2-proposals.md) plan are implemented. P2's Pipeline definition collector is implemented; its namespaced Role and RoleBinding in [`deploy/`](../deploy) were applied and validated on 2026-10-24. P3 adds the `Proposal` contract, `JsonProposalStore`, and `GitProposalStaleness`. P4 adds `propose deprovision`, authorized for `proposer` and `admin`, which generates the deprovision sentinel proposal type. `proposal status` reports Git staleness of stored proposals for `viewer`, `proposer`, and `admin`. The operator published through `4c2d2b5`, and CI run `40036888279` passed. `propose cluster-edit` generates `metadata.yaml` backfill proposals; the operator validated it against the live hub on 2026-10-24. `propose post-provision-rerun` generates rerun proposals; the operator validated a refusal on 2026-10-24 and a successful proposal on 2026-10-25 against the live hub. Automated tests at `01df26b`: 633 passed locally and under `act`, with zero gating quality findings. The shared failure-injection matrix and invariant check cover every command. The operator validated `propose deprovision` against the live hub on 2026-10-23 with `<cluster-name>`; see [Live Proposal Validation](validation.md#live-proposal-validation). Live validation of P0 and P1, recorded at Aura commit `655a0ac`:
 
 | Check | Result |
 | --- | --- |
