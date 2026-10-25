@@ -23,6 +23,7 @@ from aura.proposals import (
     patch_changes,
 )
 from aura.scaffold import (
+    ScaffoldCheckoutError,
     ScaffoldRequest,
     ScaffoldResult,
     ScaffoldRunError,
@@ -30,7 +31,6 @@ from aura.scaffold import (
 )
 from aura.services.proposal import ProposalRefused
 from aura.services.scaffold import ScaffoldProposalGenerator
-from test_cluster_inventory_collector import actual_state, openshift_collector
 from test_cluster_state_collector import FakeGitCollector
 from test_cluster_state_diagnosis import make_cwa_snapshot
 from test_git_inventory_collector import commit_repository, write_cluster
@@ -141,6 +141,30 @@ class FakeRunner:
         )
 
 
+class FakeOpenShiftClient:
+    """Lists ClusterDeployments and ManagedClusters by name."""
+
+    def __init__(
+        self,
+        deployments: tuple[str, ...],
+        managed: tuple[str, ...],
+    ) -> None:
+        self._deployments = deployments
+        self._managed = managed
+
+    def list_cluster_deployments(self) -> list[dict[str, Any]]:
+        return [
+            {"metadata": {"name": name, "namespace": name}}
+            for name in self._deployments
+        ]
+
+    def list_managed_clusters(self) -> list[dict[str, Any]]:
+        return [{"metadata": {"name": name}} for name in self._managed]
+
+    def resource_version(self) -> str:
+        return "openshift-version"
+
+
 def head(root: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(root), "rev-parse", "HEAD"],
@@ -184,11 +208,12 @@ def request(
     *options: tuple[str, str],
     cloud: str = "aws",
     tier: str = "base",
+    region: str = REGION,
 ) -> ScaffoldRequest:
     return ScaffoldRequest(
         cloud=cloud,
         cluster_name=cluster,
-        region=REGION,
+        region=region,
         tier=tier,
         options=options,
     )
@@ -201,17 +226,17 @@ def evidence(
     root: Path | None = None,
     git: object | None = None,
     openshift: tuple[str, ...] = ("existing",),
+    managed: tuple[str, ...] = ("existing",),
     dirty: bool = False,
     kustomize: str | None = KUSTOMIZE,
+    checkout: Path | None = None,
 ) -> EvidenceSnapshot:
     root = root or fleet(tmp_path)
     return ScaffoldEvidenceCollector(
         request=scaffold_request or request(),
         git_collector=git or GitInventoryCollector(root),
-        openshift_collector=openshift_collector(
-            *(actual_state(name) for name in openshift)
-        ),
-        scaffold_checkout=scaffold_checkout(tmp_path, dirty=dirty),
+        openshift_client=FakeOpenShiftClient(openshift, managed),
+        scaffold_checkout=checkout or scaffold_checkout(tmp_path, dirty=dirty),
         kustomize_version=lambda: kustomize,
     ).collect(
         command_id=UUID(int=1),
@@ -372,6 +397,8 @@ def test_generator_states_the_provision_chain_and_commit(
         f"Aura-Proposal: {proposal.proposal_id}"
     )
     assert any("pre-provision" in risk for risk in proposal.risks)
+    assert proposal.scaffold_commit in (proposal.commit_message or "")
+    assert " ".join(expected_arguments()) in (proposal.commit_message or "")
 
 
 def test_generator_is_deterministic(tmp_path: Path) -> None:
@@ -409,6 +436,82 @@ def test_generator_redacts_secret_lines_in_scaffold_streams(
     assert "abc123" not in run.stdout and "wrote overlay" in run.stdout
     assert "xyz789" not in run.stderr
     assert "Cluster scaffolded successfully" in run.stderr
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "ERROR: token=abc123",
+        "X-Api-Key: abc123",
+        "export AWS_SECRET_ACCESS_KEY=abc123",
+        "pull secret: abc123",
+        "aws_secret_access_key\tabc123",
+        "Authorization: Bearer abc123",
+        '{"auths": {"quay.io": {"auth": "abc123"}}}',
+    ],
+)
+def test_generator_redacts_each_secret_line_shape(
+    tmp_path: Path,
+    line: str,
+) -> None:
+    runner = FakeRunner(stderr=f"{line}\nCluster scaffolded successfully\n")
+
+    run = generate(evidence(tmp_path), runner).scaffold_run
+
+    assert run is not None
+    assert "abc123" not in run.stderr
+    assert "Cluster scaffolded successfully" in run.stderr
+
+
+def test_generator_redacts_private_key_blocks(tmp_path: Path) -> None:
+    runner = FakeRunner(
+        stdout=(
+            "before\n-----BEGIN RSA PRIVATE KEY-----\nMIIEabc123\n"
+            "-----END RSA PRIVATE KEY-----\nafter\n"
+        )
+    )
+
+    run = generate(evidence(tmp_path), runner).scaffold_run
+
+    assert run is not None
+    assert "MIIEabc123" not in run.stdout
+    assert run.stdout.startswith("before\n")
+    assert run.stdout.endswith("after\n")
+
+
+def test_generator_keeps_carriage_returns_in_generated_files(
+    tmp_path: Path,
+) -> None:
+    root = fleet(tmp_path)
+    path = f"provision/{NEW}/hive/patches/notes.yaml"
+
+    def crlf(files: dict[str, tuple[str, str]]) -> None:
+        files[path] = (REGULAR, "a: b\r\nc: d\r\n")
+
+    apply(root, generate(evidence(tmp_path, root=root), FakeRunner(crlf)))
+
+    assert (root / path).read_bytes() == b"a: b\r\nc: d\r\n"
+
+
+def test_collector_records_the_checkout_without_its_local_path(
+    tmp_path: Path,
+) -> None:
+    snapshot = evidence(tmp_path)
+
+    [checkout] = [i for i in snapshot.items if i.kind == "scaffold_checkout"]
+    assert checkout.data == {
+        "commit": head(tmp_path / "fleet-cluster-scaffold"),
+        "clean": True,
+    }
+
+
+def test_collector_rejects_a_directory_inside_a_checkout(
+    tmp_path: Path,
+) -> None:
+    root = scaffold_checkout(tmp_path / "outer")
+
+    with pytest.raises(ScaffoldCheckoutError, match="not the top"):
+        evidence(tmp_path, checkout=root / "src")
 
 
 def test_generator_lets_runner_failures_fail_the_command(
@@ -471,6 +574,49 @@ PREFIX_21 = "abcdefghijklmnopqrstu"
         (
             lambda tmp: evidence(tmp, openshift=(NEW,)),
             f"OpenShift resources already exist for cluster {NEW}",
+        ),
+        (
+            lambda tmp: evidence(tmp, openshift=(), managed=(NEW,)),
+            f"OpenShift resources already exist for cluster {NEW}",
+        ),
+        (
+            lambda tmp: evidence(tmp, root=fleet(tmp, names=(f"{NEW}-archive",))),
+            f"cluster {NEW} already has a definition at provision/{NEW}-archive",
+        ),
+        (
+            lambda tmp: evidence(
+                tmp, root=fleet(tmp, archived=(f"{NEW}-archive",))
+            ),
+            f"cluster {NEW} already has a definition at archive/{NEW}-archive",
+        ),
+        (
+            lambda tmp: evidence(
+                tmp,
+                request(f"{PREFIX_21}-two"),
+                openshift=(),
+                managed=(f"{PREFIX_21}-x",),
+            ),
+            f"infra prefix {PREFIX_21} is also used by OpenShift cluster "
+            f"{PREFIX_21}-x",
+        ),
+        (
+            lambda tmp: evidence(
+                tmp, request(NEW, ("--environment", "--force"))
+            ),
+            "scaffold option --environment value --force starts with -",
+        ),
+        (
+            lambda tmp: evidence(tmp, request(NEW, ("--environment", ""))),
+            "scaffold option --environment has no value",
+        ),
+        *(
+            (
+                lambda tmp, region=region: evidence(
+                    tmp, request(region=region)
+                ),
+                f"region {region} is not an AWS region name",
+            )
+            for region in ("--zones", "us east 1", "")
         ),
         (
             lambda tmp: evidence(
@@ -609,6 +755,13 @@ def _old_render(files: dict[str, tuple[str, str]]) -> None:
     )
 
 
+def _unparsable(files: dict[str, tuple[str, str]]) -> None:
+    files[f"provision/{NEW}/hive/patches/broken.yaml"] = (
+        REGULAR,
+        "password: hunter2\nbad: [\n",
+    )
+
+
 def _empty(files: dict[str, tuple[str, str]]) -> None:
     files.clear()
 
@@ -619,6 +772,32 @@ def _empty(files: dict[str, tuple[str, str]]) -> None:
         (
             FakeRunner(exit_code=1, stderr="line one\nbad --zones value\n"),
             "scaffold exited 1: bad --zones value",
+        ),
+        (
+            FakeRunner(exit_code=1, stderr="password: hunter2\n"),
+            "scaffold exited 1: [REDACTED]",
+        ),
+        (
+            FakeRunner(_unparsable),
+            f"scaffold output provision/{NEW}/hive/patches/broken.yaml is not "
+            "valid YAML, so it cannot be checked for secrets",
+        ),
+        *(
+            (
+                FakeRunner(
+                    lambda files, marker=marker: files.__setitem__(
+                        f"provision/{NEW}/crossplane/patches/x/policy.yaml",
+                        (REGULAR, f"value: '{marker}'\n"),
+                    )
+                ),
+                f"provision/{NEW}/crossplane/patches/x/policy.yaml contains "
+                f"the old render pattern {marker}",
+            )
+            for marker in (
+                f"s3:::{NEW}-*",
+                f"user/{NEW}-*",
+                f"role/{NEW}-*",
+            )
         ),
         (
             FakeRunner(_outside),

@@ -191,7 +191,9 @@ def added_file_patch(path: str, text: str) -> str:
     ]
     if not text:
         return "".join(header)
-    lines = text.splitlines()
+    lines = text.split("\n")
+    if text.endswith("\n"):
+        lines.pop()
     body = [f"+{line}\n" for line in lines]
     if not text.endswith("\n"):
         body.append(f"{_NO_NEWLINE}\n")
@@ -411,7 +413,14 @@ def _validate_scaffold(proposal: Proposal, prefix: str) -> None:
             f"scaffold cluster_name must be at most {SCAFFOLD_NAME_MAX} "
             "characters"
         )
-    added = _added_files(proposal.patch or "")
+    blocks = _added_files(proposal.patch or "")
+    paths = [path for path, _, _ in blocks]
+    repeated = sorted({path for path in paths if paths.count(path) > 1})
+    if repeated:
+        raise ValueError(
+            f"scaffold proposal adds {repeated[0]} more than once"
+        )
+    added = {path: (mode, content) for path, mode, content in blocks}
     if any(mode != _REGULAR_FILE_MODE for mode, _ in added.values()):
         raise ValueError(
             "scaffold proposal may only add regular files with mode "
@@ -444,20 +453,31 @@ def _validate_scaffold(proposal: Proposal, prefix: str) -> None:
     _validate_scaffold_arguments(run.arguments, proposal.cluster_name)
 
 
-def _added_files(patch: str) -> dict[str, tuple[str, list[str]]]:
-    """Map each added file to its mode and content lines."""
+def _added_files(patch: str) -> list[tuple[str, str, list[str]]]:
+    """Return each added file's path, mode, and content lines.
 
-    added: dict[str, tuple[str, list[str]]] = {}
+    Any extra mode line, such as `new mode 100755`, joins the mode, so
+    only a block whose sole mode line is `new file mode 100644` is regular.
+    """
+
+    added: list[tuple[str, str, list[str]]] = []
     for block in re.split(r"(?m)^(?=diff --git )", patch):
         lines = block.splitlines()
-        modes = [
-            line.removeprefix("new file mode ")
+        mode_lines = [
+            line
             for line in lines
-            if line.startswith("new file mode ")
+            if line.startswith(("new file mode", "new mode", "old mode"))
         ]
         header = _DIFF_HEADER.match(lines[0]) if lines else None
-        if header is None or not modes:
+        if header is None or not any(
+            line.startswith("new file mode") for line in mode_lines
+        ):
             continue
+        mode = (
+            mode_lines[0].removeprefix("new file mode ")
+            if len(mode_lines) == 1
+            else " / ".join(mode_lines)
+        )
         hunk = next(
             (
                 index
@@ -469,7 +489,7 @@ def _added_files(patch: str) -> dict[str, tuple[str, list[str]]]:
         content = [
             line[1:] for line in lines[hunk + 1 :] if line.startswith("+")
         ]
-        added[header.group(2)] = (modes[0], content)
+        added.append((header.group(2), mode, content))
     return added
 
 
@@ -502,7 +522,7 @@ def _validate_scaffold_arguments(arguments: list[str], cluster: str) -> None:
         if flag in values:
             raise ValueError(f"scaffold_run arguments repeat {flag}")
         value = arguments[index + 1] if index + 1 < len(arguments) else None
-        if value is None or value.startswith("--"):
+        if not value or value.startswith("--"):
             raise ValueError(f"scaffold_run arguments give {flag} no value")
         values[flag] = value
         index += 2

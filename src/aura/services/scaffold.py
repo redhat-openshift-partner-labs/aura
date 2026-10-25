@@ -23,7 +23,11 @@ from aura.proposals import (
     ScaffoldRun,
     added_file_patch,
 )
-from aura.redaction import redact
+from aura.redaction import (
+    DEFAULT_SECRET_FIELDS,
+    PARAMETER_SECRET_TERMS,
+    redact,
+)
 from aura.scaffold import ScaffoldRequest, ScaffoldResult, ScaffoldRunner
 from aura.scaffold import infra_prefix
 from aura.services.diagnosis import cwa_evidence_items
@@ -39,11 +43,18 @@ DEFINITION_KINDS = frozenset(
         "cluster_definition_invalid",
     }
 )
-OPENSHIFT_KINDS = frozenset(
-    {"cluster_actual_state", "cluster_actual_state_incomplete"}
-)
 REGULAR_FILE_MODE = "100644"
-_STREAM_FIELD = re.compile(r"^(\s*)([^\s:=]+)(\s*[:=]\s*)(.*)$")
+AWS_REGION = re.compile(r"^[a-z]{2}(-[a-z]+)+-[0-9]+$")
+REDACTED_LINE = "[REDACTED]"
+_STREAM_SECRET_TERMS = tuple(
+    sorted(
+        {
+            *PARAMETER_SECRET_TERMS,
+            *(re.sub(r"[^a-z0-9]", "", name) for name in DEFAULT_SECRET_FIELDS),
+            "auth",
+        }
+    )
+)
 
 
 @final
@@ -177,6 +188,8 @@ def _request_reasons(request: ScaffoldRequest) -> list[str]:
             f"cluster name {name} is {len(name)} characters; scoped AWS "
             f"names allow at most {SCAFFOLD_NAME_MAX}"
         )
+    if not AWS_REGION.fullmatch(request.region):
+        reasons.append(f"region {request.region} is not an AWS region name")
     if request.tier not in TIERS:
         reasons.append(
             f"tier {request.tier} is not one of {', '.join(TIERS)}"
@@ -187,6 +200,12 @@ def _request_reasons(request: ScaffoldRequest) -> list[str]:
             reasons.append(f"scaffold option {flag} is not allowed")
         elif flag in seen:
             reasons.append(f"scaffold option {flag} is repeated")
+        elif not value:
+            reasons.append(f"scaffold option {flag} has no value")
+        elif value.startswith("-"):
+            reasons.append(
+                f"scaffold option {flag} value {value} starts with -"
+            )
         elif flag == "--topology" and value not in TOPOLOGIES:
             reasons.append(
                 f"topology {value} is not one of {', '.join(TOPOLOGIES)}"
@@ -203,7 +222,7 @@ def _name_reasons(cluster: str, items: list[EvidenceItem]) -> list[str]:
     for item in items:
         path = str(item.data.get("path", ""))
         if item.kind in DEFINITION_KINDS:
-            name = Path(path).name
+            name = Path(path).name.removesuffix(ARCHIVE_SUFFIX)
             if name == cluster:
                 reasons.append(
                     f"cluster {cluster} already has a definition at {path}"
@@ -216,11 +235,11 @@ def _name_reasons(cluster: str, items: list[EvidenceItem]) -> list[str]:
                 reasons.append(f"deprovision sentinel already exists: {path}")
             else:
                 others.append((name, path))
+    openshift_names = _single(items, "openshift_cluster_names").data
     openshift = sorted(
         {
-            str(item.data.get("cluster_name"))
-            for item in items
-            if item.kind in OPENSHIFT_KINDS
+            *openshift_names.get("cluster_deployments", []),
+            *openshift_names.get("managed_clusters", []),
         }
     )
     for name in openshift:
@@ -243,7 +262,11 @@ def _output_reasons(result: ScaffoldResult, cluster: str) -> list[str]:
     """Refuse output the contract or the fleet-clusters PR check rejects."""
 
     if result.exit_code != 0:
-        lines = [line for line in result.stderr.splitlines() if line.strip()]
+        lines = [
+            line
+            for line in _redact_stream(result.stderr).splitlines()
+            if line.strip()
+        ]
         detail = f": {lines[-1].strip()}" if lines else ""
         return [f"scaffold exited {result.exit_code}{detail}"]
     if not result.files:
@@ -260,7 +283,12 @@ def _output_reasons(result: ScaffoldResult, cluster: str) -> list[str]:
             )
             continue
         fields = _secret_fields(text)
-        if fields:
+        if fields is None:
+            reasons.append(
+                f"scaffold output {path} is not valid YAML, so it cannot be "
+                "checked for secrets"
+            )
+        elif fields:
             reasons.append(
                 f"scaffold output {path} contains secret-named fields: "
                 f"{fields}"
@@ -278,11 +306,13 @@ def _output_reasons(result: ScaffoldResult, cluster: str) -> list[str]:
     return reasons
 
 
-def _secret_fields(text: str) -> list[str]:
+def _secret_fields(text: str) -> list[str] | None:
+    """Return secret-named fields, or None when text is not YAML."""
+
     try:
         documents = list(yaml.safe_load_all(text))
     except yaml.YAMLError:
-        return []
+        return None
     return sorted(
         field
         for document in documents
@@ -330,15 +360,26 @@ def _render_reasons(
 
 
 def _redact_stream(text: str) -> str:
-    """Redact `name: value` and `name=value` lines with secret names."""
+    """Replace every line that names a secret, and every line of a PEM
+    block, with [REDACTED].
+
+    Scaffold output is free text, so any mention of a secret term hides
+    the whole line rather than trying to find where its value starts.
+    """
 
     lines = []
+    in_block = False
     for line in text.splitlines(keepends=True):
-        match = _STREAM_FIELD.match(line.rstrip("\n"))
-        if match and redact({match.group(2): ""}).redacted_fields:
+        normalized = re.sub(r"[^a-z0-9]", "", line.lower())
+        starts_block = "-----BEGIN" in line
+        if starts_block or in_block or any(
+            term in normalized for term in _STREAM_SECRET_TERMS
+        ):
             ending = "\n" if line.endswith("\n") else ""
-            line = f"{''.join(match.group(1, 2, 3))}[REDACTED]{ending}"
-        lines.append(line)
+            lines.append(f"{REDACTED_LINE}{ending}")
+        else:
+            lines.append(line)
+        in_block = (in_block or starts_block) and "-----END" not in line
     return "".join(lines)
 
 

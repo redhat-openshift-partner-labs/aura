@@ -907,6 +907,48 @@ LONG_NAME = "a" * 50
             scaffold_fields(arguments=_arguments("stray")),
             "scaffold_run arguments pass stray value stray",
         ),
+        (
+            "scaffold",
+            scaffold_fields(arguments=_arguments("--environment", "")),
+            "scaffold_run arguments give --environment no value",
+        ),
+        (
+            "scaffold",
+            {
+                **scaffold_fields(),
+                "patch": scaffold_fields()["patch"].replace(
+                    "new file mode 100644\n",
+                    "new file mode 100644\nnew mode 100755\n",
+                    1,
+                ),
+            },
+            "scaffold proposal may only add regular files with mode 100644",
+        ),
+        (
+            "scaffold",
+            {
+                **scaffold_fields(),
+                "patch": scaffold_fields()["patch"].replace(
+                    "new file mode 100644\n",
+                    "new file mode 100644\nnew file mode 120000\n",
+                    1,
+                ),
+            },
+            "scaffold proposal may only add regular files with mode 100644",
+        ),
+        (
+            "scaffold",
+            {
+                **scaffold_fields(),
+                "patch": scaffold_fields()["patch"]
+                + added_file(
+                    f"provision/{CLUSTER}/metadata.yaml",
+                    SCAFFOLD_FILES["metadata.yaml"],
+                ),
+            },
+            f"scaffold proposal adds provision/{CLUSTER}/metadata.yaml more "
+            "than once",
+        ),
         *(
             (
                 "scaffold",

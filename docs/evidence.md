@@ -261,7 +261,7 @@ Patches must be Git-format diffs. Every proposal names exactly one cluster, and 
 | `arguments` | Start with `aws`; then flag and value pairs, each flag at most once and each with a value. Flags are limited to `--name`, `--region`, `--tier`, `--base-path`, `--cluster-templates-dir`, and the operator flags `--topology`, `--environment`, `--base-domain`, `--control-plane-type`, `--worker-type`, `--control-plane-replicas`, `--worker-replicas`, `--image-set`, `--zones`, `--install-attempts-limit`, and `--htpasswd-provider-name`. They must include `--name <id>`, `--base-path provision`, and `--cluster-templates-dir cluster-templates`, and never `--force`, `--skip-validation`, or `--legacy-mint-credentials` |
 | `exit_code` | Exactly `0` |
 | `stdout` and `stderr` | The scaffold's captured streams. The contract does not check them; the scaffold generator, not yet implemented, must redact them before storage |
-| `files` | Exactly the paths the patch adds, sorted |
+| `files` | Exactly the paths the patch adds, sorted; the patch adds each path once, and each with no mode line but `new file mode 100644` |
 
 `GitProposalStaleness` reports a Git proposal as stale when its `base_commit` is not an ancestor of `fleet-clusters` `HEAD`, or when any commit since `base_commit` changed `provision/<id>`, `archive/<id>`, `deprovision/<id>`, or `deprovision/<id>-archive`. Changes to other clusters do not make it stale. Post-provision reruns have no base commit; their evidence is rechecked when they are generated or executed.
 
@@ -354,15 +354,16 @@ The `metadata.yaml` check compares `htpasswd-provider-name`, and `openshift-ai-v
 
 ### Scaffold Proposal
 
-`ScaffoldEvidenceCollector` (collector `scaffold`) combines the Git inventory and the OpenShift inventory with three items of its own. Its `source_version` is `git=<sha>;openshift=<version>;scaffold=<commit>`.
+`ScaffoldEvidenceCollector` (collector `scaffold`) combines the Git inventory with four items of its own. It reads OpenShift names directly, because the OpenShift inventory has an item only for ClusterDeployments, and a ManagedCluster without one, such as an imported cluster, must also block the name. Its `source_version` is `git=<sha>;openshift=<version>;scaffold=<commit>`.
 
 | Item kind | Data |
 | --- | --- |
+| `openshift_cluster_names` | Sorted `cluster_deployments` and `managed_clusters` names |
 | `scaffold_request` | `cloud`, `cluster_name`, `region`, `tier`, and `options`, the operator's scaffold flags as ordered `[flag, value]` pairs |
-| `scaffold_checkout` | The local `fleet-cluster-scaffold` checkout `path`, its `HEAD` `commit`, and `clean`, false when tracked files have uncommitted changes. An unreadable checkout fails the command with `ScaffoldCheckoutError` |
+| `scaffold_checkout` | The checkout's `HEAD` `commit`, and `clean`, false when tracked files have uncommitted changes. The local path is not recorded. A checkout that cannot be read, or a directory that is not the top of a Git checkout, fails the command with `ScaffoldCheckoutError` |
 | `kustomize` | `version`, or `null` when `kustomize` is not on `PATH` |
 
-`ScaffoldProposalGenerator` (`scaffold-deterministic`, version `0.1.0`) checks every precondition, and only then runs the pinned scaffold through a `ScaffoldRunner` with the arguments `aws --name <id> --region <region> --tier <tier>`, the operator options in request order, and `--base-path provision --cluster-templates-dir cluster-templates`. The runner receives the scaffold commit and the base commit; a runner that cannot run the scaffold at all, for example on a timeout, raises `ScaffoldRunError` and fails the command. The patch adds each generated file in path order. Lines of the scaffold's standard output and error shaped `name: value` or `name=value` with a secret-named `name` are stored with the value replaced by `[REDACTED]`.
+`ScaffoldProposalGenerator` (`scaffold-deterministic`, version `0.1.0`) checks every precondition, and only then runs the pinned scaffold through a `ScaffoldRunner` with the arguments `aws --name <id> --region <region> --tier <tier>`, the operator options in request order, and `--base-path provision --cluster-templates-dir cluster-templates`. The runner receives the scaffold commit and the base commit; a runner that cannot run the scaffold at all, for example on a timeout, raises `ScaffoldRunError` and fails the command. The patch adds each generated file in path order. Every line of the scaffold's standard output and error that mentions a secret term, after lowercasing and removing non-alphanumeric characters, is stored as `[REDACTED]`, and so is every line of a `-----BEGIN` to `-----END` block. The terms are the redaction module's secret field names and parameter terms, plus `auth`. The last standard error line in a non-zero-exit refusal is redacted the same way. Applying the patch to the base commit and collecting a complete definition is not yet checked during generation; the real scaffold runner will do it in its workspace.
 
 Refusal reasons before the scaffold runs, reported together:
 
@@ -371,11 +372,14 @@ Refusal reasons before the scaffold runs, reported together:
 | Cloud other than AWS | `scaffold supports only cloud aws, not <cloud>` |
 | Invalid name | `cluster name <id> is not a DNS-1123 label` |
 | Name over 49 characters | `cluster name <id> is <n> characters; scoped AWS names allow at most 49` |
+| Malformed region | `region <region> is not an AWS region name` |
 | Unknown tier | `tier <tier> is not one of base, virt, ai` |
 | Unknown topology | `topology <topology> is not one of standard, compact, sno` |
 | Flag outside the operator allow list | `scaffold option <flag> is not allowed` |
 | Repeated flag | `scaffold option <flag> is repeated` |
-| Definition with the name under `provision/` or `archive/` | `cluster <id> already has a definition at <path>` |
+| Empty option value | `scaffold option <flag> has no value` |
+| Option value starting with `-` | `scaffold option <flag> value <value> starts with -` |
+| Definition with the name under `provision/` or `archive/`, with or without `-archive` | `cluster <id> already has a definition at <path>` |
 | Deprovision sentinel for the name, with or without `-archive` | `deprovision sentinel already exists: <path>` |
 | OpenShift ClusterDeployment or ManagedCluster with the name | `OpenShift resources already exist for cluster <id>` |
 | Another Git definition, sentinel, or OpenShift cluster shares the infra prefix | `infra prefix <prefix> is also used by <path or OpenShift cluster name>` |
@@ -394,6 +398,7 @@ Refusal reasons after the scaffold runs:
 | A path outside `provision/<id>/` | `scaffold wrote outside provision/<id>/: [...]` |
 | A symlink or other non-regular file | `scaffold wrote a non-regular file <path> with mode <mode>` |
 | A YAML field the redaction policy would remove | `scaffold output <path> contains secret-named fields: [...]` |
+| A file that is not valid YAML | `scaffold output <path> is not valid YAML, so it cannot be checked for secrets` |
 | Metadata that is not scoped AWS | `scaffold metadata.yaml must declare platform aws and aws-credentials-mode scoped` |
 | An old wildcard render under `crossplane/patches/` | `<path> contains the old render pattern <pattern>` |
 | No current `machine-api` pattern | `<path> is missing`, or `<path> lacks instance-profile/<prefix>-?????-worker-profile` |

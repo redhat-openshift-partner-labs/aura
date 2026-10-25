@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Protocol, final
 from uuid import UUID, uuid5
 
+from aura.collectors.openshift_inventory import OpenShiftInventoryClient
 from aura.contracts import EvidenceItem, EvidenceSnapshot
 from aura.scaffold import ScaffoldCheckoutError, ScaffoldRequest
 
@@ -37,13 +38,13 @@ class ScaffoldEvidenceCollector:
         *,
         request: ScaffoldRequest,
         git_collector: SnapshotCollector,
-        openshift_collector: SnapshotCollector,
+        openshift_client: OpenShiftInventoryClient,
         scaffold_checkout: Path,
         kustomize_version: Callable[[], str | None],
     ) -> None:
         self._request = request
         self._git = git_collector
-        self._openshift = openshift_collector
+        self._openshift = openshift_client
         self._scaffold_checkout = scaffold_checkout
         self._kustomize_version = kustomize_version
 
@@ -57,10 +58,19 @@ class ScaffoldEvidenceCollector:
     ) -> EvidenceSnapshot:
         collected_at = collected_at or datetime.now(UTC)
         git = self._git.collect(command_id=command_id, collected_at=collected_at)
-        openshift = self._openshift.collect(
-            command_id=command_id,
-            collected_at=collected_at,
-        )
+        openshift_version = self._openshift.resource_version()
+        names = {
+            "cluster_deployments": _names(
+                self._openshift.list_cluster_deployments()
+            ),
+            "managed_clusters": _names(self._openshift.list_managed_clusters()),
+        }
+        top = _git(self._scaffold_checkout, "rev-parse", "--show-toplevel")
+        if Path(top.strip()).resolve() != self._scaffold_checkout.resolve():
+            raise ScaffoldCheckoutError(
+                f"scaffold checkout {self._scaffold_checkout} is not the top "
+                "of a Git checkout"
+            )
         commit = _git(self._scaffold_checkout, "rev-parse", "HEAD").strip()
         changes = _git(
             self._scaffold_checkout,
@@ -86,24 +96,24 @@ class ScaffoldEvidenceCollector:
             source_version=source_version
             or (
                 f"git={git.source_version};"
-                f"openshift={openshift.source_version};scaffold={commit}"
+                f"openshift={openshift_version};scaffold={commit}"
             ),
             items=[
                 *git.items,
-                *openshift.items,
+                item("openshift_cluster_names", names),
                 item("scaffold_request", self._request.model_dump(mode="json")),
                 item(
                     "scaffold_checkout",
-                    {
-                        "path": str(self._scaffold_checkout),
-                        "commit": commit,
-                        "clean": not changes.strip(),
-                    },
+                    {"commit": commit, "clean": not changes.strip()},
                 ),
                 item("kustomize", {"version": self._kustomize_version()}),
             ],
-            redactions=sorted({*git.redactions, *openshift.redactions}),
+            redactions=sorted(git.redactions),
         )
+
+
+def _names(resources: list[dict[str, Any]]) -> list[str]:
+    return sorted({str(resource["metadata"]["name"]) for resource in resources})
 
 
 def _git(root: Path, *arguments: str) -> str:
