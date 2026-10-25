@@ -14,7 +14,7 @@ Expected current result:
 757 passed
 ```
 
-Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `8ef2b93`, passed with 728 tests on Python 3.13.17 in `linux/arm64`.
+Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `f3f35d9`, passed with 757 tests on Python 3.13.17 in `linux/arm64`.
 
 Run diff hygiene:
 
