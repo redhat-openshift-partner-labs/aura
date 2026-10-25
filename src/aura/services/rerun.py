@@ -19,6 +19,7 @@ from aura.proposals import (
     RERUN_SOURCE_ANNOTATION,
     Proposal,
     ProposalType,
+    tier_metadata_keys,
 )
 from aura.services.cluster_edit import (
     FLEET_DEFAULTS_COMMIT,
@@ -140,9 +141,8 @@ class PostProvisionRerunGenerator:
                 "since, such as dns-zones after a domain change, are not "
                 "refreshed.",
                 "Parameters the source run did not set take the Pipeline "
-                "defaults; htpasswd-provider-name and openshift-ai-version "
-                f"were checked assuming fleet {FLEET_DEFAULTS_COMMIT} "
-                "defaults.",
+                f"defaults; {_checked_keys(source)} checked assuming fleet "
+                f"{FLEET_DEFAULTS_COMMIT} defaults.",
                 "Timeouts are not copied; Tekton's default applies.",
             ],
             rollback=(
@@ -186,6 +186,19 @@ def _missing_run_reason(correlation: EvidenceItem, cluster: str) -> str:
         ),
         f"no post-provision PipelineRun for cluster {cluster}",
     )
+
+
+def _compared_keys(params: dict[str, Any]) -> list[str]:
+    """Run keys a rerun with these parameters would actually read."""
+
+    keys = tier_metadata_keys(params.get("tier"))
+    return [key for key in RUN_KEYS if key in keys]
+
+
+def _checked_keys(source: EvidenceItem) -> str:
+    keys = _compared_keys(source.data.get("params") or {})
+    verb = "was" if len(keys) == 1 else "were"
+    return f"{' and '.join(keys)} {verb}"
 
 
 def _metadata(
@@ -253,7 +266,7 @@ def _run_reasons(
         for name, value in params.items()
         if value == REDACTED
     )
-    for key in RUN_KEYS if metadata is not None else ():
+    for key in _compared_keys(params) if metadata is not None else ():
         used = str(params.get(key, METADATA_DEFAULTS[key]))
         expected = str(metadata.get(key, METADATA_DEFAULTS[key]))
         if used != expected:

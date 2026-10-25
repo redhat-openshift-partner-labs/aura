@@ -26,12 +26,14 @@ SKIP_PROVISION = "[skip-provision]"
 SKIP_DEPROVISION = "[skip-deprovision]"
 RERUN_NAMESPACE = "openshift-pipelines"
 RERUN_PIPELINE = "post-provision"
-METADATA_KEYS = (
+TIER_INDEPENDENT_METADATA_KEYS = (
     "platform",
     "aws-credentials-mode",
     "htpasswd-provider-name",
-    "openshift-ai-version",
 )
+AI_METADATA_KEYS = ("openshift-ai-version",)
+METADATA_KEYS = (*TIER_INDEPENDENT_METADATA_KEYS, *AI_METADATA_KEYS)
+AI_TIER = "ai"
 CLUSTER_NAME_PATTERN = r"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
 
 
@@ -207,6 +209,16 @@ def compute_proposal_digest(proposal: Proposal) -> str:
     )
 
 
+def tier_metadata_keys(tier: object) -> tuple[str, ...]:
+    """Return the metadata.yaml keys fleet reads for a cluster of tier.
+
+    post-provision runs apply-ai-workloads, the only reader of
+    openshift-ai-version, only when tier is exactly "ai".
+    """
+
+    return METADATA_KEYS if tier == AI_TIER else TIER_INDEPENDENT_METADATA_KEYS
+
+
 def patch_changes(patch: str) -> list[tuple[str, str]]:
     """Return each file in a Git patch as (path, added|modified|deleted|renamed)."""
 
@@ -342,9 +354,10 @@ def _validate_metadata_edit(patch: str, metadata: str) -> None:
         raise ValueError(
             "cluster_edit append changes how metadata.yaml parses"
         )
-    if set(METADATA_KEYS) - set(after):
+    if set(TIER_INDEPENDENT_METADATA_KEYS) - set(after):
         raise ValueError(
-            f"metadata.yaml must declare {', '.join(METADATA_KEYS)}"
+            "metadata.yaml must declare "
+            f"{', '.join(TIER_INDEPENDENT_METADATA_KEYS)}"
         )
 
 
@@ -595,6 +608,7 @@ __all__ = [
     "RERUN_PROPOSAL_ANNOTATION",
     "RERUN_SOURCE_ANNOTATION",
     "METADATA_KEYS",
+    "TIER_INDEPENDENT_METADATA_KEYS",
     "EXPECTED_REVERSIBILITY",
     "EXPECTED_TRIGGER_EFFECTS",
     "GIT_PROPOSAL_TYPES",
@@ -608,4 +622,5 @@ __all__ = [
     "compute_proposal_digest",
     "deprovision_sentinel_patch",
     "patch_changes",
+    "tier_metadata_keys",
 ]

@@ -232,6 +232,21 @@ def test_proposal_accepts_cluster_edit_that_only_appends_keys(
     assert "[skip-provision]" not in proposal.commit_message
 
 
+def test_proposal_accepts_cluster_edit_without_openshift_ai_version() -> None:
+    proposal = make_proposal(
+        "cluster_edit",
+        commit_message=f"fix: set platform for {CLUSTER}",
+        patch=appended_file(
+            f"provision/{CLUSTER}/metadata.yaml",
+            "htpasswd-provider-name: Red Hat",
+            "platform: aws",
+            "aws-credentials-mode: legacy",
+        ),
+    )
+
+    assert "openshift-ai-version" not in (proposal.patch or "")
+
+
 @pytest.mark.parametrize(
     "secret",
     [
@@ -424,13 +439,13 @@ def test_proposal_rejects_changed_content_under_old_digest() -> None:
                 )
             },
             "metadata.yaml must declare platform, aws-credentials-mode, "
-            "htpasswd-provider-name, openshift-ai-version",
+            "htpasswd-provider-name",
         ),
         (
             "cluster_edit",
             {"patch": added_file(METADATA_PATH, "platform: aws")},
             "metadata.yaml must declare platform, aws-credentials-mode, "
-            "htpasswd-provider-name, openshift-ai-version",
+            "htpasswd-provider-name",
         ),
         (
             "cluster_edit",

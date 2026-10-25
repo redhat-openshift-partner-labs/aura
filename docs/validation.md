@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-636 passed
+648 passed
 ```
 
 Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `c4bf10e`, passed with 636 tests on Python 3.13.17 in `linux/arm64`.
@@ -58,8 +58,8 @@ The test classes every change must include are defined in [Development Workflow]
 - `proposal status` authorization for `viewer`, `proposer`, and `admin`, output, and failure records, including missing and unreadable stores.
 - Write order: a failed trace, audit, or proposal write leaves no proposal file, and `command_failed` links to the last stored audit event.
 - Pipeline definition collection: parameters, required parameters, `null` defaults, no stored default values, malformed and duplicate entries, unknown types, missing or unnamed Pipelines, and a forbidden `oc` response.
-- Post-provision rerun generation over real Git, Tekton, and Pipeline definition collectors: copied parameters, workspaces, and run template; named and latest source runs; every refusal reason, including a `metadata.yaml` conflict; and the tightened rerun contract.
-- Cluster-edit generation over real temporary Git trees: added and appended `metadata.yaml` files that apply with `git apply --check`, preserve existing bytes, and leave a complete definition; values from runs and defaults; every refusal reason.
+- Post-provision rerun generation over real Git, Tekton, and Pipeline definition collectors: copied parameters, workspaces, and run template; named and latest source runs; every refusal reason, including a `metadata.yaml` conflict, which compares `openshift-ai-version` only for `ai` runs; and the tightened rerun contract.
+- Cluster-edit generation over real temporary Git trees: added and appended `metadata.yaml` files that apply with `git apply --check`, preserve existing bytes, and leave a complete definition; values from runs and defaults; `openshift-ai-version` only for tier `ai`, with tier from Git cross-checked against OpenShift; every refusal reason.
 - Deprovision contract rejection of non-empty or non-regular sentinel files.
 - The failure-injection matrix: every command's documented write order, a failure of each write in turn before writing and after linking, and each route's read errors, with invariants I1–I4 checked after every run.
 - Fixture validity and secret redaction, including field spelling variants.
@@ -295,7 +295,8 @@ jq -r .patch "$OUT/proposal.json" | git -C ../fleet-clusters apply --check -v -
 | Patch | Applies; changes only `provision/<id>/metadata.yaml`; adds it or only appends lines |
 | Values | `summary` names each key's source; run values match the latest `post-provision` PipelineRun parameters |
 | Commit message | Contains `[skip-provision]` only when the patch adds the file |
-| A cluster with every key | Exit code `2`; `already declares every key` |
+| Tier | `openshift-ai-version` is added only when the ManagedCluster tier is `ai` |
+| A cluster with every key its tier needs | Exit code `2`; `already declares every key tier <tier> needs` |
 | `fleet-clusters` | `git status --porcelain` is empty |
 
 Latest validation, run by the operator on 2026-10-24 against Aura commit `dfe32d4` and `fleet-clusters` commit `0453793`:
@@ -308,6 +309,8 @@ Latest validation, run by the operator on 2026-10-24 against Aura commit `dfe32d
 | Deprovisioned cluster, `<cluster-name>` | Refused: defined under `archive/` and no OpenShift resources |
 | Contract, staleness, traces, records | All proposals validated, were fresh, and had matching trace digests; `fleet-clusters` was unchanged |
 | `already declares every key` | Not exercised live; no cluster with all four keys was used |
+
+These results predate the 2026-10-25 tier revision, under which `openshift-ai-version` is added only for tier `ai`. They have not been re-run live.
 
 ## Pipeline Definition Validation
 

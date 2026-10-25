@@ -149,7 +149,6 @@ def test_generator_backfills_missing_metadata_file(tmp_path: Path) -> None:
         "platform": "aws",
         "aws-credentials-mode": "legacy",
         "htpasswd-provider-name": "PartnerIDP",
-        "openshift-ai-version": "v3",
     }
     inventory = ClusterInventoryCollector(
         git_collector=GitInventoryCollector(root),
@@ -186,7 +185,6 @@ def test_generator_appends_missing_keys(tmp_path: Path, original: str) -> None:
         **yaml.safe_load(original),
         "platform": "aws",
         "aws-credentials-mode": "legacy",
-        "openshift-ai-version": "v3",
     }
     [definition] = GitInventoryCollector(root).collect(
         command_id=UUID(int=3)
@@ -196,15 +194,100 @@ def test_generator_appends_missing_keys(tmp_path: Path, original: str) -> None:
 
 
 def test_generator_prefers_run_values_over_defaults(tmp_path: Path) -> None:
-    root = fleet(tmp_path, "platform: aws\n")
+    root = fleet(tmp_path, "platform: aws\n", prepare=_ai_tier)
+    run = post_provision(
+        **{"htpasswd-provider-name": "Partner", "openshift-ai-version": "v2"}
+    )
+
+    updated = apply(
+        root, generate(evidence(root, openshift=_openshift("ai"), runs=(run,)))
+    )
+
+    assert yaml.safe_load(updated)["openshift-ai-version"] == "v2"
+    assert yaml.safe_load(updated)["htpasswd-provider-name"] == "Partner"
+
+
+def _ai_tier(root: Path) -> None:
+    _set_tier(root, "ai")
+
+
+def _set_tier(root: Path, tier: str) -> None:
+    patch = root / "provision/example/hive/patches/managedcluster.yaml"
+    patch.write_text(
+        patch.read_text().replace("value: base", f"value: {tier}", 1)
+    )
+
+
+def _openshift(tier: str | None) -> object:
+    state = actual_state("example")
+    labels = {} if tier is None else {"tier": tier}
+    return openshift_collector(
+        state.model_copy(
+            update={"data": {**state.data, "managed_cluster_labels": labels}}
+        )
+    )
+
+
+def test_generator_adds_openshift_ai_version_for_ai_tier(
+    tmp_path: Path,
+) -> None:
+    root = fleet(tmp_path, prepare=_ai_tier)
+    snapshot = evidence(root, openshift=_openshift("ai"))
+
+    proposal = generate(snapshot)
+
+    assert generate(snapshot) == proposal
+    assert "openshift-ai-version" in proposal.expected_effect
+    assert yaml.safe_load(apply(root, proposal)) == {
+        "platform": "aws",
+        "aws-credentials-mode": "legacy",
+        "htpasswd-provider-name": "htpasswd",
+        "openshift-ai-version": "v3",
+    }
+
+
+@pytest.mark.parametrize("tier", ["base", "virt", "AI"])
+def test_generator_omits_openshift_ai_version_for_other_tiers(
+    tmp_path: Path,
+    tier: str,
+) -> None:
+    root = fleet(tmp_path, prepare=lambda root: _set_tier(root, tier))
+
+    proposal = generate(evidence(root, openshift=_openshift(tier)))
+
+    assert "openshift-ai-version" not in (proposal.patch or "")
+    assert "openshift-ai-version" not in proposal.expected_effect
+    assert "htpasswd-provider-name" in proposal.expected_effect
+
+
+def test_generator_ignores_openshift_ai_version_run_conflict_off_ai_tier(
+    tmp_path: Path,
+) -> None:
+    original = "platform: aws\nopenshift-ai-version: v3\n"
+    root = fleet(tmp_path, original)
     run = post_provision(
         **{"htpasswd-provider-name": "Partner", "openshift-ai-version": "v2"}
     )
 
     updated = apply(root, generate(evidence(root, runs=(run,))))
 
-    assert yaml.safe_load(updated)["openshift-ai-version"] == "v2"
-    assert yaml.safe_load(updated)["htpasswd-provider-name"] == "Partner"
+    assert updated.startswith(original)
+    assert yaml.safe_load(updated) == {
+        "platform": "aws",
+        "openshift-ai-version": "v3",
+        "aws-credentials-mode": "legacy",
+        "htpasswd-provider-name": "Partner",
+    }
+
+
+def test_generator_uses_git_tier_without_openshift_label(
+    tmp_path: Path,
+) -> None:
+    root = fleet(tmp_path, prepare=_ai_tier)
+
+    updated = apply(root, generate(evidence(root, openshift=_openshift(None))))
+
+    assert yaml.safe_load(updated)["openshift-ai-version"] == "v3"
 
 
 def _setup(
@@ -261,6 +344,10 @@ FULL = (
     "platform: aws\naws-credentials-mode: legacy\n"
     "htpasswd-provider-name: htpasswd\nopenshift-ai-version: v3\n"
 )
+TIER_KEYS = (
+    "platform: aws\naws-credentials-mode: legacy\n"
+    "htpasswd-provider-name: htpasswd\n"
+)
 RUN = "PipelineRun post-provision-example-abc"
 
 
@@ -270,6 +357,26 @@ RUN = "PipelineRun post-provision-example-abc"
         (
             _setup(FULL),
             "metadata.yaml for example already declares every key",
+        ),
+        (
+            _setup(TIER_KEYS),
+            "metadata.yaml for example already declares every key tier base "
+            "needs",
+        ),
+        (
+            _setup(
+                "openshift-ai-version: v3\n",
+                prepare=_ai_tier,
+                openshift=_openshift("ai"),
+                runs=(post_provision(**{"openshift-ai-version": "v2"}),),
+            ),
+            f"metadata.yaml declares openshift-ai-version v3 but {RUN} "
+            "used v2",
+        ),
+        (
+            _setup(prepare=_ai_tier),
+            "tier evidence conflicts for example: ManagedCluster patch ai, "
+            "OpenShift base",
         ),
         (
             _setup(prepare=_sentinel),

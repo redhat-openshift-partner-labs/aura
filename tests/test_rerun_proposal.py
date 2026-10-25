@@ -64,6 +64,8 @@ TRIGGER_PARAMS = {
     "openshift-ai-version": "v3",
 }
 
+AI_PARAMS = {**TRIGGER_PARAMS, "tier": "ai"}
+
 
 def run(
     name: str,
@@ -252,6 +254,41 @@ def test_generator_accepts_listener_runs_matching_metadata_defaults(
     )
 
 
+def test_generator_ignores_openshift_ai_version_off_ai_tier(
+    tmp_path: Path,
+) -> None:
+    source = run(
+        "post-provision-example-new",
+        "2026-01-02T00:00:00Z",
+        params={**TRIGGER_PARAMS, "openshift-ai-version": "v2"},
+    )
+
+    proposal = generate(evidence(fleet(tmp_path, FULL_METADATA), source))
+
+    assert {"name": "openshift-ai-version", "value": "v2"} in (
+        proposal.pipeline_run["spec"]["params"]
+    )
+    assert any(
+        "htpasswd-provider-name was checked" in risk for risk in proposal.risks
+    )
+    assert not any("openshift-ai-version" in risk for risk in proposal.risks)
+
+
+def test_generator_checks_openshift_ai_version_on_ai_tier(
+    tmp_path: Path,
+) -> None:
+    source = run(
+        "post-provision-example-new", "2026-01-02T00:00:00Z", params=AI_PARAMS
+    )
+
+    proposal = generate(evidence(fleet(tmp_path), source))
+
+    assert any(
+        "htpasswd-provider-name and openshift-ai-version were checked" in risk
+        for risk in proposal.risks
+    )
+
+
 def test_generator_keeps_secret_workspaces_by_name(tmp_path: Path) -> None:
     keys = {"name": "keys", "secret": {"secretName": "spoke-keys"}}
     source = run(
@@ -405,7 +442,7 @@ NEW = "PipelineRun post-provision-example-new"
                 run(
                     "post-provision-example-new",
                     "2026-01-02T00:00:00Z",
-                    params={**TRIGGER_PARAMS, "openshift-ai-version": "v2"},
+                    params={**AI_PARAMS, "openshift-ai-version": "v2"},
                 ),
             ),
             f"{NEW} would use openshift-ai-version v2 but metadata.yaml "
@@ -416,7 +453,7 @@ NEW = "PipelineRun post-provision-example-new"
                 run(
                     "post-provision-example-new",
                     "2026-01-02T00:00:00Z",
-                    params={**TRIGGER_PARAMS, "openshift-ai-version": "v2"},
+                    params={**AI_PARAMS, "openshift-ai-version": "v2"},
                 ),
                 metadata=ABSENT,
             ),

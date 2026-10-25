@@ -268,6 +268,7 @@ def _incomplete_sources(
     sources: dict[str, str | None] = {
         "patch_platform": None,
         "crossplane_template": None,
+        "tier": None,
         "remaining_files_error": None,
     }
     if missing_files == ["metadata.yaml"]:
@@ -281,7 +282,17 @@ def _incomplete_sources(
         except _InvalidDefinition as error:
             sources["remaining_files_error"] = str(error)
     cluster_file = "hive/patches/clusterdeployment.yaml"
+    managed_file = "hive/patches/managedcluster.yaml"
     crossplane_file = "crossplane/kustomization.yaml"
+    try:
+        if managed_file not in missing_files:
+            sources["tier"] = _patch_value(
+                _load_patches(tree, cluster_path, managed_file),
+                managed_file,
+                "/metadata/labels/tier",
+            )
+    except _InvalidDefinition:
+        pass
     try:
         if cluster_file not in missing_files:
             sources["patch_platform"] = _patch_platform(

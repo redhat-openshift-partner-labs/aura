@@ -22,7 +22,7 @@ An `EvidenceSnapshot` is the frozen result of one collector invocation.
 | Kind | Producer | Meaning |
 | --- | --- | --- |
 | `cluster_definition` | Git | Complete active or archived desired-state definition. `patch_platform` is the cloud named by the first `/spec/platform/<cloud>` ClusterDeployment patch, and `metadata_text` is the raw `metadata.yaml` text |
-| `cluster_definition_incomplete` | Git | Definition directory with missing required files; `cluster_name` is the directory name. `patch_platform` and `crossplane_template` record what a present, readable ClusterDeployment patch and Crossplane kustomization declare, or `null`. When `metadata.yaml` is the only missing file, the other files are validated as for a complete definition and `remaining_files_error` records the problem, or `null` |
+| `cluster_definition_incomplete` | Git | Definition directory with missing required files; `cluster_name` is the directory name. `patch_platform`, `crossplane_template`, and `tier` record what a present, readable ClusterDeployment patch, Crossplane kustomization, and ManagedCluster patch declare, or `null`. When `metadata.yaml` is the only missing file, the other files are validated as for a complete definition and `remaining_files_error` records the problem, or `null` |
 | `cluster_definition_invalid` | Git | Definition with all required files whose YAML or required patch paths cannot be interpreted; `cluster_name` is the directory name and `error` names the file and problem |
 | `deprovision_sentinel` | Git | File under `deprovision/`, other than `README.md`; `cluster_name` strips a `-archive` suffix and `archive_suffix` records whether it was present |
 | `cluster_actual_state` | OpenShift | Complete observed cluster state |
@@ -242,7 +242,7 @@ The contract enforces these invariants regardless of which generator produced th
 | --- | --- | --- | --- | --- |
 | Artifact | `patch` | `patch` | `patch` | `pipeline_run` |
 | `base_commit` | Required | Required | Required | Absent |
-| Patch scope | Adds only files under `provision/<id>/` | Adds only the empty regular file (mode `100644`) `deprovision/<id>-archive` | Adds `provision/<id>/metadata.yaml`, or appends to it in one hunk that starts at line 1 and covers the whole file; only keys the file lacks, from the four `fleet` keys, and the result declares all four | None |
+| Patch scope | Adds only files under `provision/<id>/` | Adds only the empty regular file (mode `100644`) `deprovision/<id>-archive` | Adds `provision/<id>/metadata.yaml`, or appends to it in one hunk that starts at line 1 and covers the whole file; only keys the file lacks, from the four `fleet` keys, and the result declares at least `platform`, `aws-credentials-mode`, and `htpasswd-provider-name` | None |
 | Commit message | Names the cluster; no `[skip-provision]` | Names the cluster; no `[skip-deprovision]` | Names the cluster; contains `[skip-provision]` when a file is added | None |
 | `trigger_effect` | `pre-provision`, `provision`, `post-provision` | `deprovision`, `archive-cluster` | None | `post-provision` |
 | `reversibility` | `reversible_before_merge` | `reversible_before_merge` | `reversible` | `irreversible` |
@@ -279,14 +279,14 @@ Refusal reasons, all reported together:
 
 ### Cluster-Edit Proposal
 
-`ClusterEditProposalGenerator` (`cluster-edit-deterministic`, version `0.1.0`) consumes a cluster-state CWA snapshot whose PipelineRun is the latest `post-provision` run. It leaves `metadata.yaml` with all four keys `fleet` reads, adding only the keys that are missing; existing keys and lines never change.
+`ClusterEditProposalGenerator` (`cluster-edit-deterministic`, version `0.1.0`) consumes a cluster-state CWA snapshot whose PipelineRun is the latest `post-provision` run. It leaves `metadata.yaml` with every key `fleet` reads for the cluster's tier, adding only the keys that are missing; existing keys and lines never change. `openshift-ai-version` applies only to tier `ai`, because `apply-ai-workloads`, its only reader, runs only for that tier. The tier is the Git ManagedCluster patch `/metadata/labels/tier`, which must match the OpenShift ManagedCluster `tier` label when that label exists. The contract carries no tier, so it requires only the three tier-independent keys and the generator enforces the rest.
 
 | Key | Value, in order of precedence |
 | --- | --- |
 | `platform` | The ClusterDeployment patch cloud, which must match the OpenShift ClusterDeployment platform. A valid definition always has it; without it the proposal is refused. `fleet` `9464f0b` writes `platform` as a task result but no task reads it, so this key records the cloud without changing pipeline behavior. |
 | `aws-credentials-mode` | `legacy`, the value the pipeline uses when the key is absent |
 | `htpasswd-provider-name` | The latest `post-provision` run's parameter; else `htpasswd` |
-| `openshift-ai-version` | The latest `post-provision` run's parameter; else `v3` |
+| `openshift-ai-version` | Tier `ai` only: the latest `post-provision` run's parameter; else `v3`. For another tier it is never added, and an existing value is not compared with the run |
 
 Defaults are those of `read-cluster-metadata` at `fleet` commit `9464f0b`. A new file lists the keys in the order above. Appended keys follow the existing text, after a newline is added to an unterminated last line, and the patch carries the whole existing file as context so the contract can check the result without the repository. The `summary` names each value's source.
 
@@ -302,9 +302,10 @@ Refusal reasons, reported together with the shared live-cluster reasons (no defi
 | Existing `platform` disagrees with evidence | `metadata.yaml declares platform <a> but evidence shows <b>` |
 | Scoped Crossplane template without the key | `cluster <id> uses scoped AWS credentials but metadata.yaml does not declare aws-credentials-mode` |
 | Existing credential mode disagrees with the template | `metadata.yaml declares aws-credentials-mode <mode> but the Crossplane template is <template>` |
+| Git and OpenShift tiers disagree | `tier evidence conflicts for <id>: ManagedCluster patch <a>, OpenShift <b>` |
 | Existing key disagrees with the run | `metadata.yaml declares <key> <a> but PipelineRun <name> used <b>` |
 | Redacted run parameter | `PipelineRun <name> parameter <key> is redacted` |
-| Nothing missing | `metadata.yaml for <id> already declares every key` |
+| Nothing missing | `metadata.yaml for <id> already declares every key tier <tier> needs` |
 | Appending would change the parsed file, such as after a flow mapping | `metadata.yaml for <id> cannot be extended by appending keys` |
 
 Scoped credentials are recognized only by the `crossplane-scoped` Crossplane template, which the scaffold writes for every scoped AWS cluster; the scaffold's other scoped markers are not checked.
@@ -336,7 +337,7 @@ Refusal reasons, reported together with the shared live-cluster reasons (no defi
 
 A generated manifest that the contract still rejects, such as a declared parameter whose value contains a secret-named key, fails the command with `generated proposal is invalid:` rather than refusing it.
 
-The `metadata.yaml` check compares `htpasswd-provider-name` and `openshift-ai-version`. When the source run did not set a key, the rerun's value is assumed to be the `fleet` `9464f0b` Pipeline default, because Pipeline definition evidence stores no default values.
+The `metadata.yaml` check compares `htpasswd-provider-name`, and `openshift-ai-version` only when the source run's `tier` parameter is `ai`, the condition under which `apply-ai-workloads` reads it. The risks name the keys compared. When the source run did not set a key, the rerun's value is assumed to be the `fleet` `9464f0b` Pipeline default, because Pipeline definition evidence stores no default values.
 
 ### Proposal Staleness Fields
 

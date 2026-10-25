@@ -220,7 +220,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura propose cluster-ed
   --command-dir ./local/commands
 ```
 
-The command prints the stored `Proposal`. Its `patch` either adds `provision/<id>/metadata.yaml` with `platform`, `aws-credentials-mode`, `htpasswd-provider-name`, and `openshift-ai-version`, or appends the keys an existing `metadata.yaml` lacks without changing any existing line. Its `summary` names the source of every value: the ClusterDeployment patch, the latest `post-provision` PipelineRun, or the `fleet` default.
+The command prints the stored `Proposal`. Its `patch` either adds `provision/<id>/metadata.yaml` with `platform`, `aws-credentials-mode`, and `htpasswd-provider-name`, plus `openshift-ai-version` when the cluster's tier is `ai`, or appends the keys an existing `metadata.yaml` lacks without changing any existing line. `fleet` reads `openshift-ai-version` only for `ai` clusters, so it is never added for another tier. Its `summary` names the source of every value: the ClusterDeployment patch, the latest `post-provision` PipelineRun, or the `fleet` default.
 
 A patch that adds `metadata.yaml` has a commit message containing `[skip-provision]`. That commit must be pushed alone as the push head commit, so squash or fast-forward it; a merge commit becomes the head commit and does not carry the marker. A patch that only appends keys starts no pipeline.
 

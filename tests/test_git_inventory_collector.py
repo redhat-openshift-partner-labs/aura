@@ -235,6 +235,7 @@ def test_git_inventory_collector_reports_incomplete_cluster(tmp_path: Path) -> N
         ],
         "patch_platform": None,
         "crossplane_template": None,
+        "tier": None,
         "remaining_files_error": None,
     }
 
@@ -268,6 +269,13 @@ def test_git_inventory_collector_reads_incomplete_definition_sources(
     (broken / "crossplane" / "kustomization.yaml").write_text(
         "resources: 7", encoding="utf-8"
     )
+    write_cluster(tmp_path, cluster_name="untiered")
+    untiered = tmp_path / "provision" / "untiered"
+    (untiered / "metadata.yaml").unlink()
+    (untiered / "hive" / "patches" / "managedcluster.yaml").write_text(
+        "- op: add\n  path: /metadata/labels/environment\n  value: dev\n",
+        encoding="utf-8",
+    )
     commit_repository(tmp_path)
 
     items = {
@@ -284,6 +292,10 @@ def test_git_inventory_collector_reads_incomplete_definition_sources(
         items["broken"]["patch_platform"],
         items["broken"]["crossplane_template"],
     ) == (None, None)
+    assert [items[name]["tier"] for name in ("example", "untiered")] == [
+        "base",
+        None,
+    ]
     assert items["example"]["remaining_files_error"] is None
     assert items["broken"]["remaining_files_error"].startswith(
         "hive/patches/clusterdeployment.yaml: invalid YAML"
@@ -309,6 +321,7 @@ def test_git_inventory_collector_names_definition_without_metadata(
                 "missing_files": ["metadata.yaml"],
                 "patch_platform": "aws",
                 "crossplane_template": "crossplane-scoped",
+                "tier": "base",
                 "remaining_files_error": None,
             },
         )

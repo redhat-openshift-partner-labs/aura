@@ -123,7 +123,7 @@ Decisions, 2026-10-24:
 | --- | --- |
 | Source run | `--pipeline-run` names one; otherwise the latest `post-provision` PipelineRun for the cluster. A source run that has not finished refuses the proposal, because a rerun would overlap it. |
 | Run template | Copied from the source run: `taskRunTemplate.serviceAccountName` and the supported `podTemplate` fields. The Tekton collector records them; any other `taskRunTemplate` or `podTemplate` field refuses the proposal. |
-| Parameters | Copied from the source run and checked against the live `post-provision` Pipeline definition. For `htpasswd-provider-name` and `openshift-ai-version`, the value the rerun would use, copied or the Pipeline default, must equal the value `metadata.yaml` declares or defaults to; otherwise the proposal is refused. |
+| Parameters | Copied from the source run and checked against the live `post-provision` Pipeline definition. For `htpasswd-provider-name`, and for `openshift-ai-version` only when the source run's `tier` parameter is `ai`, the value the rerun would use, copied or the Pipeline default, must equal the value `metadata.yaml` declares or defaults to; otherwise the proposal is refused. Revised 2026-10-25: `apply-ai-workloads`, the only reader of `openshift-ai-version`, runs only when `tier` is `ai`, so the key cannot affect any other rerun. |
 | Workspace Secrets | Allowed only as a `secret` binding holding `secretName` and optional `items`; secret material anywhere else is still rejected. |
 
 Facts at `fleet` `9464f0b`: both the provision pipeline's `trigger-post-provision` task and the EventListener template create `post-provision` runs with `taskRunTemplate.serviceAccountName: fleet-pipeline`, a pod template with `fsGroup: 0` and the `fleet-pipeline-pull-secret` image pull secret, and a `shared-workspace` `volumeClaimTemplate`. The trigger task passes five parameters; the EventListener passes only `cluster-name`, `tier`, and `dns-zones`, so its runs take the Pipeline defaults for `htpasswd-provider-name` (`htpasswd`) and `openshift-ai-version` (`v3`).
@@ -146,8 +146,9 @@ Scope decisions, revised 2026-10-23:
 | Decision | Position |
 | --- | --- |
 | Edit kinds | Backfill a missing `metadata.yaml`, and add missing keys to an existing `metadata.yaml`, both under `provision/<id>` only. `metadata.yaml` stays a required definition file. |
-| Keys | Every proposal leaves the file with all four keys below. Existing keys and any other keys are never changed. |
-| Value sources | `platform` from the Git ClusterDeployment patch, cross-checked against the OpenShift ClusterDeployment. `htpasswd-provider-name` and `openshift-ai-version` from the latest retained `post-provision` PipelineRun parameters. Without that evidence, the `fleet` default below, which is what the pipeline uses today when the key is absent. |
+| Keys | Every proposal leaves the file with every key below that applies to the cluster's tier: `platform`, `aws-credentials-mode`, and `htpasswd-provider-name` always, and `openshift-ai-version` only when the tier is `ai`. A proposal never adds `openshift-ai-version` for another tier. Existing keys and any other keys are never changed. The `Proposal` contract requires the three tier-independent keys; it carries no tier, so the generator enforces the `openshift-ai-version` rule from evidence. Revised 2026-10-25; previously all four keys for every tier. |
+| Tier | From the Git ManagedCluster patch `/metadata/labels/tier`, cross-checked against the OpenShift ManagedCluster `tier` label; a disagreement refuses the proposal. |
+| Value sources | `platform` from the Git ClusterDeployment patch, cross-checked against the OpenShift ClusterDeployment. `htpasswd-provider-name`, and `openshift-ai-version` for an `ai` cluster, from the latest retained `post-provision` PipelineRun parameters. Without that evidence, the `fleet` default below, which is what the pipeline uses today when the key is absent. For a cluster of another tier, an existing `openshift-ai-version` is not compared with the run, because no task reads it. |
 | Run value differs from default | The run's value is written, because it is the spoke's current configuration. |
 | `aws-credentials-mode` | The `legacy` default, because the pipeline treats a missing key as `legacy`. If evidence shows scoped credentials, such as a scoped Crossplane template, the proposal is refused. |
 | Preconditions | Live OpenShift resources, no deprovision sentinel, exactly one definition, and it is under `provision/`. An existing key whose value contradicts evidence refuses the proposal. |
@@ -163,7 +164,9 @@ The operator disabled the Tekton EventListener on 2026-10-23. Proposals still st
 | `platform` | `aws` | Written as a `read-cluster-metadata` result; no task reads it | Always |
 | `aws-credentials-mode` | `legacy` | Pre-provision credential workflow | `scoped` for new clusters, or `legacy` |
 | `htpasswd-provider-name` | `htpasswd` | Post-provision OAuth configuration | Only when supplied |
-| `openshift-ai-version` | `v3` | Post-provision AI workloads | Never |
+| `openshift-ai-version` | `v3` | Post-provision `apply-ai-workloads`, which runs only when `tier` is `ai` | Never |
+
+Of these keys, only `openshift-ai-version` depends on tier. `htpasswd-provider-name` is read by `configure-spoke-oauth` for every OpenShift cluster, and `aws-credentials-mode` gates the pre-provision and provision credential steps for every AWS cluster.
 
 Because an absent key means its default, writing a key whose value equals what the pipeline already uses changes no pipeline behavior. Writing a run's non-default value records the spoke's current configuration, so later pipeline runs keep it.
 

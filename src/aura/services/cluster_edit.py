@@ -19,6 +19,7 @@ from aura.proposals import (
     SKIP_PROVISION,
     Proposal,
     ProposalType,
+    tier_metadata_keys,
 )
 from aura.services.diagnosis import cwa_evidence_items
 from aura.services.proposal import (
@@ -84,19 +85,27 @@ class ClusterEditProposalGenerator:
 
         existing = _mapping(current)
         openshift_id = str(correlation.data.get("openshift_evidence_id"))
-        values, conflicts = _metadata_values(
+        openshift = items_by_id.get(openshift_id)
+        tier, conflicts = _tier(definition, openshift, cluster)
+        keys = tier_metadata_keys(tier)
+        values = _metadata_values(
             definition,
-            items_by_id.get(openshift_id),
+            openshift,
             _post_provision_run(correlation, items_by_id),
             existing,
             cluster,
+            keys,
+            conflicts,
         )
         if conflicts:
             raise ProposalRefused(conflicts)
-        missing = [key for key in METADATA_DEFAULTS if key not in existing]
+        missing = [key for key in keys if key not in existing]
         if not missing:
             raise ProposalRefused(
-                [f"metadata.yaml for {cluster} already declares every key"]
+                [
+                    f"metadata.yaml for {cluster} already declares every key "
+                    f"tier {tier} needs"
+                ]
             )
         path = f"provision/{cluster}/metadata.yaml"
         updated = _extended(
@@ -137,6 +146,7 @@ class ClusterEditProposalGenerator:
                 cluster,
                 path,
                 adds_file=current is None,
+                declared=keys,
                 keys=[(key, values[key]) for key in missing],
                 proposal_id=proposal_id,
             ),
@@ -202,14 +212,33 @@ def _default(key: str) -> _Value:
     )
 
 
+def _tier(
+    definition: EvidenceItem,
+    openshift: EvidenceItem | None,
+    cluster: str,
+) -> tuple[object, list[str]]:
+    """Return the Git tier, refusing when OpenShift labels a different one."""
+
+    tier = definition.data.get("tier")
+    labels = openshift.data.get("managed_cluster_labels") if openshift else None
+    actual = (labels or {}).get("tier")
+    if actual is not None and actual != tier:
+        return tier, [
+            f"tier evidence conflicts for {cluster}: ManagedCluster patch "
+            f"{tier}, OpenShift {actual}"
+        ]
+    return tier, []
+
+
 def _metadata_values(
     definition: EvidenceItem,
     openshift: EvidenceItem | None,
     run: EvidenceItem | None,
     existing: dict[str, Any],
     cluster: str,
-) -> tuple[dict[str, _Value], list[str]]:
-    conflicts: list[str] = []
+    keys: tuple[str, ...],
+    conflicts: list[str],
+) -> dict[str, _Value]:
     values = {
         "platform": _platform(
             definition, openshift, existing, cluster, conflicts
@@ -219,8 +248,9 @@ def _metadata_values(
         ),
     }
     for key in RUN_KEYS:
-        values[key] = _run_value(key, run, existing, conflicts)
-    return values, conflicts
+        if key in keys:
+            values[key] = _run_value(key, run, existing, conflicts)
+    return values
 
 
 def _platform(
@@ -365,6 +395,7 @@ def _cluster_edit_text(
     path: str,
     *,
     adds_file: bool,
+    declared: tuple[str, ...],
     keys: list[tuple[str, _Value]],
     proposal_id: UUID,
 ) -> dict[str, object]:
@@ -405,7 +436,7 @@ def _cluster_edit_text(
     return {
         "summary": f"{action} for cluster {cluster}. {sources}.",
         "expected_effect": (
-            f"{path} declares {', '.join(METADATA_KEYS)}. Each value a "
+            f"{path} declares {', '.join(declared)}. Each value a "
             "pipeline reads is what it uses today with the key absent, or "
             "what the latest post-provision run used; fleet "
             f"{FLEET_DEFAULTS_COMMIT} does not read platform."
