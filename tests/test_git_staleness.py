@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -292,6 +294,18 @@ def _tamper(path: Path, monkeypatch) -> None:
     )
 
 
+def _blank_digest(path: Path, _) -> None:
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["proposal_digest"] = ""
+    record["summary"] = "Tampered summary."
+    path.chmod(0o600)
+    path.write_text(json.dumps(record), encoding="utf-8")
+
+
+def _rename(path: Path, _) -> None:
+    path.rename(path.with_name(f"{UUID(int=501)}.json"))
+
+
 def _deny_read(path: Path, monkeypatch) -> None:
     deny_access(monkeypatch, "read_text", path)
 
@@ -305,6 +319,11 @@ def _replace_with_directory(path: Path, monkeypatch) -> None:
     ("damage", "message"),
     [
         (_tamper, f"proposal record is unreadable: {UUID(int=500)}.json"),
+        (
+            _blank_digest,
+            f"proposal record is unreadable: {UUID(int=500)}.json",
+        ),
+        (_rename, f"proposal record is unreadable: {UUID(int=501)}.json"),
         (
             _deny_read,
             f"proposal record is unreadable: {UUID(int=500)}.json",

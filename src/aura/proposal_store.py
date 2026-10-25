@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import final
 
 from aura.json_store import JsonRecordStore
@@ -23,6 +24,19 @@ class JsonProposalStore(JsonRecordStore[Proposal]):
     id_field = "proposal_id"
     already_stored = ProposalAlreadyStored
     not_found = ProposalNotFound
+
+    def _parse(self, value: str) -> Proposal:
+        """Require the stored digest, which validation would recompute."""
+
+        document = json.loads(value)
+        digest = (
+            document.get("proposal_digest")
+            if isinstance(document, dict)
+            else None
+        )
+        if not isinstance(digest, str) or not digest:
+            raise ValueError("proposal record has no stored proposal_digest")
+        return Proposal.model_validate(document)
 
 
 __all__ = [

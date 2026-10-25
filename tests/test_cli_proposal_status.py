@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
@@ -140,6 +142,34 @@ def test_cli_proposal_status_fails_for_tampered_proposal(
     path.chmod(0o600)
     path.write_text(
         path.read_text(encoding="utf-8").replace("example", "examples"),
+        encoding="utf-8",
+    )
+
+    exit_code = run_status(status_arguments(tmp_path))
+
+    assert exit_code == 2
+    assert capsys.readouterr().err == (
+        f"aura: proposal record is unreadable: {path.name}\n"
+    )
+    command = JsonCommandStore(tmp_path / "commands").load("status-key")
+    assert command.status is CommandState.FAILED
+
+
+def test_cli_proposal_status_fails_for_a_blank_digest(
+    tmp_path,
+    capsys,
+) -> None:
+    _, base = fleet_clusters(tmp_path)
+    path = JsonProposalStore(tmp_path / "proposals").save(
+        deprovision_proposal(base)
+    )
+    path.chmod(0o600)
+    path.write_text(
+        re.sub(
+            r'"proposal_digest": "[0-9a-f]+"',
+            '"proposal_digest": ""',
+            path.read_text(encoding="utf-8").replace("example", "examples"),
+        ),
         encoding="utf-8",
     )
 

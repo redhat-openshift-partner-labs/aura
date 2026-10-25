@@ -55,7 +55,7 @@ The test classes every change must include are defined in [Development Workflow]
 - Scaffold proposal contract: `scaffold_run` presence by type, exit code, file list, argument allow list and required values, regular-file modes, required definition files, scoped AWS `metadata.yaml`, and the 49-character name limit.
 - Deprovision proposal generation over real temporary Git trees, including `git apply --check` against the base commit and every refusal reason.
 - `propose deprovision` authorization, stored records, audit chain, refusal, and argument validation.
-- Proposal staleness collection against one pinned `HEAD`, requested-ID selection, and rejection of missing, misnamed, or tampered records.
+- Proposal staleness collection against one pinned `HEAD`, requested-ID selection, and rejection of missing, misnamed, or tampered records, including a blank or missing stored digest and a record renamed under another valid ID.
 - `proposal status` authorization for `viewer`, `proposer`, and `admin`, output, and failure records, including missing and unreadable stores.
 - Write order: a failed trace, audit, or proposal write leaves no proposal file, and `command_failed` links to the last stored audit event.
 - Pipeline definition collection: parameters, required parameters, `null` defaults, no stored default values, malformed and duplicate entries, unknown types, missing or unnamed Pipelines, and a forbidden `oc` response.

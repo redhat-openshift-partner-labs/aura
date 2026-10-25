@@ -49,3 +49,16 @@ def test_json_evidence_snapshot_store_rejects_missing(tmp_path) -> None:
 
     with pytest.raises(EvidenceSnapshotNotFound):
         store.load(UUID("00000000-0000-0000-0000-000000000099"))
+
+
+def test_json_evidence_snapshot_store_rejects_a_record_under_another_name(
+    tmp_path,
+) -> None:
+    store = JsonEvidenceSnapshotStore(root=tmp_path)
+    snapshot = make_snapshot()
+    path = store.save(snapshot)
+    other = UUID(int=999)
+    path.rename(path.with_name(f"{other}.json"))
+
+    with pytest.raises(ValueError, match=f"{other}.json holds evidence"):
+        store.load(other)

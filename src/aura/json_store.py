@@ -96,7 +96,17 @@ class JsonRecordStore(Generic[R]):
             raise self.not_found(
                 f"{self.record_label} not found: {record_id}"
             ) from error
-        return cast(R, self.record_type.model_validate_json(value))
+        record = cast(R, self._parse(value))
+        stored_id = getattr(record, self.id_field)
+        if stored_id != record_id:
+            raise ValueError(
+                f"{self.record_label} record {record_id}.json holds "
+                f"{self.record_label} {stored_id}"
+            )
+        return record
+
+    def _parse(self, value: str) -> BaseModel:
+        return self.record_type.model_validate_json(value)
 
     def record_ids(self) -> list[UUID]:
         """Return stored record IDs in ascending order.

@@ -312,7 +312,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura proposal status \
   --command-dir ./local/commands
 ```
 
-The command prints an evidence snapshot with one `proposal_staleness` item per proposal, ordered by proposal ID, all checked against one pinned `fleet-clusters` `HEAD`. A stale proposal is a successful result, not an error; the command exits `0`. A missing or unreadable `--proposal-dir`, a missing requested proposal, a `.json` file whose name is not a proposal ID, a record that cannot be read, and a record whose digest no longer matches each exit `2` and store a `failed` command record. Repeated `--proposal-id` values are checked once.
+The command prints an evidence snapshot with one `proposal_staleness` item per proposal, ordered by proposal ID, all checked against one pinned `fleet-clusters` `HEAD`. A stale proposal is a successful result, not an error; the command exits `0`. A missing or unreadable `--proposal-dir`, a missing requested proposal, a `.json` file whose name is not a proposal ID, a record that cannot be read, a record whose digest no longer matches or is blank, and a record whose ID differs from its file name each exit `2` and store a `failed` command record. Repeated `--proposal-id` values are checked once.
 
 The check is Git-only: it does not detect live OpenShift or Tekton state that has changed since the proposal's evidence was collected.
 
