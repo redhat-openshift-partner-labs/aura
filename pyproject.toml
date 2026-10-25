@@ -3,6 +3,7 @@ name = "aura-control-plane"
 version = "0.1.0"
 description = "Operator control plane for OpenShift Partner Labs"
 requires-python = ">=3.12"
+license = "Apache-2.0"
 dependencies = [
     "pydantic>=2.11",
     "PyYAML>=6.0.2",
