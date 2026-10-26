@@ -62,7 +62,7 @@ Editing an existing `metadata.yaml` modifies a file and triggers nothing, so `[s
 
 ### Stranded deprovision sentinels
 
-Status: open.
+Status: open, owned by `fleet-clusters` maintainers; deferred from Phases 0–2 (D5) and tracked in the [closure plan backlog](10-phase-0-2-closure.md#backlog).
 
 The `archive-cluster` Action requires `deprovision/<id>-archive`, but at the validated commit seven sentinels lack the suffix. Six of those clusters remain under `provision/` with no OpenShift resources, and Aura reports them as `deprovision_status: stranded`; the seventh is already archived and reports `leftover`. Only two still have a retained, succeeded deprovision PipelineRun; the other four have no PipelineRun on the hub, so whether their deprovision ran cannot be confirmed from Tekton. The `fleet-clusters` README documents the bare `deprovision/<id>` form. Remediation is undecided because re-adding a `-archive` sentinel re-runs deprovision. Any remediation sentinel must be a standalone commit that adds only `deprovision/<id>-archive`, with a commit message that states it remediates a stranded deprovision; Aura never creates or pushes it.
 

@@ -39,7 +39,7 @@ Required cases:
 | Deprovision proposal | Exactly one added file, `deprovision/<id>-archive`, in a standalone commit |
 | Deprovision with any existing sentinel | Refuse |
 | Edit that adds a file under `provision/<id>` | Commit message contains `[skip-provision]` |
-| Edit value without evidence | Refuse |
+| Edit value without evidence | Uses the `fleet` default and names it as the value's source; evidence that contradicts an existing value refuses (D1 in the [closure plan](10-phase-0-2-closure.md#operator-decisions)) |
 | Post-provision rerun with a missing required parameter | Refuse |
 | Post-provision rerun with an unknown or redacted parameter | Refuse |
 | Patch touching two clusters | Refuse |
@@ -122,7 +122,7 @@ Every evaluation case must record:
 5. Adapters use separate least-privilege credentials.
 6. Audit events are append-only.
 7. Git push and Tekton execution require explicit approval. Aura never pushes to `main`, never merges, and never calls the fleet EventListener.
-8. All external calls are rate limited.
+8. All external calls are bounded. In Phases 0–2 each command has a budget of external calls and a timeout per call; full rate limiting is a Phase 3 requirement (D3 in the [closure plan](10-phase-0-2-closure.md#operator-decisions)).
 9. All proposal changes are recorded with a digest.
 10. Model provider access is isolated from cluster credentials.
 
@@ -131,7 +131,7 @@ Every evaluation case must record:
 | Gate | Requirement |
 | --- | --- |
 | Gate 1 | Contract and collector tests pass |
-| Gate 2 | Read-only assistant works against staging |
+| Gate 2 | Read-only assistant works against a hub with the read-only service account. With no staging hub, the production hub qualifies for read-only phases; staging is required before any Phase 3 execution (D2 in the [closure plan](10-phase-0-2-closure.md#operator-decisions)) |
 | Gate 3 | Deterministic proposals pass generator tests and validate against the `fleet-clusters` fixture and live read-only evidence |
 | Gate 4 | Guard blocks all unauthorized execution |
 | Gate 5 | Approved Git patch execution succeeds in a test repository |

@@ -8,7 +8,7 @@ Phase 0 performs no model calls and no side effects.
 
 ## Deliverables
 
-1. Command JSON Schemas.
+1. Command JSON Schemas. Superseded: the command, evidence, CWA, diagnosis, and proposal contracts are Pydantic models, and a test exports each as JSON Schema (D4 in the [closure plan](10-phase-0-2-closure.md#operator-decisions)).
 2. Evidence collector output schemas.
 3. Adapter interface definitions.
 4. Authorization model.

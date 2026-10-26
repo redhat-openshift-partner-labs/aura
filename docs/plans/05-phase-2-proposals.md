@@ -215,7 +215,7 @@ Because an absent key means its default, writing a key whose value equals what t
 | `proposal_id` | Unique identifier |
 | `command_id` | Originating command |
 | `proposal_type` | `scaffold`, `deprovision`, `post_provision_rerun`, or `cluster_edit` |
-| `cluster_name` | The single target cluster |
+| `cluster_name` | The single target cluster; a DNS-1123 label that does not contain `-archive` anywhere, because `fleet` removes every `-archive` substring when it reads a deprovision sentinel (D6 in the [closure plan](10-phase-0-2-closure.md#operator-decisions); not yet enforced) |
 | `status` | `proposal_ready` in Phase 2 |
 | `base_commit` | `fleet-clusters` commit the patch applies to; for a rerun, the commit whose `metadata.yaml` and definition its evidence read. Required for every type (decided 2026-10-25, implemented in `8193210`) |
 | `evidence_snapshot_id` and `evidence_snapshot_digest` | Evidence the proposal was derived from |
@@ -291,6 +291,8 @@ Approval of this plan requires these changes to [Phase 3](06-phase-3-approved-ex
 - The guard checks a stored proposal's digest against the `proposal_created` audit event or the CWA trace's `response_digest`, not only against itself.
 
 ## Open Questions
+
+Deferred on 2026-10-25 (D5 in the [closure plan](10-phase-0-2-closure.md#operator-decisions)); each is tracked with its owner in the closure plan's [Backlog](10-phase-0-2-closure.md#backlog), and none blocks Phases 0–2:
 
 1. How should stranded clusters with bare sentinels be remediated? Re-adding a `-archive` sentinel re-runs deprovision against already-removed resources, and whether that pipeline is idempotent is unverified.
 2. Should the `fleet-clusters` README be corrected to document `deprovision/<id>-archive`? Aura cannot change it.

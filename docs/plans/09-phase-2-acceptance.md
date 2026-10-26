@@ -73,7 +73,7 @@ Caveats:
 11. **F3.** If the terminal command-record write itself fails, a stored proposal can remain with no command record; the failure-mode matrix allows this.
 12. **F5.** Read-error injection replaces the whole collector, so it tests error routing, not which source failed.
 
-Outside the criteria, found during grading:
+Outside the criteria, found during grading. Their disposition is in the [closure plan](10-phase-0-2-closure.md): 13 is Stage 1 task 1.4, 15 is Stage 0 task 0.3, 16 is decision D5 and the Stage 5 review, and 14 is in the backlog.
 
 13. **Cluster names containing `-archive`.** `fleet` derives the cluster name from a deprovision sentinel with `.replace('-archive', '')` (`fleet` `tekton/triggers/eventlistener.yaml`), which removes every occurrence, while Aura removes only the suffix and `CLUSTER_NAME_PATTERN` allows the substring. A deprovision proposal for a name such as `a-archive-b` would start deprovision of `a-b`, and scaffold could create such a name. No current `fleet-clusters` name contains `-archive` before its end. Refuse the substring in proposal cluster names.
 14. **Scaffold commit guidance.** Scaffold risks do not say to push the commit alone, though only the first cluster name in a push triggers a pipeline.

@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed 2026-10-25 at Aura commit `f484357`. Needs the operator's decisions D1–D6 before Stage 1 starts.
+Approved 2026-10-25 at Aura commit `3b73a3f`; the operator accepted D1–D6 as recommended. Stage 0 is complete: the decisions are applied to the governing plans, deferred items live only in the [Backlog](#backlog), and current verification results live only in [Validation](../validation.md). Stage 1 is next.
 
 ## Diagnosis
 
@@ -38,7 +38,9 @@ These rules bound the remaining work so it ends:
 
 ## Operator Decisions
 
-| ID | Question | Recommendation |
+Accepted 2026-10-25 as recommended.
+
+| ID | Question | Decision |
 | --- | --- | --- |
 | D1 | [Testing plan](07-testing-security-rollout.md#proposal-generator-tests) says an edit value without evidence is refused; the 2026-10-23 cluster-edit decision uses `fleet` defaults. Which governs? | The cluster-edit decision; amend the testing plan |
 | D2 | Rollout Gate 2 requires staging, but no staging hub exists. | Accept the production hub with the read-only service account for read-only phases; require staging before any Phase 3 execution |
@@ -81,7 +83,7 @@ Each task follows the [development workflow](../development.md): test plan, fail
 | --- | --- | --- |
 | 0.1 | Record D1–D6 answers here and apply them to the governing plans: amend the testing plan (D1), Rollout Gate 2 (D2), security requirement 8 (D3), Phase 0 deliverables (D4), Phase 2 open questions (D5), and the cluster name rule (D6) | Plans agree with each other; this document lists the decisions |
 | 0.2 | Create the [Backlog](#backlog) from every known non-blocking item | Backlog is the only place they live |
-| 0.3 | Remove volatile duplicates: keep test counts and the latest `act` run only in [Validation](../validation.md); replace restatements in status, plans, and acceptance records with links | No test count or `act` commit appears outside Validation |
+| 0.3 | Remove volatile duplicates: keep current test counts and the latest `act` run only in [Validation](../validation.md); replace restatements in status, plans, and acceptance records with links | No current test count or `act` result appears outside Validation; counts recorded against a named historical commit stay as records |
 
 ### Stage 1: Fix classes at chokepoints
 
@@ -140,6 +142,8 @@ Not blocking Phases 0–2, per R2. Each item names its target.
 | Output size limits for scaffold streams and files | Phase 3 hardening |
 | Phase 2 open questions 1–4 (D5) | Owners: `fleet-clusters` and `fleet` maintainers; edit kinds in Phase 3 |
 | Operator: move legacy rerun records out of `local/rerun/proposals/` | Operator |
+| Scaffold risks do not tell the operator to push the scaffold commit alone, though only the first cluster name in a push triggers a pipeline | Phase 2 polish after closure |
+| Stranded deprovision sentinels (open question 1) | `fleet-clusters` maintainers |
 
 ## Sequencing and Effort
 
