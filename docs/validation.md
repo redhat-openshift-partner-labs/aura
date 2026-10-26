@@ -275,6 +275,10 @@ Closure task 4.5, run on 2026-10-26 at Aura commit `1d1bc1c` with operator appro
 | No new PipelineRun | 45 PipelineRuns, the same names, before and after every command |
 | Protected repositories | `HEAD`, refs, and status unchanged before and after every command |
 
+### Secret-Named Metadata Key Check
+
+Run on 2026-10-26 at Aura commit `a236742`, after `8922f0e` made the Git collector report a definition with a secret-named `metadata.yaml` key as invalid, with operator approval for one read-only run: the same identity and write-denial checks passed, then Git and combined `inventory list` against `fleet-clusters` `4ead929`. Git inventory reported 27 `cluster_definition` and 7 `deprovision_sentinel` items and no `cluster_definition_invalid`; combined inventory reported the same 26 records, 117 items, and drift as the [Phase 1 Closure Re-run](#phase-1-closure-re-run). The change affects only definitions with secret-named keys, and there are none, so the Phase 1 and Phase 2 closure re-runs stay valid at this commit and were not repeated.
+
 ## Live Proposal Validation
 
 Choose a cluster that has OpenShift resources and no `deprovision/` sentinel. Generating a proposal reads only; it writes nothing to `fleet-clusters` or the hub.
