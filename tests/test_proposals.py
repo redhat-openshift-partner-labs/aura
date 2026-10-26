@@ -1110,3 +1110,80 @@ def test_proposal_keeps_htpasswd_provider_name_in_cluster_edit() -> None:
     )
 
     assert "htpasswd-provider-name: Red Hat" in (proposal.patch or "")
+
+
+def _metadata_hunk(header: str, *lines: str) -> str:
+    path = f"provision/{CLUSTER}/metadata.yaml"
+    return "\n".join(
+        [
+            f"diff --git a/{path} b/{path}",
+            "index 1111111..2222222 100644",
+            f"--- a/{path}",
+            f"+++ b/{path}",
+            header,
+            *lines,
+        ]
+    ) + "\n"
+
+
+@pytest.mark.parametrize(
+    ("patch", "message"),
+    [
+        (
+            _metadata_hunk(
+                "@@ -1,3 +1,4 @@",
+                " platform: aws",
+                " aws-credentials-mode: legacy",
+                " htpasswd-provider-name: >-",
+                "+  openshift-ai-version: v3",
+            ),
+            "cluster_edit append changes how metadata.yaml parses",
+        ),
+        (
+            _metadata_hunk(
+                "@@ -1,5 +1,6 @@",
+                " platform: aws",
+                " aws-credentials-mode: legacy",
+                "+htpasswd-provider-name: x",
+            ),
+            "cluster_edit proposal must change metadata.yaml in one hunk "
+            "that starts at line 1",
+        ),
+    ],
+    ids=["append-changes-parsing", "hunk-length-mismatch"],
+)
+def test_proposal_rejects_a_cluster_edit_hunk_the_contract_cannot_trust(
+    patch: str,
+    message: str,
+) -> None:
+    with pytest.raises(ValidationError, match=re.escape(message)):
+        make_proposal(
+            "cluster_edit",
+            commit_message=f"fix: set keys for {CLUSTER}",
+            patch=patch,
+        )
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"namespace": "default"},
+        {"generateName": f"post-provision-{CLUSTER}-"},
+    ],
+    ids=["other-namespace", "no-namespace"],
+)
+def test_proposal_rejects_a_rerun_outside_the_pipelines_namespace(
+    metadata: dict[str, str],
+) -> None:
+    manifest = rerun_manifest(tier="base")
+    manifest["metadata"] = (
+        {**manifest["metadata"], **metadata}
+        if "namespace" in metadata
+        else metadata
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="pipeline_run must use generateName in openshift-pipelines",
+    ):
+        make_proposal("post_provision_rerun", pipeline_run=manifest)
