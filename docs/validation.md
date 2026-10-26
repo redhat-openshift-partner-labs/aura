@@ -14,7 +14,7 @@ Expected current result:
 1105 passed
 ```
 
-Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `50fa291` at the end of closure Stage 5, passed with 1086 tests on Python 3.13.17 in `linux/arm64`.
+Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `53ea23d` after the C0.4 caveat was closed, passed with 1105 tests on Python 3.13.17 in `linux/arm64`.
 
 Run diff hygiene:
 
