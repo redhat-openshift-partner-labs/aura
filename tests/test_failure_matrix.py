@@ -15,6 +15,7 @@ from aura.collectors.oc_cli import OpenShiftCLIError
 from aura.command_store import JsonCommandStore
 from aura.contracts import AuditEventType, CommandState, EvidenceSnapshot
 from aura.proposal_store import JsonProposalStore, ProposalNotFound
+from aura.state import CommandStateMachine
 from failure_injection import WRITE_PHASES, deny_access, run_cli
 from invariants import (
     assert_command_invariants,
@@ -777,3 +778,29 @@ def test_unexpected_error_with_vanished_audit_record_stores_failed_record(
     ]
     record = JsonCommandStore(tmp_path / "commands").load(KEY)
     assert record.status is CommandState.FAILED
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [scenario for scenario in SCENARIOS if "Proposal" in scenario.writes],
+    ids=scenario_id,
+)
+def test_error_before_terminal_record_leaves_no_proposal(
+    tmp_path,
+    monkeypatch,
+    scenario,
+) -> None:
+    error = RuntimeError("injected transition failure")
+    transition = CommandStateMachine.transition
+
+    def failing_transition(self, current, next_state):
+        if next_state is CommandState.SUCCEEDED:
+            raise error
+        return transition(self, current, next_state)
+
+    monkeypatch.setattr(CommandStateMachine, "transition", failing_transition)
+
+    run, before = execute(scenario, tmp_path, monkeypatch)
+
+    assert_internal_failure(run, tmp_path, before, error)
+    assert proposals_of(tmp_path / "proposal", COMMAND_ID) == []

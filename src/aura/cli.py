@@ -1761,19 +1761,15 @@ def _run_proposal(
     )
     if isinstance(proposed, AssemblyFailure):
         return _fail_assembly(args, result, proposed, clock)
-    final_command, proposal, refusal_error = proposed
-    if proposal is None:
+    final_command, output, refusal_error = proposed
+    if output is None:
         command_store_error = _store_terminal_command(args, final_command)
         print(
             f"aura: {command_store_error or refusal_error}",
             file=sys.stderr,
         )
         return 2
-    return _complete_command(
-        args,
-        final_command,
-        proposal.model_dump_json(indent=2),
-    )
+    return _complete_command(args, final_command, output)
 
 
 _AUDITED_PROPOSAL = frozenset(
@@ -1797,7 +1793,13 @@ def _assemble_and_propose(
     roles: set[OperatorRole],
     evidence_event: AuditEvent | None,
     clock: Callable[[], datetime],
-) -> tuple[CommandEnvelope, Proposal | None, str | None] | AssemblyFailure:
+) -> tuple[CommandEnvelope, str | None, str | None] | AssemblyFailure:
+    """Store a proposal's records, returning its command and output JSON.
+
+    The terminal command and output are computed before the proposal is
+    stored, so only the terminal record write follows the proposal (I3).
+    """
+
     if evidence_event is None:
         return AssemblyFailure(
             "audit event is required for CWA assembly",
@@ -1815,6 +1817,20 @@ def _assemble_and_propose(
     if isinstance(records, str):
         return AssemblyFailure(records, evidence_event)
     assembly, proposal, refusal_error = records
+    terminal_state = (
+        CommandState.SUCCEEDED
+        if proposal is not None
+        else CommandState.REFUSED
+    )
+    final_command = result.command.with_status(
+        CommandStateMachine().transition(
+            result.command.status,
+            terminal_state,
+        )
+    )
+    output = (
+        proposal.model_dump_json(indent=2) if proposal is not None else None
+    )
 
     context_event = _context_audit_event(
         result.command,
@@ -1850,19 +1866,7 @@ def _assemble_and_propose(
         )
         if error is not None:
             return AssemblyFailure(error, terminal_event)
-
-    terminal_state = (
-        CommandState.SUCCEEDED
-        if proposal is not None
-        else CommandState.REFUSED
-    )
-    final_command = result.command.with_status(
-        CommandStateMachine().transition(
-            result.command.status,
-            terminal_state,
-        )
-    )
-    return final_command, proposal, refusal_error
+    return final_command, output, refusal_error
 
 
 def _propose_and_trace(

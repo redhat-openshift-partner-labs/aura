@@ -203,3 +203,4 @@ Not blocking Phases 0–2 (R2).
 | A failed `oc` read retried within one command spends a second budget call | Phase 3 rate limiting |
 | `oc` runs with standard input closed, so an interactive exec-credential kubeconfig cannot prompt | Operator: use a token kubeconfig |
 | Failure-matrix model-failure rows do not cover the diagnosis model in `inventory-diagnosed` | Next failure-matrix change |
+| A non-`OSError` raised by the terminal command record write itself can still leave a stored proposal next to a failed command (review F2, option A) | Phase 3 guard: require a `succeeded` command record before acting on a proposal |
