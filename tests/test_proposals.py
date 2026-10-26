@@ -8,7 +8,12 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from aura.proposals import Proposal, patch_changes
+from aura.proposals import (
+    EXPECTED_TRIGGER_EFFECTS,
+    Proposal,
+    ProposalType,
+    patch_changes,
+)
 
 
 BASE_COMMIT = "492bc8e07afddcd557441ddb7d72158de60ab8cb"
@@ -1033,3 +1038,34 @@ def test_patch_changes_classifies_files() -> None:
         ("provision/x/b.yaml", "modified"),
         ("provision/x/c.yaml", "deleted"),
     ]
+
+
+@pytest.mark.parametrize(
+    ("proposal_type", "trigger_effect"),
+    [
+        ("scaffold", []),
+        ("scaffold", ["pre-provision", "provision"]),
+        ("scaffold", ["provision", "pre-provision", "post-provision"]),
+        ("cluster_edit", ["post-provision"]),
+        ("cluster_edit", ["pre-provision", "provision", "post-provision"]),
+        ("post_provision_rerun", []),
+        ("post_provision_rerun", ["post-provision", "post-provision"]),
+        ("post_provision_rerun", ["pre-provision"]),
+    ],
+)
+def test_proposal_rejects_another_trigger_effect(
+    proposal_type: str,
+    trigger_effect: list[str],
+) -> None:
+    expected = [
+        str(effect)
+        for effect in EXPECTED_TRIGGER_EFFECTS[ProposalType(proposal_type)]
+    ]
+
+    with pytest.raises(ValidationError) as error:
+        make_proposal(proposal_type, trigger_effect=trigger_effect)
+
+    assert (
+        f"trigger_effect must be {expected} for {proposal_type} proposals"
+        in str(error.value)
+    )
