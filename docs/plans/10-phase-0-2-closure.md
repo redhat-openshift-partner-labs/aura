@@ -175,7 +175,7 @@ Accepted 2026-10-25 as recommended.
 | 1 | 1.4 Cluster name rule | Done | `08f40da` |
 | 2 | 2.1–2.3 Phase 0 closure | Done | `df58f13`, `dd2e19b`, `8bceb02` |
 | 3 | 3.1–3.3 Phase 1 re-proof | In progress: 3.1 done; 3.2 awaits approval | |
-| 4 | 4.1–4.6 Phase 2 caveats | In progress: 4.1–4.4 done | `e601f5f`, `6976c58`, `5f5fe5f` |
+| 4 | 4.1–4.6 Phase 2 caveats | In progress: 4.1–4.4 done, 4.6 partial; 4.5 awaits approval | `e601f5f`, `6976c58`, `5f5fe5f`, `b593bf2` |
 | 5 | 5.1–5.3 Closure gate | Pending | |
 
 ## Backlog
@@ -206,4 +206,3 @@ Not blocking Phases 0–2 (R2).
 | A non-`OSError` raised by the terminal command record write itself can still leave a stored proposal next to a failed command (review F2, option A) | Phase 3 guard: require a `succeeded` command record before acting on a proposal |
 | `tests/test_contract_schemas.py` compares only property names: a changed field type, `extra="allow"`, or a nested model passes it, and the adapter contracts are not exported | Next schema change |
 | Phase 0 deliverable 8 has one fixture, from `fleet-clusters`; none from the other protected repositories | Operator |
-| `docs/plans/09-phase-2-acceptance.md` states "824 tests pass" at `c2d64a3` in its evidence notation, a dated count outside Validation (R6) | Stage 4 task 4.6 |
