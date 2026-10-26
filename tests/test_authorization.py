@@ -115,3 +115,43 @@ def test_required_roles_are_reported(
     policy = AuthorizationPolicy()
 
     assert policy.required_roles(command_type) == roles
+
+
+# The Phase 0 role model: viewer reads, proposer proposes, approver only
+# approves, executor executes, and admin may do everything.
+ALLOWED_ROLES = {
+    CommandType.INVENTORY_LIST: {OperatorRole.VIEWER, OperatorRole.ADMIN},
+    CommandType.WORKFLOW_INSPECT: {OperatorRole.VIEWER, OperatorRole.ADMIN},
+    CommandType.DIAGNOSE_STATE: {OperatorRole.VIEWER, OperatorRole.ADMIN},
+    CommandType.PROPOSE_PATCH: {OperatorRole.PROPOSER, OperatorRole.ADMIN},
+    CommandType.PROPOSE_PIPELINE: {OperatorRole.PROPOSER, OperatorRole.ADMIN},
+    CommandType.PROPOSAL_STATUS: {
+        OperatorRole.VIEWER,
+        OperatorRole.PROPOSER,
+        OperatorRole.ADMIN,
+    },
+    CommandType.EXECUTE_PATCH: {OperatorRole.EXECUTOR, OperatorRole.ADMIN},
+    CommandType.EXECUTE_PIPELINE: {OperatorRole.EXECUTOR, OperatorRole.ADMIN},
+}
+
+
+def test_role_table_covers_every_command_type() -> None:
+    assert set(ALLOWED_ROLES) == set(CommandType)
+
+
+@pytest.mark.parametrize("role", list(OperatorRole))
+@pytest.mark.parametrize("command_type", list(CommandType))
+def test_each_role_may_issue_only_its_command_types(
+    command_type: CommandType,
+    role: OperatorRole,
+) -> None:
+    allowed = role in ALLOWED_ROLES[command_type]
+
+    assert AuthorizationPolicy().can_issue({role}, command_type) is allowed
+
+
+@pytest.mark.parametrize("role", list(OperatorRole))
+def test_only_approver_or_admin_may_approve(role: OperatorRole) -> None:
+    allowed = role in {OperatorRole.APPROVER, OperatorRole.ADMIN}
+
+    assert AuthorizationPolicy().can_approve({role}) is allowed
