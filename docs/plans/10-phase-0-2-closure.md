@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved 2026-10-25 at Aura commit `3b73a3f`; the operator accepted D1–D6 as recommended. Stage 0 is complete: the decisions are applied to the governing plans, deferred items live only in the [Backlog](#backlog), and current verification results live only in [Validation](../validation.md). **Next: Stage 1 review and `act`.** Mark each task done in [Progress](#progress) in the same commit series that completes it.
+Approved 2026-10-25 at Aura commit `3b73a3f`; the operator accepted D1–D6 as recommended. Stage 0 is complete: the decisions are applied to the governing plans, deferred items live only in the [Backlog](#backlog), and current verification results live only in [Validation](../validation.md). Stage 1 is complete: its review found three invariant or regression findings, fixed in `2f0bfb8` (F1), `976270c` (F3), and `f617dbe` (F2, operator option A), with its other notes in the [Backlog](#backlog); the `act` result is in [Validation](../validation.md). **Next: Stage 2, task 2.1.** Mark each task done in [Progress](#progress) in the same commit series that completes it.
 
 ## Why This Plan Exists
 
