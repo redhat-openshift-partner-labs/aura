@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, final
 
@@ -14,10 +17,43 @@ from aura.process import (
 
 
 CommandRunner = Callable[[Sequence[str]], str]
+OC_CALL_BUDGET = 10
 
 
 class OpenShiftCLIError(RuntimeError):
     """Raised when a read-only `oc` command fails."""
+
+
+@dataclass
+class _CallBudget:
+    limit: int
+    used: int = 0
+
+
+_call_budget: ContextVar[_CallBudget | None] = ContextVar(
+    "oc_call_budget",
+    default=None,
+)
+
+
+@contextmanager
+def oc_call_budget(limit: int = OC_CALL_BUDGET) -> Iterator[None]:
+    """Limit the `oc` calls made inside the block, such as one command."""
+
+    token = _call_budget.set(_CallBudget(limit))
+    try:
+        yield
+    finally:
+        _call_budget.reset(token)
+
+
+def _spend_oc_call() -> None:
+    budget = _call_budget.get()
+    if budget is None:
+        return
+    if budget.used >= budget.limit:
+        raise OpenShiftCLIError(f"oc call budget of {budget.limit} exceeded")
+    budget.used += 1
 
 
 def _run_command(args: Sequence[str]) -> str:
@@ -37,6 +73,7 @@ def _read_oc(
     args: Sequence[str],
     resource: str,
 ) -> dict[str, Any]:
+    _spend_oc_call()
     try:
         output = command_runner(args)
     except CalledProcessError as error:
@@ -212,5 +249,7 @@ __all__ = [
     "OpenShiftCLIError",
     "OpenShiftResource",
     "OpenShiftCLIResourceClient",
+    "OC_CALL_BUDGET",
     "cli_resources",
+    "oc_call_budget",
 ]

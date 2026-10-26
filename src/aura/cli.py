@@ -34,7 +34,7 @@ from aura.collectors.git_staleness import (
     ProposalRecordUnreadable,
     ProposalStalenessCollector,
 )
-from aura.collectors.oc_cli import OpenShiftCLIError
+from aura.collectors.oc_cli import OpenShiftCLIError, oc_call_budget
 from aura.collectors.openshift_cli_client import OpenShiftCLIInventoryClient
 from aura.collectors.openshift_cli_tekton_client import (
     OpenShiftCLITektonClient,
@@ -596,7 +596,8 @@ def _execute_command(
                 print(f"aura: {duplicate_error}", file=sys.stderr)
                 return 2
             try:
-                return action()
+                with oc_call_budget():
+                    return action()
             except Exception as error:
                 return _fail_unexpected(args, command, error, clock)
     except OSError as error:

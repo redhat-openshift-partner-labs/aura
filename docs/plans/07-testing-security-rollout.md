@@ -122,7 +122,7 @@ Every evaluation case must record:
 5. Adapters use separate least-privilege credentials.
 6. Audit events are append-only.
 7. Git push and Tekton execution require explicit approval. Aura never pushes to `main`, never merges, and never calls the fleet EventListener.
-8. All external calls are bounded. In Phases 0–2 each command has a budget of external calls and a timeout per call; full rate limiting is a Phase 3 requirement (D3 in the [closure plan](10-phase-0-2-closure.md#operator-decisions)).
+8. All external calls are bounded. In Phases 0–2 each command has a budget of 10 `oc` calls, which are the hub calls, and every external call has a timeout; full rate limiting is a Phase 3 requirement (D3 in the [closure plan](10-phase-0-2-closure.md#operator-decisions)).
 9. All proposal changes are recorded with a digest.
 10. Model provider access is isolated from cluster credentials.
 
