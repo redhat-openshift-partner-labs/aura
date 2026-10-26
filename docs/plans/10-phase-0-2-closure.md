@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved 2026-10-25 at Aura commit `3b73a3f`; the operator accepted D1–D6 as recommended. Stage 0 is complete: the decisions are applied to the governing plans, deferred items live only in the [Backlog](#backlog), and current verification results live only in [Validation](../validation.md). Stage 1 is complete: its review found three invariant or regression findings, fixed in `2f0bfb8` (F1), `976270c` (F3), and `f617dbe` (F2, operator option A), with its other notes in the [Backlog](#backlog); the `act` result is in [Validation](../validation.md). Stage 2 is complete: its review found three Phase 0 rows whose evidence did not fail when the rule broke, corrected in `0d85f4c` and `9c3fefc`. **Next: Stage 3, task 3.2, awaiting operator approval.** Mark each task done in [Progress](#progress) in the same commit series that completes it.
+Approved 2026-10-25 at Aura commit `3b73a3f`; the operator accepted D1–D6 as recommended. Stage 0 is complete: the decisions are applied to the governing plans, deferred items live only in the [Backlog](#backlog), and current verification results live only in [Validation](../validation.md). Stage 1 is complete: its review found three invariant or regression findings, fixed in `2f0bfb8` (F1), `976270c` (F3), and `f617dbe` (F2, operator option A), with its other notes in the [Backlog](#backlog); the `act` result is in [Validation](../validation.md). Stage 2 is complete: its review found three Phase 0 rows whose evidence did not fail when the rule broke, corrected in `0d85f4c` and `9c3fefc`. **Next: Stage 3 review and `act`; task 4.5 awaits operator approval.** Mark each task done in [Progress](#progress) in the same commit series that completes it.
 
 ## Why This Plan Exists
 
@@ -174,7 +174,7 @@ Accepted 2026-10-25 as recommended.
 | 1 | 1.3 `oc` call budget | Done | `5a7cce0` |
 | 1 | 1.4 Cluster name rule | Done | `08f40da` |
 | 2 | 2.1–2.3 Phase 0 closure | Done | `df58f13`, `dd2e19b`, `8bceb02` |
-| 3 | 3.1–3.3 Phase 1 re-proof | In progress: 3.1 done; 3.2 awaits approval | |
+| 3 | 3.1–3.3 Phase 1 re-proof | Done | `5345ff6`, `2b67fd3`, `1559184` |
 | 4 | 4.1–4.6 Phase 2 caveats | In progress: 4.1–4.4 done, 4.6 partial; 4.5 awaits approval | `e601f5f`, `6976c58`, `5f5fe5f`, `b593bf2` |
 | 5 | 5.1–5.3 Closure gate | Pending | |
 
