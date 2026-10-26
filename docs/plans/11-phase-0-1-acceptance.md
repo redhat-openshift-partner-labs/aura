@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft for operator sign-off. The Phase 0 part was graded by the author on 2026-10-25 at Aura commit `df58f13` and corrected after the Stage 2 review (see [Review Corrections](#review-corrections)); the Phase 1 part was graded for task 3.1 of the [closure plan](10-phase-0-2-closure.md), with its live criterion pending task 3.2. Stage 5 of that plan has an independent reviewer grade an ungraded copy blind, and the stricter grade is kept once its evidence is reproduced.
+Draft for operator sign-off. The Phase 0 part was graded by the author on 2026-10-25 at Aura commit `df58f13` and corrected after the Stage 2 review (see [Review Corrections](#review-corrections)); the Phase 1 part was graded for task 3.1 of the [closure plan](10-phase-0-2-closure.md), and its live criterion C1.17 after the task 3.2 re-run. Stage 5 of that plan has an independent reviewer grade an ungraded copy blind, and the stricter grade is kept once its evidence is reproduced.
 
 Grades:
 
@@ -80,4 +80,8 @@ Criteria C1.1–C1.16 are the [Phase 1 acceptance criteria](04-phase-1-read-only
 | C1.14 | Aura never reports an incomplete PipelineRun as succeeded | `test_cluster_state_diagnosis::test_cluster_state_diagnosis_model_reports_pipeline_run_status` (an `Unknown` run is reported as not completed); `test_cluster_state_collector::test_cluster_state_collector_lists_unfinished_pipeline_runs` | Met |
 | C1.15 | Aura authorizes only the roles an operator supplies | `test_cli::test_cli_inventory_list_uses_only_supplied_roles`; `test_authorization::test_each_role_may_issue_only_its_command_types` | Met |
 | C1.16 | Aura stores a terminal `failed` record when a record write fails | `test_cli::test_cli_inventory_list_fails_command_on_record_write_error`; `test_failure_matrix::test_each_write_failure_fails_closed` for every command scenario and write, before writing and after linking | Met |
-| C1.17 | Phase 1 live validation re-run at the closure commit | Closure task 3.2, which needs operator approval | Pending |
+| C1.17 | Phase 1 live validation re-run at the closure commit | [Phase 1 Closure Re-run](../validation.md#phase-1-closure-re-run), 2026-10-26 at `ea7ec7b`: every check passed; the incomplete-definition refusal had no live candidate and is covered by test | Met with caveat |
+
+### Phase 1 Caveats
+
+1. **C1.17.** The live re-run used the local `fleet-clusters` checkout at `4ead929`, and the hub held no cluster with an incomplete definition, so that refusal is proved by test only.

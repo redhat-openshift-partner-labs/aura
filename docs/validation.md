@@ -235,6 +235,31 @@ Historical validation observed:
 | Refusals | All four refusal clusters exited `2` with the expected missing evidence; no diagnosis record was written for them |
 | Stranded deprovisions | All six stranded clusters exited `0`: two cite a retained deprovision PipelineRun, four state that no PipelineRun is retained |
 
+## Phase 1 Closure Re-run
+
+Closure task 3.2, run on 2026-10-26 at Aura commit `ea7ec7b` with operator approval, against the local `fleet-clusters` `main` at `4ead929`, using `~/.kube/aura-readonly`. Records went to a scratch directory outside the repository.
+
+| Check | Result |
+| --- | --- |
+| Identity | `oc whoami` returned `system:serviceaccount:aura:aura-readonly` |
+| Read-only RBAC | `list` allowed on ClusterDeployments, ManagedClusters, and PipelineRuns cluster-wide and on Pipelines in `openshift-pipelines`; `create`, `patch`, and `delete` denied on all four |
+| Git inventory | 27 `cluster_definition`, 7 `deprovision_sentinel`; no incomplete or invalid definition, none without `cloud_provider` |
+| OpenShift inventory | 12 cluster states |
+| Combined inventory | 26 records, 117 evidence items; drift `none` 11, `archived` 8, `deprovision-requested` 6 (all `stranded`), `definition-conflict` 1; one `leftover` deprovision status; no `missing-git`, `missing-openshift`, or `detected` drift; no redactions |
+| Combined records | 1 command, 1 snapshot, 3 audit events, 1 CWA snapshot, 1 CWA trace; the trace names the stored evidence and CWA snapshots with matching digests; no `.tmp` files |
+| Workflow view | 45 PipelineRuns, all 45 correlated to a cluster; 1 command, 1 snapshot, 2 audit events |
+| Diagnosis, succeeded run | Exit `0`; summary names a succeeded `post-provision` PipelineRun, confidence `0.9` |
+| Diagnosis, conflicting definitions | Exit `2`; refused with `Conflicting Git cluster definitions` |
+| Diagnosis, archived cluster with no resources or run | Exit `2`; refused with `OpenShift actual state` and `Tekton PipelineRun status` |
+| Diagnosis, stranded with a retained run | Exit `0`; stranded deprovision summary citing the succeeded deprovision PipelineRun, confidence `0.9` |
+| Diagnosis, stranded with no run | Exit `0`; summary states `no PipelineRun is retained for it`, confidence `0.6` |
+| Diagnosis, leftover sentinel | Exit `2`; refused with `OpenShift actual state` only, because the cluster now has a complete archived definition |
+| Diagnosis records | 6 commands (3 succeeded, 3 refused), 3 diagnosis records, none for refusals; no `.tmp` files |
+| Duplicate idempotency key | Exit `2`, `idempotency key already succeeded`, no standard output, record files unchanged |
+| Protected repositories | `fleet`, `fleet-cluster-scaffold`, `fleet-clusters`, and `portal`: same `HEAD`, refs, and clean status before and after |
+
+No checkout held a cluster with an incomplete definition, so that refusal was not re-run; it is covered by `test_cluster_state_diagnosis::test_cluster_state_diagnosis_model_refuses_incomplete_definition`.
+
 ## Live Proposal Validation
 
 Choose a cluster that has OpenShift resources and no `deprovision/` sentinel. Generating a proposal reads only; it writes nothing to `fleet-clusters` or the hub.
