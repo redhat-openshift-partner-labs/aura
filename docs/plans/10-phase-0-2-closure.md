@@ -193,3 +193,13 @@ Not blocking Phases 0–2 (R2).
 | Scaffold risks do not tell the operator to push the scaffold commit alone | Phase 2 polish after closure |
 | Phase 2 open questions 1–4 (D5), including stranded deprovision sentinels | `fleet-clusters` and `fleet` maintainers; edit kinds in Phase 3 |
 | Move legacy rerun records out of `local/rerun/proposals/` | Operator |
+| A stored proposal whose cluster name contains `-archive` no longer loads after `08f40da`; none exist under `local/` | Operator |
+| When `_fail_unexpected` cannot read `--audit-dir`, the command stores `failed` without `command_failed`; an unrelated malformed audit record is enough | Phase 3 hardening |
+| `command_failed` from `_fail_unexpected` stores the raw exception text without redaction | Phase 3 hardening |
+| An `OSError` a route does not handle reports as `internal error` rather than as a filesystem error | Phase 3 hardening |
+| A refusal path that raises after `command_refused` ends the chain `command_refused` then `command_failed` | Phase 3 hardening |
+| `tests/test_architecture.py` checks only `subprocess` imports, not `os.system`, `os.posix_spawn`, or `os.exec*` | Phase 3 hardening |
+| `ProcessError` reports `cannot run` when the cause is a missing `cwd` | Phase 3 hardening |
+| A failed `oc` read retried within one command spends a second budget call | Phase 3 rate limiting |
+| `oc` runs with standard input closed, so an interactive exec-credential kubeconfig cannot prompt | Operator: use a token kubeconfig |
+| Failure-matrix model-failure rows do not cover the diagnosis model in `inventory-diagnosed` | Next failure-matrix change |
