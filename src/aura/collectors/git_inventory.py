@@ -88,6 +88,8 @@ def read_git(root: Path, arguments: list[str]) -> str:
     except ProcessError as error:
         raise GitInventoryError(
             f"git command failed for fleet-clusters: {error}"
+            if error.timed_out
+            else f"git checkout is not usable: {root}"
         ) from error
     except OSError as error:
         raise GitInventoryError(

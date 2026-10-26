@@ -112,6 +112,8 @@ class GitProposalStaleness:
         except ProcessError as error:
             raise GitInventoryError(
                 f"git command failed for fleet-clusters: {error}"
+                if error.timed_out
+                else f"git checkout is not usable: {self.root}"
             ) from error
         if result.returncode == 0:
             return None

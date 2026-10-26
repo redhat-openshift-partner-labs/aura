@@ -116,7 +116,7 @@ Process error contracts:
 | --- | --- | --- |
 | Git | Missing checkout | Exit `2`; no evidence collected |
 | Git | Subprocess failure | Exit `2`; final diagnostic line reported |
-| Git | Timeout or executable that cannot start | Exit `2`; `git command failed for fleet-clusters:` with the reason |
+| Git | Timeout after 120 seconds | Exit `2`; `git command failed for fleet-clusters:` with the timeout |
 | Git | Invalid definition | Collection continues with a `cluster_definition_invalid` item; `diagnose state` for that cluster is refused with `Valid Git cluster definition` |
 | `oc` | Missing executable or permission failure | Exit `2`; concise resource-specific error |
 | `oc` | Invalid JSON | Exit `2`; no partial JSON emitted |

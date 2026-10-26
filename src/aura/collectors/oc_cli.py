@@ -91,7 +91,7 @@ def _read_oc(
         raise OpenShiftCLIError(
             f"oc command timed out for {resource}"
             if error.timed_out
-            else f"oc command failed for {resource}: {error}"
+            else f"oc command failed for {resource}: {error.__cause__}"
         ) from error
     except OSError as error:
         raise OpenShiftCLIError(

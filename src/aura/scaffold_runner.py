@@ -26,7 +26,12 @@ from aura.git_isolation import (
     GIT_TIMEOUT,
     isolated_git_environment,
 )
-from aura.process import ProcessError, ProcessResult, run_process
+from aura.process import (
+    CalledProcessError,
+    ProcessError,
+    ProcessResult,
+    run_process,
+)
 from aura.scaffold import ScaffoldResult, ScaffoldRunError
 
 
@@ -203,13 +208,17 @@ def kustomize_version() -> str | None:
     binary = shutil.which("kustomize")
     if binary is None:
         return None
+    command = [binary, "version"]
     try:
-        completed = run_process([binary, "version"], env=None, timeout=30)
+        completed = run_process(command, env=None, timeout=30)
     except ProcessError as error:
-        raise ScaffoldRunError(f"kustomize version failed: {error}") from error
+        raise ScaffoldRunError(
+            f"kustomize version failed: {error.__cause__}"
+        ) from error
     if completed.returncode != 0:
         raise ScaffoldRunError(
-            f"kustomize version failed: exit {completed.returncode}"
+            "kustomize version failed: "
+            f"{CalledProcessError(completed.returncode, command)}"
         )
     return completed.stdout_text().strip() or None
 
