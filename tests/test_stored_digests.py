@@ -24,6 +24,7 @@ from aura.command_store import (
 from aura.contracts import (
     AuditEvent,
     CommandEnvelope,
+    CommandState,
     EvidenceItem,
     EvidenceSnapshot,
 )
@@ -37,6 +38,7 @@ from aura.proposals import Proposal, ScaffoldRun
 from aura.scaffold import ScaffoldRequest
 from failure_injection import run_cli
 from test_failure_matrix import COMMAND_ID, KEY, scenario_named
+from test_inventory_service import make_command
 
 
 SELF_DIGESTS = {
@@ -162,18 +164,9 @@ def test_command_store_rejects_a_record_stored_under_another_key(
 
 
 def stored_command(root: Path, key: str) -> list[Path]:
-    command = CommandEnvelope.model_validate(
-        {
-            "command_id": UUID(int=1),
-            "command_type": "inventory.list",
-            "operator_id": "operator@example.com",
-            "created_at": datetime(2026, 1, 1, tzinfo=UTC),
-            "input": {},
-            "idempotency_key": key,
-            "status": "succeeded",
-        }
+    JsonCommandStore(root).save(
+        make_command(idempotency_key=key, status=CommandState.SUCCEEDED)
     )
-    JsonCommandStore(root).save(command)
     return sorted(root.glob("*.json"))
 
 

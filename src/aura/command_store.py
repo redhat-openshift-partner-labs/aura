@@ -70,22 +70,17 @@ class JsonCommandStore:
         )
 
     def load(self, idempotency_key: str) -> CommandEnvelope:
+        unreadable = f"idempotency key record is unreadable: {idempotency_key}"
         try:
             command = _read_command(self._path(idempotency_key))
-        except FileNotFoundError:
-            command = None
-        except (OSError, ValueError) as error:
-            raise CommandRecordUnreadable(
-                f"idempotency key record is unreadable: {idempotency_key}"
-            ) from error
-        if command is None:
+        except FileNotFoundError as error:
             raise CommandNotFound(
                 f"idempotency key not found: {idempotency_key}"
-            )
+            ) from error
+        except (OSError, ValueError) as error:
+            raise CommandRecordUnreadable(unreadable) from error
         if command.idempotency_key != idempotency_key:
-            raise CommandRecordUnreadable(
-                f"idempotency key record is unreadable: {idempotency_key}"
-            )
+            raise CommandRecordUnreadable(unreadable)
         return command
 
     def _path(self, idempotency_key: str) -> Path:
