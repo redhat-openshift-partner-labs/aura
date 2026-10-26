@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-1060 passed
+1065 passed
 ```
 
 Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `9c3fefc` at the end of closure Stage 2, passed with 1032 tests on Python 3.13.17 in `linux/arm64`.
@@ -223,7 +223,7 @@ The cluster results below are historical, recorded before the fixture cluster wa
 | A cluster with conflicting definitions | Exit code `2`; refused with `Conflicting Git cluster definitions` |
 | A stranded cluster with a retained deprovision run | Exit code `0`; stranded deprovision summary citing its retained deprovision PipelineRun, confidence `0.9` |
 | A stranded cluster with no retained run | Exit code `0`; stranded deprovision summary stating `no PipelineRun is retained for it`, confidence `0.6` |
-| A cluster with a leftover sentinel | Exit code `2`; leftover sentinel, refused with `Git cluster definition files` and `OpenShift actual state` |
+| A cluster with a leftover sentinel | Exit code `2`; leftover sentinel, refused with `OpenShift actual state`, and with `Git cluster definition files` when its definition is not complete |
 
 Historical validation observed:
 
@@ -258,7 +258,7 @@ Closure task 3.2, run on 2026-10-26 at Aura commit `ea7ec7b` with operator appro
 | Duplicate idempotency key | Exit `2`, `idempotency key already succeeded`, no standard output, record files unchanged |
 | Protected repositories | `fleet`, `fleet-cluster-scaffold`, `fleet-clusters`, and `portal`: same `HEAD`, refs, and clean status before and after |
 
-No checkout held a cluster with an incomplete definition, so that refusal was not re-run; it is covered by `test_cluster_state_diagnosis::test_cluster_state_diagnosis_model_refuses_incomplete_definition`.
+`fleet-clusters` at `4ead929` has no incomplete definition, so that refusal was not re-run; it is covered by `test_cluster_state_diagnosis::test_cluster_state_diagnosis_model_refuses_incomplete_definition`.
 
 ## Live Proposal Validation
 

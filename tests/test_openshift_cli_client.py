@@ -176,3 +176,31 @@ def test_openshift_cli_client_rejects_oc_output_that_is_not_utf8(
     assert str(error.value) == (
         "oc returned output that is not UTF-8 for clusterdeployments"
     )
+
+
+def test_openshift_cli_client_reports_only_the_last_error_line(
+    tmp_path: Path,
+) -> None:
+    def failing_runner(args: list[str]) -> str:
+        raise CalledProcessError(
+            returncode=1,
+            cmd=args,
+            stderr=(
+                "W1026 warning: deprecated flag\n"
+                '{"partial": "json"\n'
+                "Error from server (Forbidden): denied\n"
+            ),
+        )
+
+    client = OpenShiftCLIInventoryClient(
+        kubeconfig_path=tmp_path / "aura-readonly",
+        command_runner=failing_runner,
+    )
+
+    with pytest.raises(OpenShiftCLIError) as error:
+        client.list_cluster_deployments()
+
+    assert str(error.value) == (
+        "oc command failed for clusterdeployments "
+        "(exit 1): Error from server (Forbidden): denied"
+    )

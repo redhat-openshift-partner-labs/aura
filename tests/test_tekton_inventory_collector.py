@@ -424,3 +424,38 @@ def test_tekton_collector_names_non_zero_unsupported_values() -> None:
     assert data["run_template"]["unsupported_fields"] == [
         "spec.taskRunTemplate.podTemplate.hostNetwork"
     ]
+
+
+@pytest.mark.parametrize(
+    "conditions",
+    [
+        [],
+        [{"type": "Succeeded", "status": "Unknown", "reason": "Running"}],
+        [{"type": "Ready", "status": "True"}],
+    ],
+    ids=["no-condition", "running", "other-condition"],
+)
+def test_tekton_collector_never_reports_an_incomplete_run_as_succeeded(
+    conditions: list[dict[str, str]],
+) -> None:
+    class IncompleteRunClient:
+        def list_pipeline_runs(self) -> list[dict[str, Any]]:
+            [run] = FakeTektonClient().list_pipeline_runs()
+            run["status"] = {
+                "startTime": "2026-01-01T00:00:00Z",
+                "conditions": conditions,
+            }
+            return [run]
+
+        def list_task_runs(self) -> list[dict[str, Any]]:
+            return []
+
+        def resource_version(self) -> str:
+            return "test"
+
+    snapshot = TektonInventoryCollector(client=IncompleteRunClient()).collect(
+        command_id=UUID(int=1)
+    )
+
+    [item] = snapshot.items
+    assert item.data["status"] == "Unknown"

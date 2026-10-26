@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -510,3 +511,19 @@ def test_git_inventory_collector_leaves_the_checkout_unchanged(
     collect_snapshot(tmp_path)
 
     assert checkout_state() == before
+
+
+def test_git_inventory_collector_leaves_a_stat_dirty_index_unchanged(
+    tmp_path: Path,
+) -> None:
+    write_cluster(tmp_path)
+    commit_repository(tmp_path)
+    index = tmp_path / ".git" / "index"
+    tracked = tmp_path / "provision" / "example" / "metadata.yaml"
+    later = index.stat().st_mtime_ns + 10_000_000_000
+    os.utime(tracked, ns=(later, later))
+    before = (index.read_bytes(), index.stat().st_mtime_ns)
+
+    collect_snapshot(tmp_path)
+
+    assert (index.read_bytes(), index.stat().st_mtime_ns) == before
