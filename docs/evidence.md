@@ -323,7 +323,7 @@ Refusal reasons, reported together with the shared live-cluster reasons (no defi
 
 Scoped credentials are recognized only by the `crossplane-scoped` Crossplane template, which the scaffold writes for every scoped AWS cluster; the scaffold's other scoped markers are not checked.
 
-`metadata_text` is evidence, and redaction works on field names, so a secret value typed into `metadata.yaml` would not be redacted. The file holds only the four non-secret keys today. Because a modify patch carries the whole file as context, the `Proposal` contract rejects a cluster-edit whose resulting `metadata.yaml`, existing lines included, has any key the redaction policy removes, with `metadata.yaml must not contain secret-named keys`; the command then fails with `generated proposal is invalid:`. `htpasswd-provider-name` is not a secret name.
+`metadata_text` is evidence. The Git collector fails closed on a `metadata.yaml` with any key the redaction policy removes, at any depth: it reports the definition as `cluster_definition_invalid` with `metadata.yaml contains secret-named keys: [<keys>]`, naming the key paths and storing none of the file's text, so no snapshot, CWA record, or trace holds its value; diagnosis and cluster-edit refuse it. Redaction works on field names, so a secret value under a non-secret name is still stored. The file holds only the four non-secret keys today, and `htpasswd-provider-name` is not a secret name. The `Proposal` contract also rejects a cluster-edit whose resulting `metadata.yaml`, existing lines included, has a secret-named key: `metadata.yaml must not contain secret-named keys`.
 
 ### Post-Provision Rerun Proposal
 

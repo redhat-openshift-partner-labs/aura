@@ -43,7 +43,7 @@ Required files for a complete definition:
 - `hive/patches/managedcluster.yaml`
 - `crossplane/kustomization.yaml`
 
-Git output is decoded from bytes, so file text keeps its line endings. A definition missing a required file is emitted as `cluster_definition_incomplete`; when only `metadata.yaml` is missing, its other files are still validated. A definition whose YAML is malformed, has the wrong document shape, or lacks a required patch path is emitted as `cluster_definition_invalid`; other definitions are still collected. Both kinds use the directory name as `cluster_name`. Invalid-YAML errors report only the file and line, never file content.
+Git output is decoded from bytes, so file text keeps its line endings. A definition missing a required file is emitted as `cluster_definition_incomplete`; when only `metadata.yaml` is missing, its other files are still validated. A definition whose YAML is malformed, has the wrong document shape, lacks a required patch path, or has a secret-named `metadata.yaml` key is emitted as `cluster_definition_invalid`; other definitions are still collected. Both kinds use the directory name as `cluster_name`. Invalid-YAML errors report only the file and line, never file content.
 
 Top-level files under `deprovision/`, other than `README.md`, are emitted as `deprovision_sentinel` items. The sentinel `deprovision/<id>-archive` names cluster `<id>` with `archive_suffix: true`; a bare `deprovision/<id>` has `archive_suffix: false`.
 

@@ -16,6 +16,7 @@ from aura.git_isolation import (
 )
 from aura.process import CalledProcessError, ProcessError, run_process
 from aura.contracts import ARCHIVE_SUFFIX, EvidenceItem, EvidenceSnapshot
+from aura.redaction import redact
 
 
 class GitInventoryError(RuntimeError):
@@ -206,6 +207,12 @@ def _definition_data(
         if has_metadata
         else {}
     )
+    secret_keys = redact(metadata).redacted_fields
+    if secret_keys:
+        raise _InvalidDefinition(
+            "metadata.yaml contains secret-named keys: "
+            f"[{', '.join(secret_keys)}]"
+        )
     cluster_file = "hive/patches/clusterdeployment.yaml"
     managed_file = "hive/patches/managedcluster.yaml"
     cluster_patches = _load_patches(tree, cluster_path, cluster_file)
