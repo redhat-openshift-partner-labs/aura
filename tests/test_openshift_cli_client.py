@@ -204,3 +204,24 @@ def test_openshift_cli_client_reports_only_the_last_error_line(
         "oc command failed for clusterdeployments "
         "(exit 1): Error from server (Forbidden): denied"
     )
+
+
+@pytest.mark.parametrize(
+    "body",
+    ['{}', '[]', '{"kind": "Status"}', '{"items": null}', '{"items": {}}'],
+)
+def test_openshift_cli_client_rejects_a_response_without_an_item_list(
+    tmp_path: Path,
+    body: str,
+) -> None:
+    client = OpenShiftCLIInventoryClient(
+        kubeconfig_path=tmp_path / "aura-readonly",
+        command_runner=lambda args: body,
+    )
+
+    with pytest.raises(OpenShiftCLIError) as error:
+        client.list_cluster_deployments()
+
+    assert str(error.value) == (
+        "oc returned a response without an item list for clusterdeployments"
+    )

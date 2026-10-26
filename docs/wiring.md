@@ -120,6 +120,7 @@ Process error contracts:
 | Git | Invalid definition | Collection continues with a `cluster_definition_invalid` item; `diagnose state` for that cluster is refused with `Valid Git cluster definition` |
 | `oc` | Missing executable or permission failure | Exit `2`; concise resource-specific error |
 | `oc` | Invalid JSON | Exit `2`; no partial JSON emitted |
+| `oc` | JSON that is not an object with an `items` list | Exit `2`; `oc returned a response without an item list` for the resource |
 | `oc` | Timeout after 30 seconds | Exit `2`; resource-specific timeout reported |
 | `oc` | Output that is not UTF-8 | Exit `2`; `oc returned output that is not UTF-8` for the resource |
 | `oc` | More than 10 calls in one command | Exit `2`; `oc call budget of 10 exceeded` |

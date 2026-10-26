@@ -206,5 +206,6 @@ Not blocking Phases 0–2 (R2).
 | A non-`OSError` raised by the terminal command record write itself can still leave a stored proposal next to a failed command (review F2, option A) | Phase 3 guard: require a `succeeded` command record before acting on a proposal |
 | The Phase 1 live RBAC check covered ClusterDeployments, ManagedClusters, PipelineRuns, and Pipelines; the TaskRuns grant's write verbs were not checked live (the manifest test covers them) | Next live validation |
 | The C1.1 checkout tests compare files only, not directory modification times or new empty directories | Next Git collector change |
+| `OpenShiftResource.resource_version()` reports `unknown` when an `oc` list lacks `metadata.resourceVersion`; real lists always carry it, and test runners omit it | Phase 3 hardening |
 | `tests/test_contract_schemas.py` compares only property names: a changed field type, `extra="allow"`, or a nested model passes it, and the adapter contracts are not exported | Next schema change |
 | Phase 0 deliverable 8 has one fixture, from `fleet-clusters`; none from the other protected repositories | Operator |

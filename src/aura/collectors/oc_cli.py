@@ -102,11 +102,18 @@ def _read_oc(
             f"oc returned output that is not UTF-8 for {resource}"
         ) from error
     try:
-        return json.loads(output)
+        response = json.loads(output)
     except json.JSONDecodeError as error:
         raise OpenShiftCLIError(
             f"oc returned invalid JSON for {resource}"
         ) from error
+    if not isinstance(response, dict) or not isinstance(
+        response.get("items"), list
+    ):
+        raise OpenShiftCLIError(
+            f"oc returned a response without an item list for {resource}"
+        )
+    return response
 
 
 @final
