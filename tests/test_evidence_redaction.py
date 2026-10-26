@@ -23,8 +23,18 @@ from aura.services.proposal import (
     ProposalStatusService,
 )
 from aura.services.workflow import WorkflowService
+from test_inventory_service import FakeCollector
 
 
+SECRET_ITEM = EvidenceItem(
+    item_id=UUID(int=51),
+    kind="inventory",
+    data={
+        "password": "collector-secret",
+        "credentials": {"token": "collector-token"},
+        "name": "visible",
+    },
+)
 SERVICES = (
     InventoryService,
     WorkflowService,
@@ -37,26 +47,8 @@ SERVICES = (
 
 class SecretCollector:
     def collect(self, *, command_id: UUID, **_: object) -> EvidenceSnapshot:
-        return EvidenceSnapshot(
-            snapshot_id=UUID(int=50),
-            command_id=command_id,
-            collector="test",
-            collector_version="test",
-            collected_at=datetime(2026, 1, 1, tzinfo=UTC),
-            source="test",
-            source_version="test",
-            items=[
-                EvidenceItem(
-                    item_id=UUID(int=51),
-                    kind="inventory",
-                    data={
-                        "password": "collector-secret",
-                        "credentials": {"token": "collector-token"},
-                        "name": "visible",
-                    },
-                )
-            ],
-            redactions=[],
+        return FakeCollector().collect(command_id=command_id).model_copy(
+            update={"items": [SECRET_ITEM]}
         )
 
 
