@@ -148,7 +148,7 @@ All current stores use exclusive, atomic publication:
 - Existing diagnoses are not overwritten.
 - Existing proposals are not overwritten. A stored proposal fails to load when its content no longer matches its digest or when its `proposal_digest` is missing or blank, because validation would otherwise recompute it.
 
-Every store also fails to load a record whose own ID differs from its file name, so a record copied or renamed under another valid ID is rejected rather than reported under the wrong ID.
+The evidence, CWA, audit, diagnosis, and proposal stores also fail to load a record whose own ID differs from its file name, so a record copied or renamed under another valid ID is rejected rather than reported under the wrong ID. The command store is separate: it treats a record whose idempotency key differs from its file name as not found.
 
 Snapshots and responses include SHA-256 digests over canonical JSON.
 Records are serialized to a private temporary file, flushed with `fsync`, and linked into their final name only after the complete write. A failed write leaves no partial final record. When a record write fails with an operating-system error, the command is stored as `failed` if the command store is writable, and the CLI exits `2`.

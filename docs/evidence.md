@@ -419,9 +419,9 @@ The render rules mirror `fleet-clusters` `scripts/check_new_overlays.py`; Aura r
 | Field | Meaning |
 | --- | --- |
 | `proposal_id`, `proposal_type`, `cluster_name`, `proposal_digest` | Copied from the verified stored proposal |
-| `base_commit` | Proposal base commit; `null` for post-provision reruns |
+| `base_commit` | Proposal base commit; for a rerun, the revision its evidence read |
 | `head` | Pinned `fleet-clusters` `HEAD`, also the snapshot `source_version` |
-| `git_checked` | `true` for every proposal with a base commit, which the contract requires of every type |
+| `git_checked` | Always `true` for a record that loads, because the contract requires a base commit of every type; kept so the item shape does not change |
 | `stale` | Whether `HEAD` moved past `base_commit` and touched the cluster, or `base_commit` is not an ancestor of `HEAD` |
 | `reasons` | Changed cluster paths or the history problem |
 

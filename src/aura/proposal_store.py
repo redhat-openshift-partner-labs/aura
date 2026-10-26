@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import json
 from typing import final
+
+from pydantic_core import from_json
 
 from aura.json_store import JsonRecordStore
 from aura.proposals import Proposal
@@ -28,7 +29,7 @@ class JsonProposalStore(JsonRecordStore[Proposal]):
     def _parse(self, value: str) -> Proposal:
         """Require the stored digest, which validation would recompute."""
 
-        document = json.loads(value)
+        document = from_json(value)
         digest = (
             document.get("proposal_digest")
             if isinstance(document, dict)

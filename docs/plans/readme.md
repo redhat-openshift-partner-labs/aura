@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 1 is implemented, validated, and published. The [Phase 2](05-phase-2-proposals.md) plan is approved; all four proposal types are implemented and validated against the live hub, and [Phase 2 Acceptance](09-phase-2-acceptance.md) records four criteria not yet met. [Phase 3](06-phase-3-approved-execution.md) is a draft aligned with Phase 2 and awaits approval.
+Phase 1 is implemented, validated, and published. The [Phase 2](05-phase-2-proposals.md) plan is approved; all four proposal types are implemented and validated against the live hub, and [Phase 2 Acceptance](09-phase-2-acceptance.md) grades every criterion met or met with caveat, pending operator sign-off. [Phase 3](06-phase-3-approved-execution.md) is a draft aligned with Phase 2 and awaits approval.
 
 ## Objective
 

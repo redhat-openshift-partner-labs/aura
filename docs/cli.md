@@ -314,7 +314,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura proposal status \
 
 The command prints an evidence snapshot with one `proposal_staleness` item per proposal, ordered by proposal ID, all checked against one pinned `fleet-clusters` `HEAD`. A stale proposal is a successful result, not an error; the command exits `0`. A missing or unreadable `--proposal-dir`, a missing requested proposal, a `.json` file whose name is not a proposal ID, a record that cannot be read, a record whose digest no longer matches or is blank, and a record whose ID differs from its file name each exit `2` and store a `failed` command record. Repeated `--proposal-id` values are checked once.
 
-The check is Git-only and covers every proposal type, reruns included: it does not detect live OpenShift or Tekton state that has changed since the proposal's evidence was collected. The Phase 3 execution guard re-collects that state before executing. Rerun proposals stored before `base_commit` became required for reruns no longer load; generate them again.
+The check is Git-only and covers every proposal type, reruns included: it does not detect live OpenShift or Tekton state that has changed since the proposal's evidence was collected. The Phase 3 execution guard re-collects that state before executing. Rerun proposals stored before `base_commit` became required for reruns no longer load, and one such record fails every `proposal status` run that does not name its proposals with `--proposal-id`. Aura never deletes or overwrites a record, so move the old record out of `--proposal-dir` and generate the proposal again.
 
 ## Output and Exit Codes
 

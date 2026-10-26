@@ -344,6 +344,11 @@ def _blank_digest(path: Path, _) -> None:
     path.write_text(json.dumps(record), encoding="utf-8")
 
 
+def _deeply_nested(path: Path, _) -> None:
+    path.chmod(0o600)
+    path.write_text("[" * 200_000, encoding="utf-8")
+
+
 def _rename(path: Path, _) -> None:
     path.rename(path.with_name(f"{UUID(int=501)}.json"))
 
@@ -366,6 +371,10 @@ def _replace_with_directory(path: Path, monkeypatch) -> None:
             f"proposal record is unreadable: {UUID(int=500)}.json",
         ),
         (_rename, f"proposal record is unreadable: {UUID(int=501)}.json"),
+        (
+            _deeply_nested,
+            f"proposal record is unreadable: {UUID(int=500)}.json",
+        ),
         (
             _deny_read,
             f"proposal record is unreadable: {UUID(int=500)}.json",
