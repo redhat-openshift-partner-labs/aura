@@ -260,6 +260,21 @@ Closure task 3.2, run on 2026-10-26 at Aura commit `ea7ec7b` with operator appro
 
 `fleet-clusters` at `4ead929` has no incomplete definition, so that refusal was not re-run; it is covered by `test_cluster_state_diagnosis::test_cluster_state_diagnosis_model_refuses_incomplete_definition`.
 
+## Phase 2 Closure Re-run
+
+Closure task 4.5, run on 2026-10-26 at Aura commit `1d1bc1c` with operator approval, against the local `fleet-clusters` `main` at `4ead929` and `fleet-cluster-scaffold` at `2f6c7b4`, using `~/.kube/aura-readonly`, with `kustomize` on `PATH`. The same identity and write-denial checks as the [Phase 1 Closure Re-run](#phase-1-closure-re-run) passed first, now including TaskRuns. Before and after each command, the PipelineRun names on the hub and the `HEAD`, refs, and `git status --porcelain --ignored` of `fleet`, `fleet-cluster-scaffold`, `fleet-clusters`, and `portal` were compared. Proposals were stored in a scratch directory only and never applied, committed, or pushed.
+
+| Command | Result |
+| --- | --- |
+| `propose deprovision`, `<cluster-name>` | Exit `0`; patch adds only `deprovision/<cluster-name>-archive` and passes `git apply --check`; trigger effects `deprovision`, `archive-cluster`; standalone commit message ending with `Aura-Proposal: <id>` |
+| `propose cluster-edit`, same cluster | Exit `2`; refused with `already declares every key tier virt needs`, the first live run of this refusal |
+| `propose post-provision-rerun`, same cluster | Exit `0`; `generateName` manifest in `openshift-pipelines` with both Aura annotations and the parameters `cluster-name`, `tier`, `dns-zones`, `htpasswd-provider-name`, and `openshift-ai-version`; trigger effect `post-provision` |
+| `propose scaffold`, an unused name, tier `base` | Exit `0` in 12.6 seconds; 41 added files, all under `provision/<id>/`; passes `git apply --check`; `platform: aws` and `aws-credentials-mode: scoped`; `scaffold_commit` `2f6c7b4`; `scaffold_run.exit_code` `0`; `scaffold_run.files` equals the added files |
+| Every proposal | `base_commit` `4ead929`; contract and digest valid on load; not stale; CWA trace provider `aura` with the generator's name and the proposal digest; audit chain `command_received`, `evidence_collected`, `context_assembled`, `proposal_created` |
+| Records | 4 commands: 3 `succeeded`, 1 `refused`; no `.tmp` files |
+| No new PipelineRun | 45 PipelineRuns, the same names, before and after every command |
+| Protected repositories | `HEAD`, refs, and status unchanged before and after every command |
+
 ## Live Proposal Validation
 
 Choose a cluster that has OpenShift resources and no `deprovision/` sentinel. Generating a proposal reads only; it writes nothing to `fleet-clusters` or the hub.
