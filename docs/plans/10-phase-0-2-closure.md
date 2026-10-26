@@ -2,39 +2,154 @@
 
 ## Status
 
-Approved 2026-10-25 at Aura commit `3b73a3f`; the operator accepted D1–D6 as recommended. Stage 0 is complete: the decisions are applied to the governing plans, deferred items live only in the [Backlog](#backlog), and current verification results live only in [Validation](../validation.md). Stage 1 is next.
+Approved 2026-10-25 at Aura commit `3b73a3f`; the operator accepted D1–D6 as recommended. Stage 0 is complete: the decisions are applied to the governing plans, deferred items live only in the [Backlog](#backlog), and current verification results live only in [Validation](../validation.md). **Next: Stage 1, task 1.1.** Mark each task done in [Progress](#progress) in the same commit series that completes it.
 
-## Diagnosis
+## Why This Plan Exists
 
-Every fix round since the scaffold work found new issues. They were of three kinds:
+Every fix round from the scaffold work onward found new issues. Most were latent defects a wider review newly looked at, several were introduced by fixes, and every round left docs stale. The causes:
 
-| Kind | Examples | Share |
-| --- | --- | --- |
-| Latent defects a wider review newly looked at | Inherited `GIT_DIR` read another repository; ManagedCluster-only names; `fleet` strips every `-archive` substring | Most |
-| Defects a fix introduced | `json.loads` let `RecursionError` escape; a test inserted under another test's decorator; a false "zero gating findings" record | Several |
-| Docs left stale by a change | Rerun `base_commit` "absent"; "not yet implemented"; test counts and `act` commits | Every round |
+1. No frozen definition of done, and open-ended reviews, so scope grew each round.
+2. Defect classes fixed one instance at a time. The CLI has no exception boundary after the idempotency check, so any exception a route does not list prints a traceback and stores no `failed` record. Seven `subprocess.run` sites use three isolation styles.
+3. No structural test enforcing cross-cutting rules.
+4. Volatile facts restated across many documents.
+5. The quality gate run before committing, which analyzes the previous commit.
 
-Root causes, by asking why each kind kept recurring:
-
-1. **No frozen definition of done.** Phases 0 and 1 have no current closure record, Phase 2's was built after the code, and every review was open-ended ("find problems"). Each review therefore widened the scope, and every finding was treated as blocking.
-2. **Classes fixed one instance at a time.** Escaping exceptions (`RecursionError`, `UnicodeDecodeError`, `TarError`), subprocess isolation, and record integrity were each fixed where they were found. The CLI has no exception boundary after the idempotency check: errors are caught by ten enumerated tuples per route, so any unlisted exception prints a traceback and stores no `failed` record (I1, I7). Seven `subprocess.run` sites use three different isolation styles; the `oc` client still inherits standard input and decodes text, so it can raise the same `UnicodeDecodeError` fixed in the scaffold runner.
-3. **No structural enforcement of cross-cutting invariants.** Nothing fails the build when a new code path calls `subprocess` directly, raises an unlisted exception, or restates a doc fact. Correctness depends on each change remembering every rule.
-4. **Volatile facts duplicated across documents.** Test counts, the latest `act` commit, and contract facts are restated in up to seven documents, so every change leaves some stale.
-5. **Verification run against the wrong tree.** The quality gate analyzes committed `HEAD`; runs before committing checked the previous commit.
-
-## Closure Rules
-
-These rules bound the remaining work so it ends:
+## Rules
 
 | Rule | Statement |
 | --- | --- |
-| R1 Frozen scope | Closure means the criteria in [Closure Criteria](#closure-criteria) and nothing else. The list changes only by an operator decision recorded here. |
-| R2 Triage | A new finding blocks closure only if it violates a closure criterion or a project invariant (I1–I9). Anything else goes to [Backlog](#backlog) with a target phase, and is not fixed during closure. |
-| R3 Classes, not instances | A defect that belongs to a class is fixed at a single chokepoint, with a structural test that fails when any code path bypasses it. |
-| R4 Verification order | Tests, `git diff --check`, commit, then the quality gate with `target_ref` equal to the new commit, then `act`. Volatile results are recorded only in the [Latest Verification](../validation.md) record. |
-| R5 One source per fact | Each fact lives in one document; others link to it. |
-| R6 Bounded reviews | Reviewers get the frozen criteria and the diff, and report only criterion or invariant violations; everything else is a backlog note. |
-| R7 Stop rule | A phase is closed when every criterion is met or met with an operator-accepted caveat, and one bounded review reports no violation. |
+| R1 Frozen scope | Closure means the [Closure Criteria](#closure-criteria) and nothing else. Only an operator decision recorded here changes them. |
+| R2 Triage | A finding blocks closure only if it violates a closure criterion or a project invariant (I1–I9 in [Development](../development.md#project-invariants)). Anything else is added to the [Backlog](#backlog) with a target, and is not fixed now. |
+| R3 Classes at chokepoints | A defect of a class is fixed at one chokepoint, with a structural test that fails when any code path bypasses it. |
+| R4 No regression by editing tests | An existing test may change only when the task says so. Any other edit to an existing test is a regression signal: stop, explain it in the commit message, and ask if unsure. |
+| R5 Verification order | Focused tests, full suite, `git diff --check`, commit, then `ripwire . --quality-delta=adb2c2b..HEAD` with `target_ref` equal to the new commit. Fix gate findings in a follow-up commit before the next task. Run `act` at the end of each stage. |
+| R6 One source per fact | Current test counts and `act` results live only in [Validation](../validation.md); other documents link to it. |
+| R7 Bounded review | One independent review per stage, using the [review brief](#review-brief). It reports only criterion or invariant violations and regressions. |
+| R8 Stop rule | A phase is closed when every criterion is met or met with an operator-accepted caveat, and the Stage 5 review reports no violation. |
+
+## Session Guardrails
+
+Before any task:
+
+1. Read [AGENTS.md](../../AGENTS.md), [Development](../development.md), and this plan.
+2. `git status` is clean, the full suite passes at `HEAD`, and the gate at `HEAD` reports zero gating findings. If not, stop and report; do not fix unrelated failures.
+
+Always:
+
+- Never modify `fleet`, `fleet-cluster-scaffold`, `fleet-clusters`, or `portal`. Read sibling checkouts only through Aura's code or read-only Git commands.
+- Never push. Commit with `git commit -s` and no AI attribution trailer; the global hooks reject both a missing sign-off and such a trailer.
+- Never write real cluster names in docs or commit messages; use `<cluster-name>`.
+- Live hub or local-scaffold runs need the operator's approval each time, use `~/.kube/aura-readonly`, and first confirm `oc whoami` is `system:serviceaccount:aura:aura-readonly` and writes are denied.
+
+Stop and ask the operator when the spec is silent or contradictory, when a fix needs a contract or schema change this plan does not list, or when a new test cannot be made to fail before its fix.
+
+## Closure Criteria
+
+| ID | Criterion | Source |
+| --- | --- | --- |
+| C0.1–C0.6 | Phase 0 acceptance criteria | [Phase 0](03-phase-0-baseline.md#acceptance-criteria) |
+| C0.7 | Phase 0 deliverables exist or are superseded (D4) | [Phase 0](03-phase-0-baseline.md#deliverables) |
+| C1.1–C1.16 | Phase 1 acceptance criteria, proved at the closure commit | [Phase 1](04-phase-1-read-only-assistant.md#acceptance-criteria) |
+| C1.17 | Phase 1 live validation re-run at the closure commit | [Validation](../validation.md) |
+| C2.1–C2.18 | A1–A13 and F1–F5, each met or with an operator-accepted caveat | [Phase 2 Acceptance](09-phase-2-acceptance.md) |
+| C2.19 | Generator test table, including one trigger-effect test per lifecycle fact | [Testing plan](07-testing-security-rollout.md#proposal-generator-tests) |
+| C2.20 | Live validation of all four proposal types at the closure commit | [Validation](../validation.md) |
+| CX.1 | I1–I9 hold for every command, proved by the shared failure harness | [Development](../development.md#project-invariants) |
+| CX.2 | Security requirements 1–10 as amended by D3 | [Testing plan](07-testing-security-rollout.md#security-requirements) |
+| CX.3 | No protected repository modified | [AGENTS.md](../../AGENTS.md) |
+
+## Stage 1: Fix Classes at Chokepoints
+
+Order: 1.1, 1.2, 1.3, 1.4. Existing tests must pass unchanged (R4) unless a task says otherwise.
+
+### 1.1 CLI exception boundary
+
+- **Where:** `src/aura/cli.py`, `_execute_command`, around `return action()` inside `store.lock()`. Catch `Exception` only; `KeyboardInterrupt` and `SystemExit` pass through.
+- **Behavior:** call a new `_fail_unexpected(args, command, error, clock)` that:
+  - prints `aura: internal error: <ExceptionType>: <message>` with no traceback and returns `2`;
+  - does nothing more if a terminal record for the idempotency key is already stored;
+  - otherwise reuses `_fail_command` with that message, so the `failed` record and `command_failed` event follow the existing path. `RECEIVED` may transition to `FAILED`.
+  - passes as `previous_event_id` the last stored audit event of this command: load `--audit-dir` with `JsonAuditEventStore`, keep events with this `command_id`, and take the one no other event names as `previous_event_id`; `None` when there is no audit directory or no event.
+- **Tests first:**
+  - In `tests/test_failure_matrix.py`, for every scenario, inject `RuntimeError`, `RecursionError`, and `UnicodeDecodeError` from the collector (extend `FailingReadCollector`). Expect exit `2`, standard error `aura: internal error: <type>: injected read failure`, no traceback, a `failed` record, the chain `command_received` then `command_failed` when audited, and `assert_command_invariants` passing.
+  - For each proposal scenario and `diagnose`, monkeypatch the generator or diagnosis model to raise `RuntimeError`. Expect the chain to end `evidence_collected` then `command_failed`.
+- **Done when:** the new rows pass, every existing test passes unchanged, and the gate is clean.
+
+### 1.2 Process chokepoint
+
+- **New module** `src/aura/process.py`:
+  - `run_process(argv, *, env, timeout, cwd=None, input=None) -> ProcessResult`, where `ProcessResult` holds `returncode`, `stdout: bytes`, and `stderr: bytes`, with `stdout_text()` and `stderr_text()` that decode UTF-8 with replacement.
+  - Behavior: never `check=True`; `stdin` is `DEVNULL` unless `input` is given; `env` is required (pass `None` explicitly to inherit); raises `ProcessError` when the program cannot start or times out.
+- **Migrate the seven call sites.** Each caller keeps raising its own error type by mapping `ProcessError` and non-zero exits:
+
+  | Site | Environment | Error type |
+  | --- | --- | --- |
+  | `collectors/oc_cli.py` `_run_command` | inherited | `OpenShiftCLIError`; non-UTF-8 output is an error, not replaced |
+  | `collectors/git_inventory.py` `_run_git` | `isolated_git_environment()` | `GitInventoryError` |
+  | `collectors/git_staleness.py` `_history_error` | `isolated_git_environment()` | `GitInventoryError` |
+  | `collectors/scaffold_evidence.py` `_git` | `isolated_git_environment()` | `ScaffoldCheckoutError` |
+  | `scaffold_runner.py` (three sites: scaffold, `kustomize version`, Git) | minimal for the scaffold; inherited for `kustomize`; isolated for Git | `ScaffoldRunError` |
+
+- **Structural test:** `tests/test_architecture.py` parses every module under `src/aura` with `ast` and fails if any module other than `aura/process.py` imports `subprocess`.
+- **Tests first:** unit tests for `run_process` covering no stdin, timeout, missing program, bytes, and replacement decoding, plus an `oc` client test that non-UTF-8 output raises `OpenShiftCLIError`.
+- **Done when:** the structural test passes, all existing tests pass unchanged, and the gate is clean.
+
+### 1.3 Call budget for the hub (D3)
+
+- **What counts:** `oc` invocations only, since they are the hub calls. Local Git, `kustomize`, and scaffold runs are bounded by their timeouts.
+- **Where:** `collectors/oc_cli.py` `_read_oc`, so it counts calls through injected fake runners too. The budget is a `contextvars.ContextVar` that `cli._execute_command` sets per command, at 10 calls; the most any command makes today is 5.
+- **Behavior:** the eleventh call raises `OpenShiftCLIError("oc call budget of 10 exceeded")`, which fails the command through the existing route errors.
+- **Tests first:** a fake runner that counts calls. Ten calls succeed, the eleventh fails with a `failed` record, and the budget resets between commands.
+
+### 1.4 Cluster name rule (D6)
+
+- **Contract:** in `src/aura/proposals.py`, `Proposal` rejects a `cluster_name` containing `-archive`: `cluster_name must not contain -archive`.
+- **CLI:** `_propose_argument_error` rejects `--cluster` values containing `-archive` for every `propose` subcommand, before collection.
+- **Scaffold:** `_request_reasons` in `services/scaffold.py` refuses them too, as defense in depth.
+- **Not in scope:** inventory and diagnosis are unchanged, and no existing `fleet-clusters` name contains `-archive` before its end.
+- **Docs:** remove "not yet enforced" from the `cluster_name` row in the [Phase 2 contract](05-phase-2-proposals.md#proposal-contract).
+- **Tests first:** a contract negative, a CLI argument test for each `propose` subcommand, and a scaffold refusal.
+
+## Stage 2: Phase 0 Closure
+
+| Task | Work | Done when |
+| --- | --- | --- |
+| 2.1 | Add `tests/test_contract_schemas.py`: every contract model (`CommandEnvelope`, `EvidenceSnapshot`, `EvidenceItem`, `AuditEvent`, `CWASnapshot`, `CWATrace`, `DiagnosisResponse`, `DiagnosisRecord`, `Proposal`, `ScaffoldRun`, `ScaffoldRequest`) exports a JSON Schema whose `properties` match the model's fields (D4) | Test passes |
+| 2.2 | Write `docs/plans/11-phase-0-1-acceptance.md`, Phase 0 part: C0.1–C0.7, each with cited tests, in the format of [Phase 2 Acceptance](09-phase-2-acceptance.md) | Every row graded with evidence |
+| 2.3 | Add Status and Validation Record sections to [Phase 0](03-phase-0-baseline.md) linking to the matrix | Phase 0 has a closure record |
+
+## Stage 3: Phase 1 Re-proof
+
+| Task | Work | Done when |
+| --- | --- | --- |
+| 3.1 | Phase 1 part of `11-phase-0-1-acceptance.md`: C1.1–C1.16 with cited tests at the current commit. Where a criterion was proved only by the 2026-10-20 live run, add a test | Every row graded with test evidence |
+| 3.2 | With operator approval, re-run the Phase 1 live checks in [Validation](../validation.md): Git, OpenShift, and combined inventory; workflow inspect; diagnosis success and each refusal; idempotency; RBAC `can-i` | Results recorded in Validation |
+| 3.3 | Update the [Phase 1](04-phase-1-read-only-assistant.md) Status to point at the new record | Done |
+
+## Stage 4: Phase 2 Caveats
+
+| Task | Work | Done when |
+| --- | --- | --- |
+| 4.1 | `tests/test_lifecycle_facts.py`: one test per lifecycle fact in the [Phase 2 plan](05-phase-2-proposals.md#lifecycle-facts), named for the row, asserting the trigger effect and commit-message rule the generator reports. Add a column to that table naming each test, or "no Aura behavior" with the reason for the pull request, other-branch, and merge-method rows | Every row has a test or a stated reason |
+| 4.2 | `trigger_effect must be` contract negatives for scaffold, cluster-edit, and rerun | Tests pass |
+| 4.3 | Generalize `GitDefinitionCheck` in `src/aura/scaffold_runner.py` into `GitPatchCheck.check(*, base_commit, patch, cluster_name, require_definition)`. Pass it to the deprovision (`require_definition=False`), cluster-edit, and scaffold generators through their constructors, and wire it in `cli._proposal_generator`. Existing generator tests may change only to pass a stub check that returns no reasons | Each Git generator refuses a patch that does not apply; cluster-edit and scaffold also refuse an incomplete definition |
+| 4.4 | In `_validate_metadata_edit` in `src/aura/proposals.py`, reject a cluster-edit whose resulting `metadata.yaml`, existing lines included, has a key the redaction policy removes: `metadata.yaml must not contain secret-named keys` | Contract negative passes; `htpasswd-provider-name` is not affected |
+| 4.5 | With operator approval, re-run live validation for all four proposal types at the closure commit, recording "no new PipelineRun" and protected-repository checks for each | Results recorded in Validation; A1, A12, and A13 caveats closed |
+| 4.6 | Update [Phase 2 Acceptance](09-phase-2-acceptance.md) for every closed caveat | Matrix current |
+
+## Stage 5: Closure Gate
+
+| Task | Work |
+| --- | --- |
+| 5.1 | Give an independent reviewer ungraded copies of the Phase 0, 1, and 2 matrices and the [review brief](#review-brief); grade blind |
+| 5.2 | Fix only criterion or invariant violations, under R3–R5; everything else goes to the backlog |
+| 5.3 | Operator sign-off for Phases 0, 1, and 2; update the [plans index](readme.md) and [Status](../status.md); the operator publishes |
+
+## Review Brief
+
+Use for every review in this plan:
+
+> Review commits `<range>` in the Aura repository. Report only (a) violations of the closure criteria in `docs/plans/10-phase-0-2-closure.md`, (b) violations of invariants I1–I9 in `docs/development.md`, and (c) regressions: an existing behavior that changed without the plan saying so. For each, give file:line evidence and a reproduction. List anything else under "Backlog notes" in one line each, without severity. Read-only: do not edit tracked files, and work only in the scratchpad.
 
 ## Operator Decisions
 
@@ -42,109 +157,39 @@ Accepted 2026-10-25 as recommended.
 
 | ID | Question | Decision |
 | --- | --- | --- |
-| D1 | [Testing plan](07-testing-security-rollout.md#proposal-generator-tests) says an edit value without evidence is refused; the 2026-10-23 cluster-edit decision uses `fleet` defaults. Which governs? | The cluster-edit decision; amend the testing plan |
-| D2 | Rollout Gate 2 requires staging, but no staging hub exists. | Accept the production hub with the read-only service account for read-only phases; require staging before any Phase 3 execution |
-| D3 | Security requirement 8, "all external calls are rate limited", is not implemented. | Implement a per-command call budget and timeout at the process chokepoint (Stage 1); full rate limiting is a Phase 3 concern |
-| D4 | Phase 0 lists "Command JSON Schemas". Aura's schemas are Pydantic models. | Pydantic models are the schemas; add a test that every contract model exports a JSON Schema |
-| D5 | Phase 2 open questions 1–4 (stranded remediation, `fleet-clusters` README sentinel form, unauthenticated post-provision trigger, further edit kinds) | Defer all four to the backlog with owners; none blocks Phases 0–2 |
-| D6 | `fleet` removes every `-archive` substring from deprovision sentinel names. | Refuse `-archive` anywhere in a proposal cluster name; it is a correctness hazard for A3 and A7 |
+| D1 | The testing plan said an edit value without evidence is refused; the cluster-edit decision uses `fleet` defaults | The cluster-edit decision; testing plan amended |
+| D2 | Rollout Gate 2 required staging; no staging hub exists | The read-only production hub qualifies for read-only phases; staging is required before Phase 3 execution |
+| D3 | Security requirement 8, rate limiting, was not implemented | A per-command budget of `oc` calls and per-call timeouts now (task 1.3); full rate limiting in Phase 3 |
+| D4 | Phase 0 lists "Command JSON Schemas" | The Pydantic contracts are the schemas, with an export test (task 2.1) |
+| D5 | Phase 2 open questions 1–4 | Deferred to the backlog with owners |
+| D6 | `fleet` removes every `-archive` substring from deprovision sentinel names | Refuse `-archive` anywhere in a proposal cluster name (task 1.4) |
 
-## Closure Criteria
+## Progress
 
-Phase 0, from [Phase 0](03-phase-0-baseline.md):
-
-- C0.1–C0.6: the six acceptance criteria.
-- C0.7: deliverables 1–8 exist or are explicitly superseded (D4).
-
-Phase 1, from [Phase 1](04-phase-1-read-only-assistant.md):
-
-- C1.1–C1.16: the sixteen acceptance criteria, re-proved at the closure commit.
-- C1.17: Phase 1 live validation re-run at the closure commit.
-
-Phase 2, from [Phase 2](05-phase-2-proposals.md) and [Phase 2 Acceptance](09-phase-2-acceptance.md):
-
-- C2.1–C2.18: A1–A13 and F1–F5, with every caveat closed or operator-accepted.
-- C2.19: the testing plan's generator test table, including one trigger-effect test per lifecycle fact.
-- C2.20: live validation of all four proposal types at the closure commit.
-
-Cross-cutting:
-
-- CX.1: invariants I1–I9 hold for every command, proved by the shared harness.
-- CX.2: security requirements 1–10 of the [testing plan](07-testing-security-rollout.md#security-requirements) that apply to Phases 0–2, per D3.
-- CX.3: no protected repository modified.
-
-## Work Plan
-
-Each task follows the [development workflow](../development.md): test plan, failing tests, smallest fix, verification per R4, docs, conventional commit. Stages run in order; tasks within a stage are independent unless noted.
-
-### Stage 0: Freeze (docs only)
-
-| Task | Work | Done when |
-| --- | --- | --- |
-| 0.1 | Record D1–D6 answers here and apply them to the governing plans: amend the testing plan (D1), Rollout Gate 2 (D2), security requirement 8 (D3), Phase 0 deliverables (D4), Phase 2 open questions (D5), and the cluster name rule (D6) | Plans agree with each other; this document lists the decisions |
-| 0.2 | Create the [Backlog](#backlog) from every known non-blocking item | Backlog is the only place they live |
-| 0.3 | Remove volatile duplicates: keep current test counts and the latest `act` run only in [Validation](../validation.md); replace restatements in status, plans, and acceptance records with links | No current test count or `act` result appears outside Validation; counts recorded against a named historical commit stay as records |
-
-### Stage 1: Fix classes at chokepoints
-
-| Task | Work | Structural test | Closes |
+| Stage | Task | State | Commit |
 | --- | --- | --- | --- |
-| 1.1 | CLI exception boundary: after the idempotency check, any exception the routes do not handle becomes a `failed` terminal record, `command_failed` linked to the last stored event, `aura: internal error: <type>: <message>` on standard error, and exit `2`, with no traceback | Failure matrix gains an "unexpected error" row for every scenario, raising `RuntimeError`, `RecursionError`, and `UnicodeDecodeError` from the collector, the generator, and a store read | Escaping-exception class; I1, I7 |
-| 1.2 | Process chokepoint `aura.process`: one function runs every external program with bytes capture and replacement decoding, `stdin` closed, a timeout, an explicit environment policy (Git isolation, scaffold minimal environment, `oc` inherited environment minus `GIT_`), and typed errors. Migrate all seven call sites | An AST test fails if any module other than `aura.process` imports `subprocess` | Subprocess isolation class; `oc` decode and stdin gaps |
-| 1.3 | Per-command call budget at the chokepoint (D3): a command that exceeds its budget of external calls fails closed | Budget test per command | Security requirement 8 for Phases 0–2 |
-| 1.4 | Cluster name rule (D6): the shared cluster-name validation and the `Proposal` contract refuse `-archive` anywhere in a name; inventory flags existing names that contain it | Contract negative and CLI argument test | A3 and A7 hazard |
-
-### Stage 2: Phase 0 closure
-
-| Task | Work |
-| --- | --- |
-| 2.1 | Build a Phase 0 acceptance matrix like [Phase 2 Acceptance](09-phase-2-acceptance.md): each criterion C0.1–C0.7 with cited tests |
-| 2.2 | Add the JSON Schema export test (D4) and any fixture test the matrix shows missing |
-| 2.3 | Add Status and Validation Record sections to [Phase 0](03-phase-0-baseline.md) |
-
-### Stage 3: Phase 1 re-proof
-
-| Task | Work |
-| --- | --- |
-| 3.1 | Build a Phase 1 acceptance matrix for C1.1–C1.16 at the current commit, with cited tests; add tests for any criterion proved only by the 2026-10-20 live run |
-| 3.2 | Re-run Phase 1 live validation read-only at the closure commit: Git, OpenShift, and combined inventory; workflow inspect; diagnosis success and each refusal; idempotency; RBAC `can-i` |
-| 3.3 | Update the Phase 1 validation record |
-
-### Stage 4: Phase 2 caveats
-
-| Task | Work | Closes |
-| --- | --- | --- |
-| 4.1 | One test per lifecycle fact asserting the reported trigger effect; rows with no Aura behavior (pull requests, other branches, merge methods) recorded as not applicable with the reason | A5, C2.19 |
-| 4.2 | `trigger_effect must be` contract negatives for every proposal type | A5, F1 |
-| 4.3 | Generalize `GitDefinitionCheck` into a patch check used by every Git proposal at generation: apply to a clone of the base commit; for scaffold and cluster-edit also require one complete definition | A2, A4 |
-| 4.4 | Contract scan of the whole resulting `metadata.yaml` in a cluster-edit patch, existing context included, for secret-named keys | A10 |
-| 4.5 | Re-run live validation for deprovision, cluster-edit, rerun, and scaffold at the closure commit, recording "no new PipelineRun" and protected-repository checks for every type | A1, A12, A13, C2.20 |
-
-### Stage 5: Closure gate
-
-| Task | Work |
-| --- | --- |
-| 5.1 | Bounded independent review (R6) of Phases 0–2 against the frozen criteria, grading ungraded matrices blind |
-| 5.2 | Fix only criterion or invariant violations, under R3 and R4; everything else goes to the backlog |
-| 5.3 | Operator sign-off for Phases 0, 1, and 2; update the plans index and status; the operator publishes |
+| 0 | Freeze | Done | `36d7be0` |
+| 1 | 1.1 CLI exception boundary | Next | |
+| 1 | 1.2 Process chokepoint | Pending | |
+| 1 | 1.3 `oc` call budget | Pending | |
+| 1 | 1.4 Cluster name rule | Pending | |
+| 2 | 2.1–2.3 Phase 0 closure | Pending | |
+| 3 | 3.1–3.3 Phase 1 re-proof | Pending | |
+| 4 | 4.1–4.6 Phase 2 caveats | Pending | |
+| 5 | 5.1–5.3 Closure gate | Pending | |
 
 ## Backlog
 
-Not blocking Phases 0–2, per R2. Each item names its target.
+Not blocking Phases 0–2 (R2).
 
 | Item | Target |
 | --- | --- |
 | Anchor stored proposal digests to the `proposal_created` event or CWA trace | Phase 3 guard |
 | Live-state staleness, comparing a defined action subset | Phase 3 guard |
 | Command store treats a misnamed record as not found | Phase 3 hardening |
-| `git_checked` is now always true; keep or remove in a schema revision | Next schema change |
-| `pinned_git_revision` first-match versus last-match has no test | Stage 1.2 if touched, otherwise next schema change |
+| `git_checked` is always true; keep or remove in a schema revision | Next schema change |
+| `pinned_git_revision` first-match versus last-match has no test | Next schema change |
 | Output size limits for scaffold streams and files | Phase 3 hardening |
-| Phase 2 open questions 1–4 (D5) | Owners: `fleet-clusters` and `fleet` maintainers; edit kinds in Phase 3 |
-| Operator: move legacy rerun records out of `local/rerun/proposals/` | Operator |
-| Scaffold risks do not tell the operator to push the scaffold commit alone, though only the first cluster name in a push triggers a pipeline | Phase 2 polish after closure |
-| Stranded deprovision sentinels (open question 1) | `fleet-clusters` maintainers |
-
-## Sequencing and Effort
-
-Stages 0 and 1 come first because they stop new issues: Stage 1 removes the classes that produced most findings, and Stage 0 stops scope growth. Stages 2–4 are independent of each other after Stage 1. Stage 5 runs once. Rough size: Stage 0 small; Stage 1 the largest, about two to three development cycles; Stages 2 and 3 small to medium; Stage 4 medium; Stage 5 small unless it finds criterion violations.
+| Scaffold risks do not tell the operator to push the scaffold commit alone | Phase 2 polish after closure |
+| Phase 2 open questions 1–4 (D5), including stranded deprovision sentinels | `fleet-clusters` and `fleet` maintainers; edit kinds in Phase 3 |
+| Move legacy rerun records out of `local/rerun/proposals/` | Operator |
