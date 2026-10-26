@@ -482,3 +482,31 @@ def test_git_inventory_collector_ignores_an_inherited_git_dir(
     snapshot = collect_snapshot(tmp_path / "fleet")
 
     assert [item.data["cluster_name"] for item in snapshot.items] == ["wanted"]
+
+
+def test_git_inventory_collector_leaves_the_checkout_unchanged(
+    tmp_path: Path,
+) -> None:
+    write_cluster(tmp_path)
+    commit_repository(tmp_path)
+    write_cluster(tmp_path, cluster_name="untracked")
+    (tmp_path / "provision" / "example" / "metadata.yaml").write_text(
+        "platform: gcp\n",
+        encoding="utf-8",
+    )
+
+    def checkout_state() -> dict[str, tuple[bytes, int]]:
+        return {
+            str(path.relative_to(tmp_path)): (
+                path.read_bytes(),
+                path.stat().st_mtime_ns,
+            )
+            for path in sorted(tmp_path.rglob("*"))
+            if path.is_file()
+        }
+
+    before = checkout_state()
+
+    collect_snapshot(tmp_path)
+
+    assert checkout_state() == before
