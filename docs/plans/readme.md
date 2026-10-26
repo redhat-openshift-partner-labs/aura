@@ -40,6 +40,7 @@ Aura will help a human operator understand current state, diagnose problems, pre
 | [Phase 2: Proposals](05-phase-2-proposals.md) | Patch, pipeline, and action proposals without execution |
 | [Phase 2 Acceptance](09-phase-2-acceptance.md) | Criterion-by-criterion evidence and grades for Phase 2 sign-off |
 | [Phases 0–2 Closure](10-phase-0-2-closure.md) | Diagnosis, closure rules, criteria, and the staged plan to close Phases 0–2 |
+| [Phases 0 and 1 Acceptance](11-phase-0-1-acceptance.md) | Criterion-by-criterion evidence and grades for Phase 0 and Phase 1 sign-off |
 | [Phase 3: Approved Execution](06-phase-3-approved-execution.md) | Guarded execution after explicit human approval |
 | [Testing, Security, and Rollout](07-testing-security-rollout.md) | Validation strategy and release gates |
 | [Open Questions](08-open-questions.md) | Decisions needed before implementation |
