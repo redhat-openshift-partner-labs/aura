@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved 2026-10-25 at Aura commit `3b73a3f`; the operator accepted D1–D6 as recommended. Stage 0 is complete: the decisions are applied to the governing plans, deferred items live only in the [Backlog](#backlog), and current verification results live only in [Validation](../validation.md). Stage 1 is complete: its review found three invariant or regression findings, fixed in `2f0bfb8` (F1), `976270c` (F3), and `f617dbe` (F2, operator option A), with its other notes in the [Backlog](#backlog); the `act` result is in [Validation](../validation.md). Stage 2 is complete: its review found three Phase 0 rows whose evidence did not fail when the rule broke, corrected in `0d85f4c` and `9c3fefc`. Stage 3 is complete: its review found that the C1.1, C1.11, and C1.14 evidence did not reliably fail when the rule broke, corrected in `7aad4ee`, and noted an I8 violation, an `oc` response without an item list read as empty, fixed in `0410a2c`. Stage 4 is complete: its review found A1 regraded too generously for cluster-edit and a stale count, corrected in `9f63edb`, and an I6 violation, secret-named `metadata.yaml` keys stored verbatim in evidence, fixed in `8922f0e` (operator decision B) and checked live, read-only, in `c114edb`. **Next: Stage 5, task 5.1.** Mark each task done in [Progress](#progress) in the same commit series that completes it.
+Approved 2026-10-25 at Aura commit `3b73a3f`; the operator accepted D1–D6 as recommended. Stage 0 is complete: the decisions are applied to the governing plans, deferred items live only in the [Backlog](#backlog), and current verification results live only in [Validation](../validation.md). Stage 1 is complete: its review found three invariant or regression findings, fixed in `2f0bfb8` (F1), `976270c` (F3), and `f617dbe` (F2, operator option A), with its other notes in the [Backlog](#backlog); the `act` result is in [Validation](../validation.md). Stage 2 is complete: its review found three Phase 0 rows whose evidence did not fail when the rule broke, corrected in `0d85f4c` and `9c3fefc`. Stage 3 is complete: its review found that the C1.1, C1.11, and C1.14 evidence did not reliably fail when the rule broke, corrected in `7aad4ee`, and noted an I8 violation, an `oc` response without an item list read as empty, fixed in `0410a2c`. Stage 4 is complete: its review found A1 regraded too generously for cluster-edit and a stale count, corrected in `9f63edb`, and an I6 violation, secret-named `metadata.yaml` keys stored verbatim in evidence, fixed in `8922f0e` (operator decision B) and checked live, read-only, in `c114edb`. Stage 5 tasks 5.1 and 5.2 are done: the blind grading found F1 not met and two store defects (I8, I9), fixed in `cff596e`, `4d5e5ae`, and `bcdf2ea`; see [Closure Grades](#closure-grades). **Next: task 5.3, operator sign-off.** Mark each task done in [Progress](#progress) in the same commit series that completes it.
 
 ## Why This Plan Exists
 
@@ -164,6 +164,34 @@ Accepted 2026-10-25 as recommended.
 | D5 | Phase 2 open questions 1–4 | Deferred to the backlog with owners |
 | D6 | `fleet` removes every `-archive` substring from deprovision sentinel names | Refuse `-archive` anywhere in a proposal cluster name (task 1.4) |
 
+## Closure Grades
+
+Reconciled after the Stage 5 blind grading (task 5.1) at `d0053dc` and its fixes (task 5.2); the stricter grade is used wherever the reviewer's evidence was reproduced. Rows are graded in [Phases 0 and 1 Acceptance](11-phase-0-1-acceptance.md) and [Phase 2 Acceptance](09-phase-2-acceptance.md). Every criterion is met or met with caveat; R8 closes each phase once the operator accepts its caveats.
+
+| Criteria | Grade | Caveat for the operator to accept or close |
+| --- | --- | --- |
+| C0.1, C0.2, C0.5, C0.7 | Met | |
+| C0.3 | Met with caveat | Collectors proved with fake `oc` runners; live proof is C1.17 |
+| C0.4 | Met with caveat | No test stores a secret-bearing snapshot and reads the file back |
+| C0.6 | Met with caveat | The protected-repository status check proves the present only |
+| C1.1–C1.7, C1.9–C1.14, C1.16 | Met | |
+| C1.8 | Met with caveat | A model's response object is stored without revalidation; revalidate before an external model |
+| C1.15 | Met with caveat | With no `--role`, the CLI authorizes `viewer`, as documented |
+| C1.17 | Met with caveat | Live run at `ea7ec7b`; later changes reject only malformed input, and Git and combined inventory were re-checked live at `a236742`; no live incomplete definition |
+| C2.2 (A2), C2.4–C2.9 (A4–A9), C2.13 (A13), C2.14 (F1), C2.15 (F2), C2.17 (F4) | Met | |
+| C2.1 (A1) | Met with caveat | No cluster-edit proposal generated live since `dfe32d4`: every live definition already declares its keys |
+| C2.3 (A3) | Met with caveat | The cluster-edit scope negative uses a same-cluster path |
+| C2.10 (A10) | Met with caveat | Secrets are detected by field name only |
+| C2.11 (A11) | Met with caveat | Staleness is Git-only; live-state staleness is the Phase 3 guard |
+| C2.12 (A12) | Met with caveat | The scaffold runs protected-repository code isolated, not sandboxed |
+| C2.16 (F3) | Met with caveat | A failing terminal-record write can leave a proposal without a record; the Phase 3 guard requires a `succeeded` record |
+| C2.18 (F5) | Met with caveat | Read errors are injected at the collector, not per source |
+| C2.19 | Met with caveat | The bare-sentinel lifecycle row is tested as a contract refusal; three re-verified rows state why Aura has nothing to test |
+| C2.20 | Met with caveat | Live run at `1d1bc1c`; later changes reject only malformed input; cluster-edit was refused live, not generated |
+| CX.1 | Met with caveat | The shared harness proves I1–I4, I7, and I8 for every command; I5, I6, and I9 rest on other tests. The grading's I8 and I9 store defects are fixed in `4d5e5ae` |
+| CX.2 | Met with caveat | Requirement 3 has the C1.8 gap; requirement 7's "never pushes" rests on reading the code; requirements 5 and 10 have nothing to check before Phase 3 |
+| CX.3 | Met | |
+
 ## Progress
 
 | Stage | Task | State | Commit |
@@ -176,7 +204,7 @@ Accepted 2026-10-25 as recommended.
 | 2 | 2.1–2.3 Phase 0 closure | Done | `df58f13`, `dd2e19b`, `8bceb02` |
 | 3 | 3.1–3.3 Phase 1 re-proof | Done | `5345ff6`, `2b67fd3`, `1559184` |
 | 4 | 4.1–4.6 Phase 2 caveats | Done | `e601f5f`, `6976c58`, `5f5fe5f`, `887c817`, `b593bf2`, `faea287`, `ea7ec7b`, `525aed3` |
-| 5 | 5.1–5.3 Closure gate | Pending | |
+| 5 | 5.1–5.3 Closure gate | In progress: 5.1 and 5.2 done; 5.3 awaits operator sign-off | `cff596e`, `4d5e5ae`, `bcdf2ea` |
 
 ## Backlog
 
