@@ -58,6 +58,7 @@ from aura.cwa_store import (
     JsonCWATraceStore,
 )
 from aura.contracts import (
+    ARCHIVE_SUFFIX,
     AuditEvent,
     AuditEventType,
     CommandEnvelope,
@@ -485,6 +486,8 @@ def _diagnose_state_argument_error(args: argparse.Namespace) -> str | None:
 def _propose_argument_error(args: argparse.Namespace) -> str | None:
     if re.fullmatch(CLUSTER_NAME_PATTERN, args.cluster) is None:
         return f"--cluster must be a DNS-1123 label: {args.cluster}"
+    if ARCHIVE_SUFFIX in args.cluster:
+        return f"--cluster must not contain {ARCHIVE_SUFFIX}: {args.cluster}"
     pipeline_run = getattr(args, "pipeline_run", None)
     if pipeline_run is not None and not pipeline_run.strip():
         return "--pipeline-run must not be blank"

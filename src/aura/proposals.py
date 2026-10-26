@@ -267,6 +267,13 @@ class Proposal(BaseModel):
             raise ValueError("must not be blank")
         return value
 
+    @field_validator("cluster_name")
+    @classmethod
+    def reject_archive_name(cls, value: str) -> str:
+        if ARCHIVE_SUFFIX in value:
+            raise ValueError(f"cluster_name must not contain {ARCHIVE_SUFFIX}")
+        return value
+
     @field_validator("risks")
     @classmethod
     def reject_blank_risks(cls, value: list[str]) -> list[str]:

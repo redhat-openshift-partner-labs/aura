@@ -167,7 +167,7 @@ PipelineRun selection uses the latest matching run by `start_time` by default. P
 
 | Flag | Required | Default | Acceptable values |
 | --- | --- | --- | --- |
-| `--cluster` | Yes | None | DNS-1123 label |
+| `--cluster` | Yes | None | DNS-1123 label that does not contain `-archive` |
 | `--fleet-clusters` | Yes | None | Path to a local `fleet-clusters` checkout |
 | `--openshift-kubeconfig` | Yes | None | Path to a read-only kubeconfig |
 | `--snapshot-dir` | Yes | None | Writable directory |
@@ -197,7 +197,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura propose deprovisio
 
 The command prints the stored `Proposal`. Its `patch` adds only the empty file `deprovision/<id>-archive`, and its `commit_message` must be used for a standalone commit. Aura writes nothing to `fleet-clusters`; merging the commit is the execution step and starts the deprovision pipeline.
 
-If a precondition is unmet, the command exits with code `2`, prints `proposal refused:` and every unmet precondition to standard error, stores no proposal, and still stores evidence, CWA, and audit records. A `--cluster` value that is not a DNS-1123 label is rejected before collection.
+If a precondition is unmet, the command exits with code `2`, prints `proposal refused:` and every unmet precondition to standard error, stores no proposal, and still stores evidence, CWA, and audit records. A `--cluster` value that is not a DNS-1123 label, or that contains `-archive` anywhere, is rejected before collection, for every `propose` subcommand, because `fleet` removes every `-archive` substring when it reads a deprovision sentinel.
 
 ## `propose cluster-edit`
 

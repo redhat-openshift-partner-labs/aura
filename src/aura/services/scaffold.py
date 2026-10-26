@@ -207,6 +207,10 @@ def _request_reasons(request: ScaffoldRequest) -> list[str]:
             f"cluster name {name} is {len(name)} characters; scoped AWS "
             f"names allow at most {SCAFFOLD_NAME_MAX}"
         )
+    if ARCHIVE_SUFFIX in name:
+        reasons.append(
+            f"cluster name {name} must not contain {ARCHIVE_SUFFIX}"
+        )
     if not AWS_REGION.fullmatch(request.region):
         reasons.append(f"region {request.region} is not an AWS region name")
     if request.tier not in TIERS:

@@ -372,6 +372,7 @@ Refusal reasons before the scaffold runs, reported together:
 | Cloud other than AWS | `scaffold supports only cloud aws, not <cloud>` |
 | Invalid name | `cluster name <id> is not a DNS-1123 label` |
 | Name over 49 characters | `cluster name <id> is <n> characters; scoped AWS names allow at most 49` |
+| Name containing `-archive` | `cluster name <id> must not contain -archive` |
 | Malformed region | `region <region> is not an AWS region name` |
 | Unknown tier | `tier <tier> is not one of base, virt, ai` |
 | Unknown topology | `topology <topology> is not one of standard, compact, sno` |

@@ -86,7 +86,7 @@ flowchart LR
 | Aspect | Rule |
 | --- | --- |
 | Input | Cloud, cluster name, region, tier, and the allow-listed scaffold flags below |
-| Preconditions | Cloud is `aws`; name is a DNS-1123 label of at most 49 characters; no `provision/`, `archive/`, or `deprovision/` entry (with or without `-archive`) and no OpenShift ClusterDeployment or ManagedCluster uses the name or shares its infra prefix; `kustomize` is on `PATH`; the scaffold checkout is a clean Git checkout |
+| Preconditions | Cloud is `aws`; name is a DNS-1123 label of at most 49 characters that does not contain `-archive`; no `provision/`, `archive/`, or `deprovision/` entry (with or without `-archive`) and no OpenShift ClusterDeployment or ManagedCluster uses the name or shares its infra prefix; `kustomize` is on `PATH`; the scaffold checkout is a clean Git checkout |
 | Generation | Pinned scaffold, exported from its Git objects and run in a temporary workspace holding an export of `fleet-clusters` at the base commit, with `--base-path provision --cluster-templates-dir cluster-templates` |
 | Artifact | Patch that adds only regular files (mode `100644`) under `provision/<id>/`, including every required definition file |
 | Validation | Scaffold `kustomize build` passes; the generated overlay passes Aura's re-implementation of the `fleet-clusters` new-overlay PR check; applying the patch to the base commit and running `GitInventoryCollector` yields one complete `cluster_definition` whose `cluster_name` is `<id>` |
@@ -215,7 +215,7 @@ Because an absent key means its default, writing a key whose value equals what t
 | `proposal_id` | Unique identifier |
 | `command_id` | Originating command |
 | `proposal_type` | `scaffold`, `deprovision`, `post_provision_rerun`, or `cluster_edit` |
-| `cluster_name` | The single target cluster; a DNS-1123 label that does not contain `-archive` anywhere, because `fleet` removes every `-archive` substring when it reads a deprovision sentinel (D6 in the [closure plan](10-phase-0-2-closure.md#operator-decisions); not yet enforced) |
+| `cluster_name` | The single target cluster; a DNS-1123 label that does not contain `-archive` anywhere, because `fleet` removes every `-archive` substring when it reads a deprovision sentinel (D6 in the [closure plan](10-phase-0-2-closure.md#operator-decisions)); the contract rejects it with `cluster_name must not contain -archive` |
 | `status` | `proposal_ready` in Phase 2 |
 | `base_commit` | `fleet-clusters` commit the patch applies to; for a rerun, the commit whose `metadata.yaml` and definition its evidence read. Required for every type (decided 2026-10-25, implemented in `8193210`) |
 | `evidence_snapshot_id` and `evidence_snapshot_digest` | Evidence the proposal was derived from |
