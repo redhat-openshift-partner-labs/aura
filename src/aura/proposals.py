@@ -593,6 +593,8 @@ def _validate_metadata_edit(patch: str, metadata: str) -> None:
             "metadata.yaml must declare "
             f"{', '.join(TIER_INDEPENDENT_METADATA_KEYS)}"
         )
+    if redact(after).redacted_fields:
+        raise ValueError("metadata.yaml must not contain secret-named keys")
 
 
 def _hunks(patch: str) -> list[list[str]]:

@@ -323,7 +323,7 @@ Refusal reasons, reported together with the shared live-cluster reasons (no defi
 
 Scoped credentials are recognized only by the `crossplane-scoped` Crossplane template, which the scaffold writes for every scoped AWS cluster; the scaffold's other scoped markers are not checked.
 
-`metadata_text` is evidence, and redaction works on field names, so a secret value typed into `metadata.yaml` would not be redacted. The file holds only the four non-secret keys today.
+`metadata_text` is evidence, and redaction works on field names, so a secret value typed into `metadata.yaml` would not be redacted. The file holds only the four non-secret keys today. Because a modify patch carries the whole file as context, the `Proposal` contract rejects a cluster-edit whose resulting `metadata.yaml`, existing lines included, has any key the redaction policy removes, with `metadata.yaml must not contain secret-named keys`; the command then fails with `generated proposal is invalid:`. `htpasswd-provider-name` is not a secret name.
 
 ### Post-Provision Rerun Proposal
 

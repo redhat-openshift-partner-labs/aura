@@ -1069,3 +1069,44 @@ def test_proposal_rejects_another_trigger_effect(
         f"trigger_effect must be {expected} for {proposal_type} proposals"
         in str(error.value)
     )
+
+
+@pytest.mark.parametrize(
+    "existing",
+    ["pull-secret: abc", "password: hunter2", "apiKey: abc", "token: abc"],
+)
+def test_proposal_rejects_cluster_edit_leaving_a_secret_named_key(
+    existing: str,
+) -> None:
+    with pytest.raises(
+        ValidationError,
+        match="metadata.yaml must not contain secret-named keys",
+    ):
+        make_proposal(
+            "cluster_edit",
+            commit_message=f"fix: set platform for {CLUSTER}",
+            patch=appended_file(
+                f"provision/{CLUSTER}/metadata.yaml",
+                existing,
+                "htpasswd-provider-name: Red Hat",
+                "platform: aws",
+                "aws-credentials-mode: legacy",
+                "openshift-ai-version: v3",
+            ),
+        )
+
+
+def test_proposal_keeps_htpasswd_provider_name_in_cluster_edit() -> None:
+    proposal = make_proposal(
+        "cluster_edit",
+        commit_message=f"fix: set platform for {CLUSTER}",
+        patch=appended_file(
+            f"provision/{CLUSTER}/metadata.yaml",
+            "htpasswd-provider-name: Red Hat",
+            "platform: aws",
+            "aws-credentials-mode: legacy",
+            "openshift-ai-version: v3",
+        ),
+    )
+
+    assert "htpasswd-provider-name: Red Hat" in (proposal.patch or "")
