@@ -19,5 +19,5 @@ ack duplication 70dc658040b734ad 30 A keyword-only method that forwards its argu
 ack duplication c56f65d941439d52 29 A test helper that builds ScaffoldRequest by keyword matches the shape of make_evidence_command_spec's keyword call; no logic is duplicated
 ack duplication cc0373c714a0bc11 25 Keyword-only constructors that only store their arguments match structurally; there is no shared logic to extract
 ack duplication e940bf37b76ec6d3 30 Keyword-only constructors that only store their arguments match structurally; there is no shared logic to extract
-ack new-clone-of-reused-helper 70dc658040b734ad 14 A keyword-only method that forwards its arguments to another check matches the shape of a test collector that forwards its arguments; no logic is duplicated
+ack new-clone-of-reused-helper 70dc658040b734ad 15 A keyword-only method that forwards its arguments to another check matches the shape of a test collector that forwards its arguments; no logic is duplicated
 ack new-clone-of-reused-helper c56f65d941439d52 6 A test helper that builds ScaffoldRequest by keyword matches the shape of make_evidence_command_spec's keyword call; no logic is duplicated
