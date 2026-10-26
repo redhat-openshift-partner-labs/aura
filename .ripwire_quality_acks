@@ -15,7 +15,9 @@ ack dead-code:preexisting d55c958d762d51f6 0 cid=3d216f64779c2ac6 Store exceptio
 ack dead-code:preexisting f5a1dcf5c856604e 0 cid=a68ce0013c7e4a24 Store exceptions are referenced as JsonRecordStore class attributes and caught in cli.py; ripwire counts only direct construction
 ack dead-code:preexisting f74f627c8673e362 0 cid=6897172bfada1eed Store exceptions are referenced as JsonRecordStore class attributes and caught in cli.py; ripwire counts only direct construction
 ack dead-code:preexisting fd74202097c9fc6e 0 cid=95c3b6679d9dcca0 Evidence route properties are read as attributes and route collector selectors are referenced as values in _EVIDENCE_ROUTES; ripwire counts only direct calls as use
+ack duplication 70dc658040b734ad 30 A keyword-only method that forwards its arguments to another check matches the shape of a test collector that forwards its arguments; no logic is duplicated
 ack duplication c56f65d941439d52 29 A test helper that builds ScaffoldRequest by keyword matches the shape of make_evidence_command_spec's keyword call; no logic is duplicated
 ack duplication cc0373c714a0bc11 25 Keyword-only constructors that only store their arguments match structurally; there is no shared logic to extract
 ack duplication e940bf37b76ec6d3 30 Keyword-only constructors that only store their arguments match structurally; there is no shared logic to extract
+ack new-clone-of-reused-helper 70dc658040b734ad 14 A keyword-only method that forwards its arguments to another check matches the shape of a test collector that forwards its arguments; no logic is duplicated
 ack new-clone-of-reused-helper c56f65d941439d52 6 A test helper that builds ScaffoldRequest by keyword matches the shape of make_evidence_command_spec's keyword call; no logic is duplicated
