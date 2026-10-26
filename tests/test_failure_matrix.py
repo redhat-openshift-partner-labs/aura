@@ -8,12 +8,14 @@ from uuid import UUID
 
 import pytest
 
+import aura.cli as cli
 from aura.collectors.git_inventory import GitInventoryError
 from aura.collectors.git_staleness import ProposalRecordUnreadable
 from aura.collectors.oc_cli import OpenShiftCLIError
+from aura.command_store import JsonCommandStore
 from aura.contracts import AuditEventType, CommandState, EvidenceSnapshot
 from aura.proposal_store import JsonProposalStore, ProposalNotFound
-from failure_injection import WRITE_PHASES, run_cli
+from failure_injection import WRITE_PHASES, deny_access, run_cli
 from invariants import (
     assert_command_invariants,
     command_chain,
@@ -406,12 +408,56 @@ READ_FAILURES = [
 ]
 
 
+UNEXPECTED_ERRORS = (RuntimeError, RecursionError, UnicodeDecodeError)
+UNEXPECTED_FAILURES = [
+    (scenario, error)
+    for scenario in SCENARIOS
+    for error in UNEXPECTED_ERRORS
+]
+MODEL_FAILURES = [
+    (
+        scenario,
+        "ClusterStateDiagnosisModel"
+        if scenario.name.startswith("diagnose")
+        else "_proposal_generator",
+    )
+    for scenario in SCENARIOS
+    if scenario.name.startswith(
+        ("diagnose", "propose", "cluster-edit", "rerun", "scaffold")
+    )
+]
+
+
+def injected(error: type[BaseException]) -> BaseException:
+    if error is UnicodeDecodeError:
+        return UnicodeDecodeError(
+            "utf-8", b"\xff", 0, 1, "injected read failure"
+        )
+    return error("injected read failure")
+
+
+def internal_error(error: BaseException) -> str:
+    return f"aura: internal error: {type(error).__name__}: {error}\n"
+
+
 class FailingReadCollector:
-    def __init__(self, error: type[Exception]) -> None:
+    def __init__(self, error: type[BaseException]) -> None:
         self._error = error
 
     def collect(self, **_: object) -> EvidenceSnapshot:
-        raise self._error("injected read failure")
+        raise injected(self._error)
+
+
+class FailingModel:
+    provider_name = "injected"
+    model_name = "injected"
+    generator = "injected"
+
+    def diagnose(self, snapshot: object) -> object:
+        raise RuntimeError("injected model failure")
+
+    def generate(self, snapshot: object, **_: object) -> object:
+        raise RuntimeError("injected model failure")
 
 
 def stored(root: Path) -> dict[Path, bytes]:
@@ -540,3 +586,156 @@ def test_evidence_read_failure_fails_closed(
             event.event_type
             for event in command_chain(tmp_path / "audit", COMMAND_ID)
         ] == [AuditEventType.COMMAND_RECEIVED, AuditEventType.COMMAND_FAILED]
+
+
+def event_types(root: Path) -> list[AuditEventType]:
+    return [
+        event.event_type
+        for event in command_chain(root / "audit", COMMAND_ID)
+    ]
+
+
+def scenario_named(name: str) -> Scenario:
+    return next(scenario for scenario in SCENARIOS if scenario.name == name)
+
+
+@pytest.mark.parametrize(
+    ("scenario", "error"), UNEXPECTED_FAILURES, ids=scenario_id
+)
+def test_unexpected_read_error_fails_closed(
+    tmp_path,
+    monkeypatch,
+    scenario,
+    error,
+) -> None:
+    run, before = execute(
+        scenario,
+        tmp_path,
+        monkeypatch,
+        collector=FailingReadCollector(error),
+    )
+
+    assert run.exit_code == 2
+    assert run.stdout == ""
+    assert run.stderr == internal_error(injected(error))
+    assert check(tmp_path, before).status is CommandState.FAILED
+    if scenario.audited:
+        assert event_types(tmp_path) == [
+            AuditEventType.COMMAND_RECEIVED,
+            AuditEventType.COMMAND_FAILED,
+        ]
+
+
+@pytest.mark.parametrize(
+    ("scenario", "target"),
+    MODEL_FAILURES,
+    ids=lambda item: scenario_id(item) if isinstance(item, Scenario) else item,
+)
+def test_unexpected_model_error_fails_closed(
+    tmp_path,
+    monkeypatch,
+    scenario,
+    target,
+) -> None:
+    monkeypatch.setattr(cli, target, lambda *_: FailingModel())
+
+    run, before = execute(scenario, tmp_path, monkeypatch)
+
+    assert run.exit_code == 2
+    assert run.stdout == ""
+    assert run.stderr == internal_error(
+        RuntimeError("injected model failure")
+    )
+    assert check(tmp_path, before).status is CommandState.FAILED
+    assert proposals_of(tmp_path / "proposal", COMMAND_ID) == []
+    assert event_types(tmp_path) == [
+        AuditEventType.COMMAND_RECEIVED,
+        AuditEventType.EVIDENCE_COLLECTED,
+        AuditEventType.COMMAND_FAILED,
+    ]
+
+
+def test_unexpected_error_after_terminal_record_writes_nothing(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    scenario = scenario_named("propose")
+    complete = cli._complete_command
+
+    def complete_then_fail(*arguments: object) -> int:
+        complete(*arguments)
+        raise RuntimeError("injected model failure")
+
+    monkeypatch.setattr(cli, "_complete_command", complete_then_fail)
+
+    run, before = execute(scenario, tmp_path, monkeypatch)
+
+    assert run.exit_code == 2
+    assert run.stderr == internal_error(
+        RuntimeError("injected model failure")
+    )
+    assert [write.label for write in run.writes] == list(scenario.writes)
+    assert check(tmp_path, before).status is CommandState.SUCCEEDED
+    assert event_types(tmp_path)[-1] is AuditEventType.PROPOSAL_CREATED
+
+
+def test_unexpected_error_with_unreadable_terminal_record_writes_nothing(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    scenario = scenario_named("propose")
+    complete = cli._complete_command
+
+    def complete_then_fail(*arguments: object) -> int:
+        complete(*arguments)
+        (record,) = (tmp_path / "commands").glob("*.json")
+        deny_access(monkeypatch, "read_text", record)
+        raise RuntimeError("injected model failure")
+
+    monkeypatch.setattr(cli, "_complete_command", complete_then_fail)
+
+    run, _ = execute(scenario, tmp_path, monkeypatch)
+
+    assert run.exit_code == 2
+    assert run.stderr == internal_error(
+        RuntimeError("injected model failure")
+    )
+    assert [write.label for write in run.writes] == list(scenario.writes)
+
+
+def test_unexpected_error_with_unreadable_audit_stores_failed_record(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    scenario = scenario_named("inventory-audited")
+    (tmp_path / "audit").mkdir()
+    (tmp_path / "audit" / "notes.json").write_text("{}", encoding="utf-8")
+
+    run, _ = execute(
+        scenario,
+        tmp_path,
+        monkeypatch,
+        collector=FailingReadCollector(RuntimeError),
+    )
+
+    assert run.exit_code == 2
+    assert run.stderr == (
+        internal_error(injected(RuntimeError))
+        + "aura: record name is not an ID: notes.json\n"
+    )
+    assert [write.label for write in run.writes] == [
+        RECEIVED,
+        "CommandEnvelope",
+    ]
+    record = JsonCommandStore(tmp_path / "commands").load(KEY)
+    assert record.status is CommandState.FAILED
+
+
+def test_keyboard_interrupt_passes_through(tmp_path, monkeypatch) -> None:
+    with pytest.raises(KeyboardInterrupt):
+        execute(
+            scenario_named("inventory-audited"),
+            tmp_path,
+            monkeypatch,
+            collector=FailingReadCollector(KeyboardInterrupt),
+        )

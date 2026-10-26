@@ -176,6 +176,7 @@ For each command, list every step that reads external state or writes a record, 
 | Response event write (`model_called` or `proposal_created`) | `2` | `failed` | No proposal | `context_assembled` |
 | Proposal write | `2` | `failed` | No proposal | `proposal_created` |
 | Terminal command record write | `2` | None | Prior records only | Not applicable |
+| Any error the route does not handle, after the idempotency check | `2` | `failed`, unless a terminal record is already stored | No proposal | The last audit event stored |
 
 Rows that do not apply to a command are omitted from its matrix. A new command or write step adds rows. Actionable artifacts are records a later phase could act on, currently proposals. Evidence snapshots, CWA snapshots and traces, and diagnosis records written before the failure may remain as provenance.
 
@@ -187,6 +188,7 @@ Rows that do not apply to a command are omitted from its matrix. A new command o
 2. It asserts that the recorded write labels equal the scenario's documented write order. This pins the order in `docs/wiring.md`, so moving a write is a visible, reviewed change. It also asserts that every record file the run created was recorded, so a write that bypasses `save_private_json` fails the test.
 3. It reruns the scenario once per write, failing only that write with an `OSError`, in two phases: before anything is written, and after the record is linked into place when the directory sync fails. Each run must exit `2`, print nothing to standard output, and store a `failed` record. The writes after the failure must be exactly the `failed` terminal record and, when audited, `command_failed`. The exception is a failure of the final terminal-record write, which leaves no record and is followed by no write. No proposal from that command may remain, and `command_failed` must link to the last audit event stored before the failure.
 4. For each error type a command's route handles, it replaces the collector with one that raises it and asserts a `failed` record and the chain `command_received` then `command_failed`.
+5. It replaces the collector with one that raises `RuntimeError`, `RecursionError`, or `UnicodeDecodeError`, which no route handles, and asserts standard error `aura: internal error: <type>: <message>`, a `failed` record, and the same chain. For each proposal scenario and `diagnose`, it makes the generator or diagnosis model raise `RuntimeError` and asserts the chain ends `evidence_collected` then `command_failed`.
 
 `tests/invariants.py` provides:
 

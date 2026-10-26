@@ -586,6 +586,7 @@ def _execute_command(
     args: argparse.Namespace,
     command: CommandEnvelope,
     action: Callable[[], int],
+    clock: Callable[[], datetime],
 ) -> int:
     store = JsonCommandStore(args.command_dir)
     try:
@@ -594,10 +595,84 @@ def _execute_command(
             if duplicate_error is not None:
                 print(f"aura: {duplicate_error}", file=sys.stderr)
                 return 2
-            return action()
+            try:
+                return action()
+            except Exception as error:
+                return _fail_unexpected(args, command, error, clock)
     except OSError as error:
         print(f"aura: {error}", file=sys.stderr)
         return 2
+
+
+def _fail_unexpected(
+    args: argparse.Namespace,
+    command: CommandEnvelope,
+    error: Exception,
+    clock: Callable[[], datetime],
+) -> int:
+    """Fail a command whose route raised an error it does not handle."""
+
+    message = f"internal error: {type(error).__name__}: {error}"
+    try:
+        JsonCommandStore(args.command_dir).load(command.idempotency_key)
+    except CommandNotFound:
+        return _fail_unrecorded(args, command, message, clock)
+    except CommandRecordUnreadable:
+        pass
+    print(f"aura: {message}", file=sys.stderr)
+    return 2
+
+
+def _fail_unrecorded(
+    args: argparse.Namespace,
+    command: CommandEnvelope,
+    message: str,
+    clock: Callable[[], datetime],
+) -> int:
+    try:
+        previous_event_id = _last_audit_event_id(
+            args.audit_dir,
+            command.command_id,
+        )
+    except (OSError, ValueError) as lookup_error:
+        failed = command.with_status(
+            CommandStateMachine().transition(
+                command.status,
+                CommandState.FAILED,
+            )
+        )
+        store_error = _store_terminal_command(args, failed)
+        print(f"aura: {message}", file=sys.stderr)
+        print(f"aura: {store_error or lookup_error}", file=sys.stderr)
+        return 2
+    return _fail_command(
+        args,
+        command,
+        message,
+        previous_event_id=previous_event_id,
+        clock=clock,
+    )
+
+
+def _last_audit_event_id(
+    audit_dir: Path | None,
+    command_id: UUID,
+) -> UUID | None:
+    """Return the stored event of a command that no other event follows."""
+
+    if audit_dir is None or not audit_dir.exists():
+        return None
+    store = JsonAuditEventStore(audit_dir)
+    events = [
+        event
+        for event in map(store.load, store.record_ids())
+        if event.command_id == command_id
+    ]
+    followed = {event.previous_event_id for event in events}
+    return next(
+        (event.event_id for event in events if event.event_id not in followed),
+        None,
+    )
 
 
 def _complete_command(
@@ -757,6 +832,7 @@ def _run_simple_evidence_command(
             assemble=route.assemble,
             clock=clock,
         ),
+        clock,
     )
 
 
@@ -1557,7 +1633,7 @@ def _execute_new_command(
         command_id_factory,
         clock,
     )
-    return _execute_command(args, command, lambda: run(command))
+    return _execute_command(args, command, lambda: run(command), clock)
 
 
 def _run_diagnosis(

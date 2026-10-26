@@ -321,8 +321,8 @@ The check is Git-only and covers every proposal type, reruns included: it does n
 | Exit code | Meaning |
 | --- | --- |
 | `0` | Success |
-| `2` | Argument error, unauthorized command, execution failure, diagnosis or proposal refusal, duplicate record, or idempotency-key reuse |
-| Other non-zero | Unhandled collector or process failure |
+| `2` | Argument error, unauthorized command, execution failure, diagnosis or proposal refusal, duplicate record, idempotency-key reuse, or internal error |
+| Other non-zero | An error raised before the idempotency check that Aura does not handle, which is a bug |
 
 An `oc` failure is reported as a concise CLI error with exit code `2`; no partial JSON is printed.
 
@@ -337,3 +337,4 @@ Additional error contracts:
 - Record write failures, such as a full disk or an unwritable directory, exit `2` with the operating-system error and store a `failed` terminal record when `--command-dir` is writable.
 - An unreadable or invalid record for the requested idempotency key exits `2` before collection with `idempotency key record is unreadable`.
 - A `--command-dir` that cannot be created or locked exits `2` before collection.
+- An error a command does not handle, raised after the idempotency check, exits `2` with `aura: internal error: <type>: <message>` and no traceback. It stores a `failed` command record unless a terminal record for the key is already stored; see [Wiring](wiring.md#record-wiring).
