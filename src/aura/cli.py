@@ -617,8 +617,10 @@ def _fail_unexpected(
         JsonCommandStore(args.command_dir).load(command.idempotency_key)
     except CommandNotFound:
         return _fail_unrecorded(args, command, message, clock)
-    except CommandRecordUnreadable:
-        pass
+    except CommandRecordUnreadable as unreadable:
+        print(f"aura: {message}", file=sys.stderr)
+        print(f"aura: {unreadable}", file=sys.stderr)
+        return 2
     print(f"aura: {message}", file=sys.stderr)
     return 2
 

@@ -599,6 +599,18 @@ def scenario_named(name: str) -> Scenario:
     return next(scenario for scenario in SCENARIOS if scenario.name == name)
 
 
+def assert_internal_failure(
+    run,
+    root: Path,
+    before: dict[Path, bytes],
+    error: BaseException,
+) -> None:
+    assert run.exit_code == 2
+    assert run.stdout == ""
+    assert run.stderr == internal_error(error)
+    assert check(root, before).status is CommandState.FAILED
+
+
 @pytest.mark.parametrize(
     ("scenario", "error"), UNEXPECTED_FAILURES, ids=scenario_id
 )
@@ -615,10 +627,7 @@ def test_unexpected_read_error_fails_closed(
         collector=FailingReadCollector(error),
     )
 
-    assert run.exit_code == 2
-    assert run.stdout == ""
-    assert run.stderr == internal_error(injected(error))
-    assert check(tmp_path, before).status is CommandState.FAILED
+    assert_internal_failure(run, tmp_path, before, injected(error))
     if scenario.audited:
         assert event_types(tmp_path) == [
             AuditEventType.COMMAND_RECEIVED,
@@ -641,12 +650,9 @@ def test_unexpected_model_error_fails_closed(
 
     run, before = execute(scenario, tmp_path, monkeypatch)
 
-    assert run.exit_code == 2
-    assert run.stdout == ""
-    assert run.stderr == internal_error(
-        RuntimeError("injected model failure")
+    assert_internal_failure(
+        run, tmp_path, before, RuntimeError("injected model failure")
     )
-    assert check(tmp_path, before).status is CommandState.FAILED
     assert proposals_of(tmp_path / "proposal", COMMAND_ID) == []
     assert event_types(tmp_path) == [
         AuditEventType.COMMAND_RECEIVED,
@@ -697,8 +703,9 @@ def test_unexpected_error_with_unreadable_terminal_record_writes_nothing(
     run, _ = execute(scenario, tmp_path, monkeypatch)
 
     assert run.exit_code == 2
-    assert run.stderr == internal_error(
-        RuntimeError("injected model failure")
+    assert run.stderr == (
+        internal_error(RuntimeError("injected model failure"))
+        + f"aura: idempotency key record is unreadable: {KEY}\n"
     )
     assert [write.label for write in run.writes] == list(scenario.writes)
 
