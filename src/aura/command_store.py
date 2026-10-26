@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import final
 
 from aura.contracts import CommandEnvelope, CommandState
-from aura.json_store import save_private_json
+from aura.json_store import parse_record, save_private_json
 
 
 class CommandAlreadyStored(Exception):
@@ -78,9 +78,13 @@ class JsonCommandStore:
             raise CommandRecordUnreadable(
                 f"idempotency key record is unreadable: {idempotency_key}"
             ) from error
-        if command is None or command.idempotency_key != idempotency_key:
+        if command is None:
             raise CommandNotFound(
                 f"idempotency key not found: {idempotency_key}"
+            )
+        if command.idempotency_key != idempotency_key:
+            raise CommandRecordUnreadable(
+                f"idempotency key record is unreadable: {idempotency_key}"
             )
         return command
 
@@ -90,8 +94,10 @@ class JsonCommandStore:
 
 
 def _read_command(path: Path) -> CommandEnvelope:
-    return CommandEnvelope.model_validate_json(
-        path.read_text(encoding="utf-8")
+    return parse_record(
+        path.read_text(encoding="utf-8"),
+        CommandEnvelope,
+        "idempotency key",
     )
 
 

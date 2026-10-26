@@ -186,7 +186,6 @@ Not blocking Phases 0–2 (R2).
 | --- | --- |
 | Anchor stored proposal digests to the `proposal_created` event or CWA trace | Phase 3 guard |
 | Live-state staleness, comparing a defined action subset | Phase 3 guard |
-| Command store treats a misnamed record as not found | Phase 3 hardening |
 | `git_checked` is always true; keep or remove in a schema revision | Next schema change |
 | `pinned_git_revision` first-match versus last-match has no test | Next schema change |
 | Output size limits for scaffold streams and files | Phase 3 hardening |

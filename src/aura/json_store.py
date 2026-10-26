@@ -7,9 +7,27 @@ from typing import ClassVar, Generic, TypeVar, cast
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel
+from pydantic_core import from_json
 
 
 R = TypeVar("R", bound=BaseModel)
+
+
+def parse_record(value: str, model: type[R], label: str) -> R:
+    """Parse a stored record, requiring each digest it computes of itself.
+
+    Validation recomputes a blank or missing self-digest, so without this
+    an edited record with its digest removed would load as genuine (I9).
+    """
+
+    document = from_json(value)
+    for name, field in model.model_fields.items():
+        if not name.endswith("_digest") or field.default != "":
+            continue
+        digest = document.get(name) if isinstance(document, dict) else None
+        if not isinstance(digest, str) or not digest:
+            raise ValueError(f"{label} record has no stored {name}")
+    return model.model_validate(document)
 
 
 def save_private_json(
@@ -106,7 +124,7 @@ class JsonRecordStore(Generic[R]):
         return record
 
     def _parse(self, value: str) -> BaseModel:
-        return self.record_type.model_validate_json(value)
+        return parse_record(value, self.record_type, self.record_label)
 
     def record_ids(self) -> list[UUID]:
         """Return stored record IDs in ascending order.
@@ -132,5 +150,6 @@ class JsonRecordStore(Generic[R]):
 
 __all__ = [
     "JsonRecordStore",
+    "parse_record",
     "save_private_json",
 ]

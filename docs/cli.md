@@ -336,6 +336,6 @@ Additional error contracts:
 - Missing or inaccessible `oc`, permission failures, invalid JSON, a response without an `items` list, output that is not UTF-8, and command timeouts are converted to concise `OpenShiftCLIError` messages.
 - A command that would make more than 10 `oc` calls exits `2` with `oc call budget of 10 exceeded` and stores a `failed` command record.
 - Record write failures, such as a full disk or an unwritable directory, exit `2` with the operating-system error and store a `failed` terminal record when `--command-dir` is writable.
-- An unreadable or invalid record for the requested idempotency key exits `2` before collection with `idempotency key record is unreadable`.
+- An unreadable or invalid record for the requested idempotency key, including one without its stored digests or one that holds another key, exits `2` before collection with `idempotency key record is unreadable`.
 - A `--command-dir` that cannot be created or locked exits `2` before collection.
 - An error a command does not handle, raised after the idempotency check, exits `2` with `aura: internal error: <type>: <message>` and no traceback. It stores a `failed` command record unless a terminal record for the key is already stored; see [Wiring](wiring.md#record-wiring).

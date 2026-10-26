@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import final
 
-from pydantic_core import from_json
-
 from aura.json_store import JsonRecordStore
 from aura.proposals import Proposal
 
@@ -25,19 +23,6 @@ class JsonProposalStore(JsonRecordStore[Proposal]):
     id_field = "proposal_id"
     already_stored = ProposalAlreadyStored
     not_found = ProposalNotFound
-
-    def _parse(self, value: str) -> Proposal:
-        """Require the stored digest, which validation would recompute."""
-
-        document = from_json(value)
-        digest = (
-            document.get("proposal_digest")
-            if isinstance(document, dict)
-            else None
-        )
-        if not isinstance(digest, str) or not digest:
-            raise ValueError("proposal record has no stored proposal_digest")
-        return Proposal.model_validate(document)
 
 
 __all__ = [
