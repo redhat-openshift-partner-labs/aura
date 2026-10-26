@@ -175,7 +175,7 @@ Accepted 2026-10-25 as recommended.
 | 1 | 1.4 Cluster name rule | Done | `08f40da` |
 | 2 | 2.1–2.3 Phase 0 closure | Done | `df58f13`, `dd2e19b`, `8bceb02` |
 | 3 | 3.1–3.3 Phase 1 re-proof | Done | `5345ff6`, `2b67fd3`, `1559184` |
-| 4 | 4.1–4.6 Phase 2 caveats | Done | `e601f5f`, `6976c58`, `5f5fe5f`, `b593bf2`, `faea287`, `ea7ec7b`, `525aed3` |
+| 4 | 4.1–4.6 Phase 2 caveats | Done | `e601f5f`, `6976c58`, `5f5fe5f`, `887c817`, `b593bf2`, `faea287`, `ea7ec7b`, `525aed3` |
 | 5 | 5.1–5.3 Closure gate | Pending | |
 
 ## Backlog
@@ -206,6 +206,12 @@ Not blocking Phases 0–2 (R2).
 | A non-`OSError` raised by the terminal command record write itself can still leave a stored proposal next to a failed command (review F2, option A) | Phase 3 guard: require a `succeeded` command record before acting on a proposal |
 | The Phase 1 live RBAC check covered ClusterDeployments, ManagedClusters, PipelineRuns, and Pipelines; the TaskRuns grant's write verbs were not checked live (the manifest test covers them) | Next live validation |
 | The C1.1 checkout tests compare files only, not directory modification times or new empty directories | Next Git collector change |
+| The patch-check outcome is not recorded in the evidence or the CWA trace; it depends on the checkout at generation time | Phase 3 guard |
+| `generator_version` stays `0.1.0` for deprovision and cluster-edit despite the new patch-check refusals | Next generator change |
+| A cluster-edit whose existing `metadata.yaml` has a secret-named key ends `failed` (`generated proposal is invalid`), not `refused` | Next generator change |
+| No unit test runs the real `GitPatchCheck(require_definition=True)` on a cluster-edit patch; the CLI failure-matrix scenarios cover it | Next failure-matrix change |
+| The Phase 2 record's Status calls its grades independently reconciled; the Stage 4 regrades are the author's until the Stage 5 blind review | Stage 5 task 5.1 |
+| C2.20 and C1.17 were run at `1d1bc1c` and `ea7ec7b`; a later source change needs the affected live runs repeated at the closure commit | Stage 5 |
 | `OpenShiftResource.resource_version()` reports `unknown` when an `oc` list lacks `metadata.resourceVersion`; real lists always carry it, and test runners omit it | Phase 3 hardening |
 | `tests/test_contract_schemas.py` compares only property names: a changed field type, `extra="allow"`, or a nested model passes it, and the adapter contracts are not exported | Next schema change |
 | Phase 0 deliverable 8 has one fixture, from `fleet-clusters`; none from the other protected repositories | Operator |

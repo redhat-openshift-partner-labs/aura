@@ -129,7 +129,7 @@ Process error contracts:
 
 ### Deprovision proposals
 
-`propose deprovision` collects evidence with `ClusterStateCollector` for the requested cluster, then assembles a CWA snapshot with output contract `proposal`. `DeprovisionProposalGenerator` reads only that CWA snapshot:
+`propose deprovision` collects evidence with `ClusterStateCollector` for the requested cluster, then assembles a CWA snapshot with output contract `proposal`. `DeprovisionProposalGenerator` reads that CWA snapshot and, through `GitPatchCheck`, the `--fleet-clusters` checkout:
 
 1. It takes the cluster from the `cluster_state_correlation` item.
 2. It takes `base_commit` from the `git=` revision in the evidence source version.
@@ -141,7 +141,7 @@ The CLI stores the CWA snapshot, the CWA trace, the `context_assembled` and `pro
 
 ### Cluster-edit proposals
 
-`propose cluster-edit` collects cluster state like `propose deprovision`, but selects the latest `post-provision` PipelineRun. `ClusterEditProposalGenerator` reads only the CWA snapshot. It applies the shared live-cluster preconditions, requires a definition that is complete or missing only `metadata.yaml`, and derives each missing key from evidence or the `fleet` `9464f0b` default. It then refuses if `GitPatchCheck`, with `require_definition=True`, finds that the patch does not apply to the base commit or that the result is not one complete definition at `provision/<id>`. The CLI stores records in the same order as for deprovision, with the proposal last.
+`propose cluster-edit` collects cluster state like `propose deprovision`, but selects the latest `post-provision` PipelineRun. `ClusterEditProposalGenerator` reads the CWA snapshot and, through `GitPatchCheck`, the `--fleet-clusters` checkout. It applies the shared live-cluster preconditions, requires a definition that is complete or missing only `metadata.yaml`, and derives each missing key from evidence or the `fleet` `9464f0b` default. It then refuses if `GitPatchCheck`, with `require_definition=True`, finds that the patch does not apply to the base commit or that the result is not one complete definition at `provision/<id>`. The CLI stores records in the same order as for deprovision, with the proposal last.
 
 ### Post-provision rerun proposals
 
