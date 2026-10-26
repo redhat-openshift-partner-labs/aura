@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved 2026-10-25 at Aura commit `3b73a3f`; the operator accepted D1–D6 as recommended. Stage 0 is complete: the decisions are applied to the governing plans, deferred items live only in the [Backlog](#backlog), and current verification results live only in [Validation](../validation.md). **Next: Stage 1, task 1.1.** Mark each task done in [Progress](#progress) in the same commit series that completes it.
+Approved 2026-10-25 at Aura commit `3b73a3f`; the operator accepted D1–D6 as recommended. Stage 0 is complete: the decisions are applied to the governing plans, deferred items live only in the [Backlog](#backlog), and current verification results live only in [Validation](../validation.md). **Next: Stage 1, task 1.2.** Mark each task done in [Progress](#progress) in the same commit series that completes it.
 
 ## Why This Plan Exists
 
@@ -169,8 +169,8 @@ Accepted 2026-10-25 as recommended.
 | Stage | Task | State | Commit |
 | --- | --- | --- | --- |
 | 0 | Freeze | Done | `36d7be0` |
-| 1 | 1.1 CLI exception boundary | Next | |
-| 1 | 1.2 Process chokepoint | Pending | |
+| 1 | 1.1 CLI exception boundary | Done | `bbeb78b`, `d6170a7` |
+| 1 | 1.2 Process chokepoint | Next | |
 | 1 | 1.3 `oc` call budget | Pending | |
 | 1 | 1.4 Cluster name rule | Pending | |
 | 2 | 2.1–2.3 Phase 0 closure | Pending | |
