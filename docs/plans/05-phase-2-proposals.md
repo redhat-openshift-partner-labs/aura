@@ -23,23 +23,23 @@ Let Aura prepare reviewable, evidence-linked changes without executing them. A P
 
 Proposals must reflect how the existing systems act on Git. These behaviors were verified in the commits listed under Status:
 
-| Event on `fleet-clusters` `main` | Effect |
-| --- | --- |
-| A push whose commits add any file under `provision/` | EventListener starts `pre-provision` for the first cluster name found, which chains into `provision` and then `post-provision`. |
-| The push head commit message contains `[skip-provision]` | The pre-provision trigger is suppressed. Only the head commit message is checked. |
-| A push whose commits add a file under `deprovision/` | EventListener starts `deprovision` for the first cluster name found, after stripping `-archive` from the file name. |
-| `deprovision` succeeds | The pipeline creates a GitHub deployment status; the `archive-cluster` Action moves `provision/<id>` to `archive/<id>` and removes `deprovision/<id>-archive`. |
-| The sentinel is `deprovision/<id>` without `-archive` | Deprovision runs, but the archive Action fails because it requires `deprovision/<id>-archive`. |
-| A push that only modifies existing files | No pipeline runs. Argo CD syncs only `fleet/hub-config`, so nothing applies the change. |
-| An HTTP body with `action: post-provision` sent to the EventListener | `post-provision` starts. This trigger has no webhook-secret interceptor. |
+| Event on `fleet-clusters` `main` | Effect | Test |
+| --- | --- | --- |
+| A push whose commits add any file under `provision/` | EventListener starts `pre-provision` for the first cluster name found, which chains into `provision` and then `post-provision`. | `test_lifecycle_facts::test_push_adding_a_provision_file_starts_pre_provision` |
+| The push head commit message contains `[skip-provision]` | The pre-provision trigger is suppressed. Only the head commit message is checked. | `test_lifecycle_facts::test_head_commit_skip_provision_suppresses_pre_provision` |
+| A push whose commits add a file under `deprovision/` | EventListener starts `deprovision` for the first cluster name found, after stripping `-archive` from the file name. | `test_lifecycle_facts::test_push_adding_a_deprovision_file_starts_deprovision` |
+| `deprovision` succeeds | The pipeline creates a GitHub deployment status; the `archive-cluster` Action moves `provision/<id>` to `archive/<id>` and removes `deprovision/<id>-archive`. | `test_lifecycle_facts::test_successful_deprovision_runs_the_archive_action` |
+| The sentinel is `deprovision/<id>` without `-archive` | Deprovision runs, but the archive Action fails because it requires `deprovision/<id>-archive`. | `test_lifecycle_facts::test_sentinel_without_archive_suffix_is_refused` |
+| A push that only modifies existing files | No pipeline runs. Argo CD syncs only `fleet/hub-config`, so nothing applies the change. | `test_lifecycle_facts::test_modify_only_push_starts_no_pipeline` |
+| An HTTP body with `action: post-provision` sent to the EventListener | `post-provision` starts. This trigger has no webhook-secret interceptor. | `test_lifecycle_facts::test_post_provision_request_starts_post_provision` |
 
 Re-verified on 2026-10-23 against `fleet` commit `9464f0b` and `fleet-clusters` commit `0453793`. The rows above still hold, and these also apply:
 
-| Event | Effect |
-| --- | --- |
-| A pull request is opened or updated | No Tekton pipeline starts: the `pre-provision` and `deprovision` triggers accept only `push` events, and GitHub pull request payloads never carry `action: post-provision`. The `check-new-overlays` Action runs read-only and checks only cluster directories the pull request adds. |
-| A push to any branch other than `main` | No pipeline starts; both push triggers require `refs/heads/main`. |
-| A merge to `main` whose commits only modify existing files, by any merge method | No pipeline starts, because no commit adds a file. A merged pull request must contain only the proposal's change: any commit in it that adds a file under `provision/` or `deprovision/` triggers a pipeline. |
+| Event | Effect | Test |
+| --- | --- | --- |
+| A pull request is opened or updated | No Tekton pipeline starts: the `pre-provision` and `deprovision` triggers accept only `push` events, and GitHub pull request payloads never carry `action: post-provision`. The `check-new-overlays` Action runs read-only and checks only cluster directories the pull request adds. | No Aura behavior: Aura never opens, updates, or merges a pull request; the operator does |
+| A push to any branch other than `main` | No pipeline starts; both push triggers require `refs/heads/main`. | No Aura behavior: Aura never pushes to any branch |
+| A merge to `main` whose commits only modify existing files, by any merge method | No pipeline starts, because no commit adds a file. A merged pull request must contain only the proposal's change: any commit in it that adds a file under `provision/` or `deprovision/` triggers a pipeline. | No Aura behavior: the merge method is the operator's choice; each proposal's patch is checked to touch one cluster, and Phase 3 owns how it is merged |
 
 Disabling the webhook is not needed for modify-only changes, and it would drop every other push during the window.
 

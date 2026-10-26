@@ -175,7 +175,7 @@ Accepted 2026-10-25 as recommended.
 | 1 | 1.4 Cluster name rule | Done | `08f40da` |
 | 2 | 2.1–2.3 Phase 0 closure | Done | `df58f13`, `dd2e19b`, `8bceb02` |
 | 3 | 3.1–3.3 Phase 1 re-proof | In progress: 3.1 done; 3.2 awaits approval | |
-| 4 | 4.1–4.6 Phase 2 caveats | Pending | |
+| 4 | 4.1–4.6 Phase 2 caveats | In progress: 4.1 done | |
 | 5 | 5.1–5.3 Closure gate | Pending | |
 
 ## Backlog
