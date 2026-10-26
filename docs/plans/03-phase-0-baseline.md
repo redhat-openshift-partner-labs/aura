@@ -1,5 +1,9 @@
 # Phase 0: Baseline
 
+## Status
+
+Implemented. Every acceptance criterion and deliverable is graded in [Phases 0 and 1 Acceptance](11-phase-0-1-acceptance.md#phase-0): met, or met with a caveat for the operator to accept. Phase 0 closes with operator sign-off in Stage 5 of the [closure plan](10-phase-0-2-closure.md).
+
 ## Objective
 
 Establish Aura's contracts, access model, and evidence schema before implementing the assistant.
@@ -108,3 +112,6 @@ Separate `proposer` and `approver` when possible.
 - Authorization rules reject unauthorized command types.
 - No protected repository is modified.
 
+## Validation Record
+
+Graded by the author on 2026-10-25 at Aura commit `df58f13`; each criterion, its cited tests, and its caveats are in [Phases 0 and 1 Acceptance](11-phase-0-1-acceptance.md#phase-0). Phase 0 needs no live run: its criteria are proved by automated tests and a read-only status check of the protected checkouts. Current test and `act` results are in [Validation](../validation.md).
