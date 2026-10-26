@@ -24,6 +24,8 @@ from aura.proposals import (
 )
 from aura.services.diagnosis import cwa_evidence_items
 from aura.services.proposal import (
+    PatchCheck,
+    check_patch,
     ProposalRefused,
     cluster_preconditions,
     correlation_item,
@@ -54,6 +56,9 @@ class ClusterEditProposalGenerator:
     provider_name = "aura"
     generator = "cluster-edit-deterministic"
     generator_version = "0.1.0"
+
+    def __init__(self, *, patch_check: PatchCheck) -> None:
+        self._patch_check = patch_check
 
     def generate(
         self,
@@ -122,6 +127,15 @@ class ClusterEditProposalGenerator:
                 ]
             )
 
+        patch = _patch(path, current, updated)
+        check_patch(
+            self._patch_check,
+            base_commit=str(base_commit),
+            patch=patch,
+            cluster_name=cluster,
+            require_definition=True,
+        )
+
         proposal_id = uuid5(
             snapshot.command_id,
             f"proposal:{snapshot.snapshot_id}",
@@ -142,7 +156,7 @@ class ClusterEditProposalGenerator:
             generator_version=self.generator_version,
             trigger_effect=EXPECTED_TRIGGER_EFFECTS[proposal_type],
             reversibility=EXPECTED_REVERSIBILITY[proposal_type],
-            patch=_patch(path, current, updated),
+            patch=patch,
             **_cluster_edit_text(
                 cluster,
                 path,

@@ -22,6 +22,7 @@ from aura.proposals import (
 )
 from aura.services.cluster_edit import ClusterEditProposalGenerator
 from aura.services.proposal import ProposalRefused
+from patch_checks import NoReasonsCheck
 from test_cluster_inventory_collector import (
     actual_state,
     openshift_collector,
@@ -99,7 +100,7 @@ def evidence(
 
 
 def generate(snapshot: EvidenceSnapshot) -> Proposal:
-    return ClusterEditProposalGenerator().generate(
+    return ClusterEditProposalGenerator(patch_check=NoReasonsCheck()).generate(
         make_cwa_snapshot(snapshot),
         cwa_trace_id=TRACE_ID,
         created_at=CREATED_AT,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import final
+from typing import Protocol, final
 from uuid import UUID, uuid5
 
 from aura.contracts import ARCHIVE_SUFFIX, CommandType, EvidenceItem
@@ -42,6 +42,38 @@ class ProposalRefused(Exception):
     def __init__(self, reasons: list[str]) -> None:
         super().__init__("; ".join(reasons))
         self.reasons = reasons
+
+
+class PatchCheck(Protocol):
+    def check(
+        self,
+        *,
+        base_commit: str,
+        patch: str,
+        cluster_name: str,
+        require_definition: bool,
+    ) -> list[str]:
+        ...
+
+
+def check_patch(
+    patch_check: PatchCheck,
+    *,
+    base_commit: str,
+    patch: str,
+    cluster_name: str,
+    require_definition: bool,
+) -> None:
+    """Refuse a Git proposal whose patch the check reports on."""
+
+    reasons = patch_check.check(
+        base_commit=base_commit,
+        patch=patch,
+        cluster_name=cluster_name,
+        require_definition=require_definition,
+    )
+    if reasons:
+        raise ProposalRefused(reasons)
 
 
 class ProposalService(EvidenceCommandService):
@@ -93,6 +125,9 @@ class DeprovisionProposalGenerator:
     generator = "deprovision-sentinel-deterministic"
     generator_version = "0.1.0"
 
+    def __init__(self, *, patch_check: PatchCheck) -> None:
+        self._patch_check = patch_check
+
     def generate(
         self,
         snapshot: CWASnapshot,
@@ -110,6 +145,13 @@ class DeprovisionProposalGenerator:
             reasons.append("no pinned Git base commit in evidence")
         if reasons:
             raise ProposalRefused(reasons)
+        check_patch(
+            self._patch_check,
+            base_commit=str(base_commit),
+            patch=deprovision_sentinel_patch(cluster),
+            cluster_name=cluster,
+            require_definition=False,
+        )
 
         proposal_id = uuid5(
             snapshot.command_id,
@@ -226,6 +268,8 @@ def cluster_preconditions(
 
 __all__ = [
     "DeprovisionProposalGenerator",
+    "PatchCheck",
+    "check_patch",
     "cluster_preconditions",
     "correlation_item",
     "pinned_git_revision",

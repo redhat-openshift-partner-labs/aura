@@ -405,7 +405,7 @@ Refusal reasons after the scaffold runs:
 | An old wildcard render under `crossplane/patches/` | `<path> contains the old render pattern <pattern>` |
 | No current `machine-api` pattern | `<path> is missing`, or `<path> lacks instance-profile/<prefix>-?????-worker-profile` |
 
-After the output checks, `GitDefinitionCheck` applies the patch to the base commit in a shared clone and collects the result:
+After the output checks, `GitDefinitionCheck` applies the patch to the base commit in a shared clone and collects the result. Deprovision and cluster-edit proposals use the same `GitPatchCheck`: deprovision refuses only when its patch does not apply, and cluster-edit refuses for every row below:
 
 | Problem | Reason |
 | --- | --- |

@@ -133,13 +133,14 @@ Process error contracts:
 1. It takes the cluster from the `cluster_state_correlation` item.
 2. It takes `base_commit` from the `git=` revision in the evidence source version.
 3. It refuses with every unmet precondition: one definition at `provision/<id>`, no existing sentinel, OpenShift resources present, and a pinned base commit.
-4. Otherwise it returns a deterministic `Proposal` whose ID derives from the command and CWA snapshot.
+4. It refuses if its sentinel patch does not apply to the base commit, checked by `GitPatchCheck` with `require_definition=False` in a `--shared --no-checkout` clone of `--fleet-clusters`.
+5. Otherwise it returns a deterministic `Proposal` whose ID derives from the command and CWA snapshot.
 
 The CLI stores the CWA snapshot, the CWA trace, the `context_assembled` and `proposal_created` audit events, and only then the proposal. If any earlier write fails, the command fails and no proposal file exists, so a stored proposal always has its trace and audit events. The trace records provider `aura`, model name `deprovision-sentinel-deterministic`, and the proposal digest as its response digest. Incomplete and invalid definitions do not block a deprovision proposal, because deprovision acts on the cluster name.
 
 ### Cluster-edit proposals
 
-`propose cluster-edit` collects cluster state like `propose deprovision`, but selects the latest `post-provision` PipelineRun. `ClusterEditProposalGenerator` reads only the CWA snapshot. It applies the shared live-cluster preconditions, requires a definition that is complete or missing only `metadata.yaml`, and derives each missing key from evidence or the `fleet` `9464f0b` default. The CLI stores records in the same order as for deprovision, with the proposal last.
+`propose cluster-edit` collects cluster state like `propose deprovision`, but selects the latest `post-provision` PipelineRun. `ClusterEditProposalGenerator` reads only the CWA snapshot. It applies the shared live-cluster preconditions, requires a definition that is complete or missing only `metadata.yaml`, and derives each missing key from evidence or the `fleet` `9464f0b` default. It then refuses if `GitPatchCheck`, with `require_definition=True`, finds that the patch does not apply to the base commit or that the result is not one complete definition at `provision/<id>`. The CLI stores records in the same order as for deprovision, with the proposal last.
 
 ### Post-provision rerun proposals
 
@@ -147,7 +148,7 @@ The CLI stores the CWA snapshot, the CWA trace, the `context_assembled` and `pro
 
 ### Scaffold proposals
 
-`ScaffoldEvidenceCollector` combines `GitInventoryCollector`, ClusterDeployment and ManagedCluster names from `OpenShiftCLIInventoryClient`, the request built from the CLI flags, the scaffold checkout's `HEAD` and cleanliness, and `kustomize_version()`. `ScaffoldProposalGenerator` reads the CWA snapshot, checks preconditions, and only then calls `SubprocessScaffoldRunner`, which exports both repositories with `git ls-tree` and `git cat-file` into a temporary directory, runs the scaffold there, and reports every added file and every other change, which the generator refuses. After its output checks, it builds the patch and calls `GitDefinitionCheck`, which applies the patch to a `--shared --no-checkout` clone with `git apply --cached`, commits it with `write-tree`, `commit-tree`, and `update-ref`, and runs `GitInventoryCollector` on the clone. All of these Git calls use the isolation in `aura.git_isolation`. A `ScaffoldRunError` from the runner or the check becomes `ProposalGenerationError`, so the command fails after its CWA snapshot and before its trace, and `command_failed` links to `evidence_collected`. The CLI stores records in the same order as for other proposals, with the proposal last.
+`ScaffoldEvidenceCollector` combines `GitInventoryCollector`, ClusterDeployment and ManagedCluster names from `OpenShiftCLIInventoryClient`, the request built from the CLI flags, the scaffold checkout's `HEAD` and cleanliness, and `kustomize_version()`. `ScaffoldProposalGenerator` reads the CWA snapshot, checks preconditions, and only then calls `SubprocessScaffoldRunner`, which exports both repositories with `git ls-tree` and `git cat-file` into a temporary directory, runs the scaffold there, and reports every added file and every other change, which the generator refuses. After its output checks, it builds the patch and calls `GitDefinitionCheck`, which runs `GitPatchCheck` with `require_definition=True`: it applies the patch to a `--shared --no-checkout` clone with `git apply --cached`, commits it with `write-tree`, `commit-tree`, and `update-ref`, and runs `GitInventoryCollector` on the clone. All of these Git calls use the isolation in `aura.git_isolation`. A `ScaffoldRunError` from the runner or the check becomes `ProposalGenerationError`, so the command fails after its CWA snapshot and before its trace, and `command_failed` links to `evidence_collected`. The CLI stores records in the same order as for other proposals, with the proposal last.
 
 ### Proposal staleness
 

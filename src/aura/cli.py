@@ -100,6 +100,7 @@ from aura.scaffold import (
 )
 from aura.scaffold_runner import (
     GitDefinitionCheck,
+    GitPatchCheck,
     SubprocessScaffoldRunner,
     kustomize_version,
 )
@@ -263,10 +264,9 @@ def _add_diagnose_state_arguments(
     _add_operator_arguments(parser, "diagnose cluster state")
 
 
-_PROPOSAL_GENERATORS = {
+_GIT_PROPOSAL_GENERATORS = {
     ProposalType.DEPROVISION.value: DeprovisionProposalGenerator,
     ProposalType.CLUSTER_EDIT.value: ClusterEditProposalGenerator,
-    ProposalType.POST_PROVISION_RERUN.value: PostProvisionRerunGenerator,
 }
 _RERUN = ProposalType.POST_PROVISION_RERUN.value
 _SCAFFOLD = ProposalType.SCAFFOLD.value
@@ -279,8 +279,12 @@ ProposalGenerator = (
 
 
 def _proposal_generator(args: argparse.Namespace) -> ProposalGenerator:
+    if args.proposal_type == _RERUN:
+        return PostProvisionRerunGenerator()
     if args.proposal_type != _SCAFFOLD:
-        return _PROPOSAL_GENERATORS[args.proposal_type]()
+        return _GIT_PROPOSAL_GENERATORS[args.proposal_type](
+            patch_check=GitPatchCheck(args.fleet_clusters)
+        )
     return ScaffoldProposalGenerator(
         runner=SubprocessScaffoldRunner(
             fleet_clusters=args.fleet_clusters,

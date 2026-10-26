@@ -39,6 +39,7 @@ from test_cluster_state_collector import (
     FakeTektonCollector,
 )
 from test_cluster_state_diagnosis import assert_references, make_cwa_snapshot
+from patch_checks import NoReasonsCheck
 from test_git_inventory_collector import commit_repository, write_cluster
 
 
@@ -65,7 +66,7 @@ def cluster_state(
 
 
 def generate(evidence: EvidenceSnapshot) -> Proposal:
-    return DeprovisionProposalGenerator().generate(
+    return DeprovisionProposalGenerator(patch_check=NoReasonsCheck()).generate(
         make_cwa_snapshot(evidence),
         cwa_trace_id=TRACE_ID,
         created_at=CREATED_AT,

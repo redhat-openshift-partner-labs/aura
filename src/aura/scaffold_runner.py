@@ -131,8 +131,13 @@ class SubprocessScaffoldRunner:
 
 
 @final
-class GitDefinitionCheck:
-    """Applies a patch to a shared clone and collects the definition."""
+class GitPatchCheck:
+    """Applies a patch to a shared clone and can collect the definition.
+
+    Every Git proposal is checked: the patch must apply to its base commit,
+    and cluster-edit and scaffold patches must also leave one complete
+    definition of the cluster.
+    """
 
     def __init__(
         self,
@@ -149,6 +154,7 @@ class GitDefinitionCheck:
         base_commit: str,
         patch: str,
         cluster_name: str,
+        require_definition: bool,
     ) -> list[str]:
         with tempfile.TemporaryDirectory(dir=self._temp_root) as temp:
             clone = Path(temp) / "fleet-clusters"
@@ -171,6 +177,8 @@ class GitDefinitionCheck:
                     f"patch does not apply to base commit {base_commit}: "
                     f"{lines[-1].strip() if lines else 'git apply failed'}"
                 ]
+            if not require_definition:
+                return []
             tree = _git(clone, "write-tree").strip()
             commit = _git(
                 clone,
@@ -180,7 +188,7 @@ class GitDefinitionCheck:
                 "-p",
                 base_commit,
                 "-m",
-                "Aura scaffold definition check",
+                "Aura patch check",
                 identity=True,
             ).strip()
             _git(clone, "update-ref", "HEAD", commit)
@@ -199,6 +207,33 @@ class GitDefinitionCheck:
             ],
             base_commit,
             cluster_name,
+        )
+
+
+@final
+class GitDefinitionCheck:
+    """A GitPatchCheck that requires a complete definition (scaffold)."""
+
+    def __init__(
+        self,
+        fleet_clusters: Path,
+        *,
+        temp_root: Path | None = None,
+    ) -> None:
+        self._check = GitPatchCheck(fleet_clusters, temp_root=temp_root)
+
+    def check(
+        self,
+        *,
+        base_commit: str,
+        patch: str,
+        cluster_name: str,
+    ) -> list[str]:
+        return self._check.check(
+            base_commit=base_commit,
+            patch=patch,
+            cluster_name=cluster_name,
+            require_definition=True,
         )
 
 
@@ -397,6 +432,7 @@ def _git(root: Path | None, *arguments: str, identity: bool = False) -> str:
 __all__ = [
     "GIT_TIMEOUT",
     "GitDefinitionCheck",
+    "GitPatchCheck",
     "SubprocessScaffoldRunner",
     "kustomize_version",
 ]
