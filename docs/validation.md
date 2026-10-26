@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-957 passed
+979 passed
 ```
 
 Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `f617dbe` at the end of closure Stage 1, passed with 957 tests on Python 3.13.17 in `linux/arm64`.
