@@ -13,7 +13,6 @@ import hashlib
 import os
 import shutil
 import stat
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -22,11 +21,15 @@ from uuid import UUID, uuid5
 
 from aura.collectors.git_inventory import GitInventoryCollector, GitInventoryError
 from aura.contracts import EvidenceItem
-from aura.git_isolation import GIT_ISOLATION, isolated_git_environment
+from aura.git_isolation import (
+    GIT_ISOLATION,
+    GIT_TIMEOUT,
+    isolated_git_environment,
+)
+from aura.process import ProcessError, ProcessResult, run_process
 from aura.scaffold import ScaffoldResult, ScaffoldRunError
 
 
-GIT_TIMEOUT = 120
 _BOOTSTRAP = (
     "import sys; sys.path.insert(0, sys.argv[1]); "
     "from scaffold.cli import main; sys.exit(main(sys.argv[2:]))"
@@ -82,7 +85,7 @@ class SubprocessScaffoldRunner:
             _export(self._fleet_clusters, base_commit, workspace)
             before = _entries(workspace)
             try:
-                completed = subprocess.run(
+                completed = run_process(
                     [
                         self._python,
                         "-I",
@@ -98,17 +101,14 @@ class SubprocessScaffoldRunner:
                         "HOME": str(root),
                         "LANG": "C.UTF-8",
                     },
-                    stdin=subprocess.DEVNULL,
-                    capture_output=True,
                     timeout=self._timeout,
                 )
-            except subprocess.TimeoutExpired as error:
+            except ProcessError as error:
                 raise ScaffoldRunError(
                     f"scaffold timed out after {self._timeout:g} seconds"
-                ) from error
-            except OSError as error:
-                raise ScaffoldRunError(
-                    f"cannot run scaffold with {self._python}: {error}"
+                    if error.timed_out
+                    else f"cannot run scaffold with {self._python}: "
+                    f"{error.__cause__}"
                 ) from error
             after = _entries(workspace)
             added = sorted(
@@ -118,8 +118,8 @@ class SubprocessScaffoldRunner:
             )
             return ScaffoldResult(
                 exit_code=completed.returncode,
-                stdout=completed.stdout.decode("utf-8", "replace"),
-                stderr=completed.stderr.decode("utf-8", "replace"),
+                stdout=completed.stdout_text(),
+                stderr=completed.stderr_text(),
                 files={path: _read(workspace, path) for path in added},
                 changed=_changes(before, after),
             )
@@ -204,17 +204,14 @@ def kustomize_version() -> str | None:
     if binary is None:
         return None
     try:
-        completed = subprocess.run(
-            [binary, "version"],
-            capture_output=True,
-            stdin=subprocess.DEVNULL,
-            text=True,
-            timeout=30,
-            check=True,
-        )
-    except (OSError, subprocess.SubprocessError) as error:
+        completed = run_process([binary, "version"], env=None, timeout=30)
+    except ProcessError as error:
         raise ScaffoldRunError(f"kustomize version failed: {error}") from error
-    return completed.stdout.strip() or None
+    if completed.returncode != 0:
+        raise ScaffoldRunError(
+            f"kustomize version failed: exit {completed.returncode}"
+        )
+    return completed.stdout_text().strip() or None
 
 
 def _definition_reasons(
@@ -345,7 +342,7 @@ def _run_git(
     *,
     input: bytes | None = None,
     identity: bool = False,
-) -> subprocess.CompletedProcess[bytes]:
+) -> ProcessResult:
     command = [
         "git",
         *GIT_ISOLATION,
@@ -356,15 +353,13 @@ def _run_git(
     if identity:
         environment.update(_CHECK_IDENTITY)
     try:
-        return subprocess.run(
+        return run_process(
             command,
-            input=input,
-            stdin=None if input is not None else subprocess.DEVNULL,
-            capture_output=True,
             env=environment,
             timeout=GIT_TIMEOUT,
+            input=input,
         )
-    except (OSError, subprocess.TimeoutExpired) as error:
+    except ProcessError as error:
         raise ScaffoldRunError(f"git {arguments[0]} failed: {error}") from error
 
 

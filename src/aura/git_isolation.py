@@ -13,6 +13,7 @@ import os
 
 
 GIT_ISOLATION = ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false")
+GIT_TIMEOUT = 120
 
 
 def isolated_git_environment() -> dict[str, str]:
@@ -28,4 +29,4 @@ def isolated_git_environment() -> dict[str, str]:
     }
 
 
-__all__ = ["GIT_ISOLATION", "isolated_git_environment"]
+__all__ = ["GIT_ISOLATION", "GIT_TIMEOUT", "isolated_git_environment"]

@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, final
+
+from aura.process import (
+    CalledProcessError,
+    ProcessError,
+    TimeoutExpired,
+    run_process,
+)
 
 
 CommandRunner = Callable[[Sequence[str]], str]
@@ -15,14 +21,15 @@ class OpenShiftCLIError(RuntimeError):
 
 
 def _run_command(args: Sequence[str]) -> str:
-    result = subprocess.run(
-        args,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    return result.stdout
+    result = run_process(args, env=None, timeout=30)
+    if result.returncode != 0:
+        raise CalledProcessError(
+            result.returncode,
+            list(args),
+            output=result.stdout_text(),
+            stderr=result.stderr_text(),
+        )
+    return result.stdout.decode("utf-8")
 
 
 def _read_oc(
@@ -32,20 +39,30 @@ def _read_oc(
 ) -> dict[str, Any]:
     try:
         output = command_runner(args)
-    except subprocess.CalledProcessError as error:
+    except CalledProcessError as error:
         output_text = str(error.stderr or error.stdout or "").strip()
         detail = output_text.splitlines()[-1] if output_text else "no output"
         raise OpenShiftCLIError(
             f"oc command failed for {resource} "
             f"(exit {error.returncode}): {detail}"
         ) from error
-    except subprocess.TimeoutExpired as error:
+    except TimeoutExpired as error:
         raise OpenShiftCLIError(
             f"oc command timed out for {resource}"
+        ) from error
+    except ProcessError as error:
+        raise OpenShiftCLIError(
+            f"oc command timed out for {resource}"
+            if error.timed_out
+            else f"oc command failed for {resource}: {error}"
         ) from error
     except OSError as error:
         raise OpenShiftCLIError(
             f"oc command failed for {resource}: {error}"
+        ) from error
+    except UnicodeDecodeError as error:
+        raise OpenShiftCLIError(
+            f"oc returned output that is not UTF-8 for {resource}"
         ) from error
     try:
         return json.loads(output)

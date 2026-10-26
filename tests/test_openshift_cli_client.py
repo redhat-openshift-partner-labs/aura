@@ -154,3 +154,25 @@ def test_openshift_cli_client_converts_oc_failures(
         client.list_cluster_deployments()
 
     assert str(error.value) == expected
+
+
+def test_openshift_cli_client_rejects_oc_output_that_is_not_utf8(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    oc = tmp_path / "bin" / "oc"
+    oc.parent.mkdir()
+    oc.write_text("#!/bin/sh\nprintf '{\"items\": [\"\\377\"]}'\n")
+    oc.chmod(0o755)
+    monkeypatch.setenv("PATH", str(oc.parent))
+    kubeconfig = tmp_path / "aura-readonly"
+    kubeconfig.write_text("{}", encoding="utf-8")
+
+    client = OpenShiftCLIInventoryClient(kubeconfig_path=kubeconfig)
+
+    with pytest.raises(OpenShiftCLIError) as error:
+        client.list_cluster_deployments()
+
+    assert str(error.value) == (
+        "oc returned output that is not UTF-8 for clusterdeployments"
+    )

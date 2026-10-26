@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,7 +10,12 @@ from uuid import UUID, uuid5
 
 from aura.collectors.git_inventory import GitInventoryError, read_git
 from aura.contracts import ARCHIVE_SUFFIX, EvidenceItem, EvidenceSnapshot
-from aura.git_isolation import GIT_ISOLATION, isolated_git_environment
+from aura.git_isolation import (
+    GIT_ISOLATION,
+    GIT_TIMEOUT,
+    isolated_git_environment,
+)
+from aura.process import ProcessError, run_process
 from aura.proposal_store import JsonProposalStore
 from aura.proposals import Proposal
 
@@ -91,7 +95,7 @@ class GitProposalStaleness:
 
     def _history_error(self, base: str, head: str) -> str | None:
         try:
-            result = subprocess.run(
+            result = run_process(
                 [
                     "git",
                     *GIT_ISOLATION,
@@ -102,14 +106,12 @@ class GitProposalStaleness:
                     base,
                     head,
                 ],
-                capture_output=True,
-                stdin=subprocess.DEVNULL,
-                text=True,
                 env=isolated_git_environment(),
+                timeout=GIT_TIMEOUT,
             )
-        except OSError as error:
+        except ProcessError as error:
             raise GitInventoryError(
-                f"git checkout is not usable: {self.root}"
+                f"git command failed for fleet-clusters: {error}"
             ) from error
         if result.returncode == 0:
             return None

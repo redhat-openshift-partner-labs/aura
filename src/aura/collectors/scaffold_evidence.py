@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,6 +11,7 @@ from uuid import UUID, uuid5
 from aura.collectors.openshift_inventory import OpenShiftInventoryClient
 from aura.contracts import EvidenceItem, EvidenceSnapshot
 from aura.git_isolation import GIT_ISOLATION, isolated_git_environment
+from aura.process import ProcessError, run_process
 from aura.scaffold import ScaffoldCheckoutError, ScaffoldRequest
 
 
@@ -119,25 +119,22 @@ def _names(resources: list[dict[str, Any]]) -> list[str]:
 
 def _git(root: Path, *arguments: str) -> str:
     try:
-        return subprocess.run(
+        result = run_process(
             ["git", *GIT_ISOLATION, "-C", str(root), *arguments],
-            check=True,
-            capture_output=True,
-            stdin=subprocess.DEVNULL,
-            text=True,
             env=isolated_git_environment(),
             timeout=60,
-        ).stdout
-    except subprocess.CalledProcessError as error:
-        detail = (error.stderr or "").strip().splitlines()
-        raise ScaffoldCheckoutError(
-            f"scaffold checkout {root} is not usable: "
-            f"{detail[-1] if detail else 'git failed'}"
-        ) from error
-    except (OSError, subprocess.TimeoutExpired) as error:
+        )
+    except ProcessError as error:
         raise ScaffoldCheckoutError(
             f"scaffold checkout {root} is not usable: {error}"
         ) from error
+    if result.returncode != 0:
+        detail = result.stderr_text().strip().splitlines()
+        raise ScaffoldCheckoutError(
+            f"scaffold checkout {root} is not usable: "
+            f"{detail[-1] if detail else 'git failed'}"
+        )
+    return result.stdout_text()
 
 
 __all__ = ["ScaffoldEvidenceCollector"]

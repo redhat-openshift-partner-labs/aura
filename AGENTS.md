@@ -79,6 +79,7 @@ docs(phase-1): record validation
 - Match the existing Python style; no formatter is configured.
 - Prefer small typed classes and explicit contracts.
 - Keep collector logic deterministic.
+- Run external programs only through `aura.process.run_process`; `tests/test_architecture.py` fails if another module imports `subprocess`.
 - Keep authorization outside collectors and models.
 - Keep stores immutable and append-only.
 - Do not add inline comments unless they explain a non-obvious invariant.

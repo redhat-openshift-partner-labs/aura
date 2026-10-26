@@ -333,7 +333,7 @@ Additional error contracts:
 - Existing non-directory record paths are rejected before collection.
 - A missing Git checkout is reported as an unusable checkout.
 - Git subprocess failures report the exit code and final diagnostic line.
-- Missing or inaccessible `oc`, permission failures, invalid JSON, and command timeouts are converted to concise `OpenShiftCLIError` messages.
+- Missing or inaccessible `oc`, permission failures, invalid JSON, output that is not UTF-8, and command timeouts are converted to concise `OpenShiftCLIError` messages.
 - Record write failures, such as a full disk or an unwritable directory, exit `2` with the operating-system error and store a `failed` terminal record when `--command-dir` is writable.
 - An unreadable or invalid record for the requested idempotency key exits `2` before collection with `idempotency key record is unreadable`.
 - A `--command-dir` that cannot be created or locked exits `2` before collection.

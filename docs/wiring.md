@@ -106,16 +106,20 @@ PipelineRun selection defaults to the latest matching run by `start_time`. The `
 
 Git checkout and subprocess failures are converted to `GitInventoryError`. The CLI reports an unusable checkout, the Git exit code, and the final Git diagnostic line without printing partial JSON.
 
+Every external program, `oc`, Git, the scaffold, and `kustomize`, runs through `aura.process.run_process`, and no other module imports `subprocess`; `tests/test_architecture.py` enforces it. `run_process` takes a required environment and timeout, closes standard input unless input is given, never raises on a non-zero exit, returns output as bytes, and raises `ProcessError` when the program cannot start or times out. Each caller maps `ProcessError` and non-zero exits to its own error type. `oc` inherits Aura's environment, every Git call uses `isolated_git_environment()` and a 120-second timeout except the scaffold checkout's 60-second reads, the scaffold gets only `PATH`, `HOME`, and `LANG`, and `kustomize version` inherits the environment.
+
 Process error contracts:
 
 | Source | Failure | CLI behavior |
 | --- | --- | --- |
 | Git | Missing checkout | Exit `2`; no evidence collected |
 | Git | Subprocess failure | Exit `2`; final diagnostic line reported |
+| Git | Timeout or executable that cannot start | Exit `2`; `git command failed for fleet-clusters:` with the reason |
 | Git | Invalid definition | Collection continues with a `cluster_definition_invalid` item; `diagnose state` for that cluster is refused with `Valid Git cluster definition` |
 | `oc` | Missing executable or permission failure | Exit `2`; concise resource-specific error |
 | `oc` | Invalid JSON | Exit `2`; no partial JSON emitted |
 | `oc` | Timeout after 30 seconds | Exit `2`; resource-specific timeout reported |
+| `oc` | Output that is not UTF-8 | Exit `2`; `oc returned output that is not UTF-8` for the resource |
 | Stores | Operating-system write failure | Exit `2`; `failed` terminal record stored when the command store is writable |
 | Command store | Unreadable record or lock failure | Exit `2` before collection |
 

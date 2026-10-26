@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, final
@@ -10,7 +9,12 @@ from uuid import UUID, uuid4, uuid5
 
 import yaml
 
-from aura.git_isolation import GIT_ISOLATION, isolated_git_environment
+from aura.git_isolation import (
+    GIT_ISOLATION,
+    GIT_TIMEOUT,
+    isolated_git_environment,
+)
+from aura.process import CalledProcessError, ProcessError, run_process
 from aura.contracts import ARCHIVE_SUFFIX, EvidenceItem, EvidenceSnapshot
 
 
@@ -74,12 +78,16 @@ def read_git(root: Path, arguments: list[str]) -> str:
 
     try:
         return _run_git(root, arguments)
-    except subprocess.CalledProcessError as error:
+    except CalledProcessError as error:
         output = _decode(error.stderr or error.stdout or b"").strip()
         detail = output.splitlines()[-1] if output else "no output"
         raise GitInventoryError(
             f"git command failed for fleet-clusters "
             f"(exit {error.returncode}): {detail}"
+        ) from error
+    except ProcessError as error:
+        raise GitInventoryError(
+            f"git command failed for fleet-clusters: {error}"
         ) from error
     except OSError as error:
         raise GitInventoryError(
@@ -90,13 +98,19 @@ def read_git(root: Path, arguments: list[str]) -> str:
 def _run_git(root: Path, arguments: list[str]) -> str:
     if not root.is_dir():
         raise GitInventoryError(f"git checkout is not usable: {root}")
-    result = subprocess.run(
-        ["git", *GIT_ISOLATION, "-C", str(root), *arguments],
-        check=True,
-        capture_output=True,
-        stdin=subprocess.DEVNULL,
+    command = ["git", *GIT_ISOLATION, "-C", str(root), *arguments]
+    result = run_process(
+        command,
         env=isolated_git_environment(),
+        timeout=GIT_TIMEOUT,
     )
+    if result.returncode != 0:
+        raise CalledProcessError(
+            result.returncode,
+            command,
+            output=result.stdout,
+            stderr=result.stderr,
+        )
     return _decode(result.stdout)
 
 
