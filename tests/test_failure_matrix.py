@@ -746,3 +746,34 @@ def test_keyboard_interrupt_passes_through(tmp_path, monkeypatch) -> None:
             monkeypatch,
             collector=FailingReadCollector(KeyboardInterrupt),
         )
+
+
+def test_unexpected_error_with_vanished_audit_record_stores_failed_record(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    scenario = scenario_named("inventory-audited")
+    vanished = UUID(int=1)
+    (tmp_path / "audit").mkdir()
+    (tmp_path / "audit" / f"{vanished}.json").symlink_to(tmp_path / "gone")
+    arguments, _ = scenario.build(tmp_path)
+
+    run = run_cli(
+        arguments,
+        monkeypatch,
+        collector=FailingReadCollector(RuntimeError),
+        command_id=COMMAND_ID,
+        clock=lambda: datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    assert run.exit_code == 2
+    assert run.stderr == (
+        internal_error(injected(RuntimeError))
+        + f"aura: audit event not found: {vanished}\n"
+    )
+    assert [write.label for write in run.writes] == [
+        RECEIVED,
+        "CommandEnvelope",
+    ]
+    record = JsonCommandStore(tmp_path / "commands").load(KEY)
+    assert record.status is CommandState.FAILED

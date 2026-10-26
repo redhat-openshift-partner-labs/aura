@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from aura.audit_store import (
     AuditEventAlreadyStored,
+    AuditEventNotFound,
     JsonAuditEventStore,
 )
 from aura.authorization import OperatorRole
@@ -640,7 +641,7 @@ def _fail_unrecorded(
             args.audit_dir,
             command.command_id,
         )
-    except (OSError, ValueError) as lookup_error:
+    except (OSError, ValueError, AuditEventNotFound) as lookup_error:
         failed = command.with_status(
             CommandStateMachine().transition(
                 command.status,
