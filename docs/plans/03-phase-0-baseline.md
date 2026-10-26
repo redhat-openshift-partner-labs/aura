@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented. Every acceptance criterion and deliverable is graded in [Phases 0 and 1 Acceptance](11-phase-0-1-acceptance.md#phase-0): met, or met with a caveat for the operator to accept. Phase 0 closes with operator sign-off in Stage 5 of the [closure plan](10-phase-0-2-closure.md).
+Implemented. Every acceptance criterion and deliverable is graded in [Phases 0 and 1 Acceptance](11-phase-0-1-acceptance.md#phase-0): met, or met with a caveat for the operator to accept. Closed: the operator signed off Phase 0 on 2026-10-26 in Stage 5 of the [closure plan](10-phase-0-2-closure.md), accepting every caveat.
 
 ## Objective
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft, aligned on 2026-10-20 with the approved [Phase 2](05-phase-2-proposals.md) plan and its lifecycle facts. Implementation starts only after Phase 2 is complete and this plan is approved.
+Draft, aligned on 2026-10-20 with the approved [Phase 2](05-phase-2-proposals.md) plan and its lifecycle facts. Implementation starts only after Phase 2 is complete and this plan is approved. Phases 0–2 were signed off on 2026-10-26; Phase 3 is bound by the [Phase 3 Entry Conditions](10-phase-0-2-closure.md#phase-3-entry-conditions).
 
 ## Objective
 

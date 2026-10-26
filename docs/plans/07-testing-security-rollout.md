@@ -139,6 +139,8 @@ Every evaluation case must record:
 | Gate 7 | Audit trail reproduces every action |
 | Gate 8 | Operator runbook and rollback procedure are complete |
 
+Phase 3 also starts only under the [Phase 3 Entry Conditions](10-phase-0-2-closure.md#phase-3-entry-conditions) recorded at the Phases 0–2 sign-off: conditions E2–E4 before any Phase 3 execution, and E1 before any external model is connected.
+
 ## Rollout Plan
 
 1. Run Aura locally with read-only access.

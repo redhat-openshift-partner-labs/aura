@@ -1,5 +1,7 @@
 # Implementation Status
 
+Phases 0, 1, and 2 are closed: the operator signed them off on 2026-10-26, accepting every caveat in the [Closure Grades](plans/10-phase-0-2-closure.md#closure-grades). Current test and `act` results are in [Validation](validation.md).
+
 ## Phase 1
 
 Phase 1 functional scope and closure hardening are implemented and validated. Phase 1 is published: `main` was pushed to the public remote at `01f0f38`, and CI run `39474106779` passed. The `metadata.yaml` and `platform` backfills were resolved in `fleet-clusters` on 2026-10-25; the stranded deprovision sentinels remain open in [Open Questions](plans/08-open-questions.md#fleet-clusters-data), and Aura reports them rather than working around them.
@@ -182,4 +184,4 @@ The model protocol remains provider-independent. A future provider must consume 
 
 ## Next Work
 
-Phase 1 is published. The remaining work for Phases 0, 1, and 2 is the staged [Phases 0–2 Closure](plans/10-phase-0-2-closure.md) plan; deferred items, including the stranded deprovision sentinels and legacy rerun records, are tracked only in its [Backlog](plans/10-phase-0-2-closure.md#backlog).
+Phases 0–2 are closed. Next is [Phase 3](plans/06-phase-3-approved-execution.md), which needs plan approval and the [Phase 3 Entry Conditions](plans/10-phase-0-2-closure.md#phase-3-entry-conditions): E2–E4 before any Phase 3 execution and E1 before an external model is connected. Deferred items, including the stranded deprovision sentinels and legacy rerun records, are tracked only in the closure plan's [Backlog](plans/10-phase-0-2-closure.md#backlog).

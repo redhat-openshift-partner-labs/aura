@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved 2026-10-25 at Aura commit `3b73a3f`; the operator accepted D1–D6 as recommended. Stage 0 is complete: the decisions are applied to the governing plans, deferred items live only in the [Backlog](#backlog), and current verification results live only in [Validation](../validation.md). Stage 1 is complete: its review found three invariant or regression findings, fixed in `2f0bfb8` (F1), `976270c` (F3), and `f617dbe` (F2, operator option A), with its other notes in the [Backlog](#backlog); the `act` result is in [Validation](../validation.md). Stage 2 is complete: its review found three Phase 0 rows whose evidence did not fail when the rule broke, corrected in `0d85f4c` and `9c3fefc`. Stage 3 is complete: its review found that the C1.1, C1.11, and C1.14 evidence did not reliably fail when the rule broke, corrected in `7aad4ee`, and noted an I8 violation, an `oc` response without an item list read as empty, fixed in `0410a2c`. Stage 4 is complete: its review found A1 regraded too generously for cluster-edit and a stale count, corrected in `9f63edb`, and an I6 violation, secret-named `metadata.yaml` keys stored verbatim in evidence, fixed in `8922f0e` (operator decision B) and checked live, read-only, in `c114edb`. Stage 5 tasks 5.1 and 5.2 are done: the blind grading found F1 not met and two store defects (I8, I9), fixed in `cff596e`, `4d5e5ae`, and `bcdf2ea`; a confirmation review of `d0053dc..50fa291` reported no criterion or invariant violation and no regression, and the `act` result is in [Validation](../validation.md); see [Closure Grades](#closure-grades). **Next: task 5.3, operator sign-off.** Mark each task done in [Progress](#progress) in the same commit series that completes it.
+Approved 2026-10-25 at Aura commit `3b73a3f`; the operator accepted D1–D6 as recommended. Stage 0 is complete: the decisions are applied to the governing plans, deferred items live only in the [Backlog](#backlog), and current verification results live only in [Validation](../validation.md). Stage 1 is complete: its review found three invariant or regression findings, fixed in `2f0bfb8` (F1), `976270c` (F3), and `f617dbe` (F2, operator option A), with its other notes in the [Backlog](#backlog); the `act` result is in [Validation](../validation.md). Stage 2 is complete: its review found three Phase 0 rows whose evidence did not fail when the rule broke, corrected in `0d85f4c` and `9c3fefc`. Stage 3 is complete: its review found that the C1.1, C1.11, and C1.14 evidence did not reliably fail when the rule broke, corrected in `7aad4ee`, and noted an I8 violation, an `oc` response without an item list read as empty, fixed in `0410a2c`. Stage 4 is complete: its review found A1 regraded too generously for cluster-edit and a stale count, corrected in `9f63edb`, and an I6 violation, secret-named `metadata.yaml` keys stored verbatim in evidence, fixed in `8922f0e` (operator decision B) and checked live, read-only, in `c114edb`. Stage 5 tasks 5.1 and 5.2 are done: the blind grading found F1 not met and two store defects (I8, I9), fixed in `cff596e`, `4d5e5ae`, and `bcdf2ea`; a confirmation review of `d0053dc..50fa291` reported no criterion or invariant violation and no regression, and the `act` result is in [Validation](../validation.md); see [Closure Grades](#closure-grades). **Phases 0–2 are closed:** on 2026-10-26 the operator signed off task 5.3, accepting every caveat in [Closure Grades](#closure-grades). Phase 3 work is bound by the [Phase 3 Entry Conditions](#phase-3-entry-conditions). Mark each task done in [Progress](#progress) in the same commit series that completes it.
 
 ## Why This Plan Exists
 
@@ -192,6 +192,17 @@ Reconciled after the Stage 5 blind grading (task 5.1) at `d0053dc` and its fixes
 | CX.2 | Met with caveat | Requirement 3 has the C1.8 gap; requirement 7's "never pushes" rests on reading the code; requirements 5 and 10 have nothing to check before Phase 3 |
 | CX.3 | Met | |
 
+## Phase 3 Entry Conditions
+
+Recorded with the operator's sign-off of Phases 0–2 on 2026-10-26. Each must be closed before the stated point, and its closure recorded here.
+
+| # | Condition | Source | Close before |
+| --- | --- | --- | --- |
+| E1 | Revalidate a stored model response object, so a `DiagnosisResponse` built without validation cannot be stored | C1.8 caveat | Any external model is connected |
+| E2 | The Phase 3 guard checks live-state staleness, not only Git staleness | C2.11 (A11) caveat | Any Phase 3 execution |
+| E3 | The Phase 3 guard requires a `succeeded` command record before it acts on a proposal | Stage 1 review F2 residual | Any Phase 3 execution |
+| E4 | The Phase 3 guard compares the defined action subset of the proposal it acts on with the approved proposal | Backlog: proposal digest anchoring | Any Phase 3 execution |
+
 ## Progress
 
 | Stage | Task | State | Commit |
@@ -204,7 +215,7 @@ Reconciled after the Stage 5 blind grading (task 5.1) at `d0053dc` and its fixes
 | 2 | 2.1–2.3 Phase 0 closure | Done | `df58f13`, `dd2e19b`, `8bceb02` |
 | 3 | 3.1–3.3 Phase 1 re-proof | Done | `5345ff6`, `2b67fd3`, `1559184` |
 | 4 | 4.1–4.6 Phase 2 caveats | Done | `e601f5f`, `6976c58`, `5f5fe5f`, `887c817`, `b593bf2`, `faea287`, `ea7ec7b`, `525aed3` |
-| 5 | 5.1–5.3 Closure gate | In progress: 5.1 and 5.2 done; 5.3 awaits operator sign-off | `cff596e`, `4d5e5ae`, `bcdf2ea` |
+| 5 | 5.1–5.3 Closure gate | Done: on 2026-10-26 the operator signed off Phases 0–2, accepting every caveat in [Closure Grades](#closure-grades), with the [Phase 3 Entry Conditions](#phase-3-entry-conditions) | `cff596e`, `4d5e5ae`, `bcdf2ea`, `50fa291`, `55b1982` |
 
 ## Backlog
 

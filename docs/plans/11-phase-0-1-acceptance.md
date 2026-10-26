@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft for operator sign-off. The Phase 0 part was graded by the author on 2026-10-25 at Aura commit `df58f13` and corrected after the Stage 2 review (see [Review Corrections](#review-corrections)); the Phase 1 part was graded for task 3.1 of the [closure plan](10-phase-0-2-closure.md), and its live criterion C1.17 after the task 3.2 re-run. Stage 5 of that plan has an independent reviewer grade an ungraded copy blind, and the stricter grade is kept once its evidence is reproduced.
+Signed off by the operator on 2026-10-26 with every caveat accepted (closure task 5.3). The Phase 0 part was graded by the author on 2026-10-25 at Aura commit `df58f13` and corrected after the Stage 2 review (see [Review Corrections](#review-corrections)); the Phase 1 part was graded for task 3.1 of the [closure plan](10-phase-0-2-closure.md), and its live criterion C1.17 after the task 3.2 re-run. Stage 5 of that plan has an independent reviewer grade an ungraded copy blind, and the stricter grade is kept once its evidence is reproduced.
 
 Grades:
 

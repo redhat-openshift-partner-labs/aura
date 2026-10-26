@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented, validated, and published at `01f0f38`, including closure hardening. Re-proved for the Phases 0–2 closure: every acceptance criterion is graded against tests at the current commit in [Phases 0 and 1 Acceptance](11-phase-0-1-acceptance.md#phase-1), and the live checks were re-run on 2026-10-26 ([Phase 1 Closure Re-run](../validation.md#phase-1-closure-re-run)). Phase 1 closes with operator sign-off in Stage 5 of the [closure plan](10-phase-0-2-closure.md). Open `fleet-clusters` data issues are tracked in [Open Questions](08-open-questions.md#fleet-clusters-data).
+Implemented, validated, and published at `01f0f38`, including closure hardening. Re-proved for the Phases 0–2 closure: every acceptance criterion is graded against tests at the current commit in [Phases 0 and 1 Acceptance](11-phase-0-1-acceptance.md#phase-1), and the live checks were re-run on 2026-10-26 ([Phase 1 Closure Re-run](../validation.md#phase-1-closure-re-run)). Closed: the operator signed off Phase 1 on 2026-10-26 in Stage 5 of the [closure plan](10-phase-0-2-closure.md), accepting every caveat. Open `fleet-clusters` data issues are tracked in [Open Questions](08-open-questions.md#fleet-clusters-data).
 
 ## Objective
 
