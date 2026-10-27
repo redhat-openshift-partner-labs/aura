@@ -26,6 +26,8 @@ If yes, define:
 
 Default: Aura may propose a PR but never merge it.
 
+Status: pending as decisions D8 (execution path) and D12 (merge method) in the [Phase 3 plan](06-phase-3-approved-execution.md#operator-decisions).
+
 ## Fleet-Clusters Data
 
 ### Backfill `metadata.yaml` for definitions that predate it
@@ -91,6 +93,8 @@ Needed decisions:
 5. Should approvals expire?
 
 Default: start with local CLI identity and explicit role configuration.
+
+Status: pending as decisions D7 (identity) and D11 (approval policy, emergencies, expiry, revocation) in the [Phase 3 plan](06-phase-3-approved-execution.md#operator-decisions).
 
 ## Portal Integration
 

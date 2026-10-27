@@ -184,4 +184,4 @@ The model protocol remains provider-independent. A future provider must consume 
 
 ## Next Work
 
-Phases 0–2 are closed. Next is [Phase 3](plans/06-phase-3-approved-execution.md), which needs plan approval and the [Phase 3 Entry Conditions](plans/10-phase-0-2-closure.md#phase-3-entry-conditions): E2–E4 before any Phase 3 execution and E1 before an external model is connected. Deferred items, including the stranded deprovision sentinels and legacy rerun records, are tracked only in the closure plan's [Backlog](plans/10-phase-0-2-closure.md#backlog).
+Phases 0–2 are closed. Next is [Phase 3](plans/06-phase-3-approved-execution.md), revised on 2026-10-27: it needs operator decisions D7–D12 and plan approval (its Stage 0), then follows its staged tasks under the [Phase 3 Entry Conditions](plans/10-phase-0-2-closure.md#phase-3-entry-conditions): E2–E4 before any Phase 3 execution and E1 before an external model is connected. Deferred items, including the stranded deprovision sentinels and legacy rerun records, are tracked only in the closure plan's [Backlog](plans/10-phase-0-2-closure.md#backlog).

@@ -233,7 +233,7 @@ Because an absent key means its default, writing a key whose value equals what t
 | `pipeline_run` | PipelineRun manifest, for rerun proposals |
 | `proposal_digest` | SHA-256 over canonical JSON of all fields above |
 
-A proposal is stale when `fleet-clusters` `HEAD` moves past `base_commit` and touches the target cluster's paths. Phase 2 reports this Git staleness for every type, reruns included. Live state is not compared in Phase 2: decided 2026-10-25, the Phase 3 execution guard re-collects evidence immediately before executing and refuses when the regenerated proposal's digest differs from the approved one, because a live check at status time would itself be out of date by execution time.
+A proposal is stale when `fleet-clusters` `HEAD` moves past `base_commit` and touches the target cluster's paths. Phase 2 reports this Git staleness for every type, reruns included. Live state is not compared in Phase 2: decided 2026-10-25, the Phase 3 execution guard re-collects evidence immediately before executing and refuses when the regenerated proposal's action differs from the approved one (its [action subset](06-phase-3-approved-execution.md#action-subset), not the full digest), because a live check at status time would itself be out of date by execution time.
 
 ## Scaffold Boundary
 
@@ -287,7 +287,7 @@ Approval of this plan requires these changes to [Phase 3](06-phase-3-approved-ex
 - The Git adapter is the execution path for scaffold, deprovision, and edit proposals, and it must push the proposal as the head commit with the required message.
 - The Tekton adapter is limited to post-provision reruns, created through the Kubernetes API.
 - The guard refuses stale proposals and proposals whose `proposal_digest` changed.
-- The guard re-collects evidence immediately before executing, regenerates the proposal, and refuses when the regenerated action differs from the approved one. This is where live-state staleness is enforced. The comparison covers a defined action subset, not the full `proposal_digest`, because the digest also covers fields that always change on regeneration, such as `proposal_id`, `command_id`, `created_at`, the evidence and CWA references, and a rerun's `base_commit`. The subset is at least the proposal type, cluster, trigger effect, and the patch or the PipelineRun manifest without Aura's annotations; Phase 3 defines it exactly.
+- The guard re-collects evidence immediately before executing, regenerates the proposal, and refuses when the regenerated action differs from the approved one. This is where live-state staleness is enforced. The comparison covers a defined action subset, not the full `proposal_digest`, because the digest also covers fields that always change on regeneration, such as `proposal_id`, `command_id`, `created_at`, the evidence and CWA references, and a rerun's `base_commit`. The subset is at least the proposal type, cluster, trigger effect, and the patch or the PipelineRun manifest without Aura's annotations; Phase 3 defines it exactly in its [Action Subset](06-phase-3-approved-execution.md#action-subset).
 - The guard checks a stored proposal's digest against the `proposal_created` audit event or the CWA trace's `response_digest`, not only against itself.
 
 ## Open Questions
