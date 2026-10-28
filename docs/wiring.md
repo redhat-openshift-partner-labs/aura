@@ -104,7 +104,7 @@ PipelineRun selection defaults to the latest matching run by `start_time`. The `
 
 `oc` process failures are converted to `OpenShiftCLIError` before they reach command services. The CLI reports the resource, exit code, and final `oc` error line without printing partial JSON.
 
-Each command may make at most 10 `oc` calls. `_execute_command` sets the budget with `oc_call_budget()` around the command, and `_read_oc` spends one call before each `oc` invocation, including through an injected command runner; a cached resource read is not a call. The eleventh call raises `OpenShiftCLIError("oc call budget of 10 exceeded")` without running `oc`, which fails the command. Code outside a command, such as a collector used directly, has no budget.
+Each command may make at most 10 `oc` calls. `_execute_command` sets the budget with `oc_call_budget()` around the command, and `_read_oc` spends one call before each `oc` invocation, including through an injected command runner; a cached resource read is not a call, and neither is a repeated read of a resource whose read failed, which raises the same error again. The eleventh call raises `OpenShiftCLIError("oc call budget of 10 exceeded")` without running `oc`, which fails the command. Code outside a command, such as a collector used directly, has no budget.
 
 Git checkout and subprocess failures are converted to `GitInventoryError`. The CLI reports an unusable checkout, the Git exit code, and the final Git diagnostic line without printing partial JSON.
 

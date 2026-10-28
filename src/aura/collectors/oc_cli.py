@@ -116,6 +116,23 @@ def _read_oc(
     return response
 
 
+def _list_version(response: dict[str, Any], resource: str) -> str:
+    """Return a list's resourceVersion, which `oc` reports empty.
+
+    A list without one is an error, not an unknown version (I8).
+    """
+
+    metadata = response.get("metadata")
+    version = (
+        metadata.get("resourceVersion") if isinstance(metadata, dict) else None
+    )
+    if not isinstance(version, str):
+        raise OpenShiftCLIError(
+            f"oc returned a list without metadata.resourceVersion for {resource}"
+        )
+    return version
+
+
 @final
 class OpenShiftResource:
     """Cached read-only access to one Kubernetes resource type."""
@@ -135,20 +152,25 @@ class OpenShiftResource:
         self._namespace = namespace
         self._all_namespaces = all_namespaces
         self._response: dict[str, Any] | None = None
+        self._error: OpenShiftCLIError | None = None
 
     def items(self) -> list[dict[str, Any]]:
         return self.response().get("items", [])
 
-    def resource_version(self, default: str = "unknown") -> str:
-        return (
-            self.response()
-            .get("metadata", {})
-            .get("resourceVersion", default)
-        )
+    def resource_version(self) -> str:
+        return _list_version(self.response(), self._resource)
 
     def response(self) -> dict[str, Any]:
+        # A failed read is kept, so a retry within the command reports
+        # the same error without another oc call or budget spend.
+        if self._error is not None:
+            raise self._error
         if self._response is None:
-            self._response = self._get()
+            try:
+                self._response = self._get()
+            except OpenShiftCLIError as error:
+                self._error = error
+                raise
         return self._response
 
     def _get(self) -> dict[str, Any]:

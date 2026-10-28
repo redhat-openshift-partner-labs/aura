@@ -3,7 +3,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from aura.collectors.oc_cli import OpenShiftCLI
+import pytest
+
+from aura.collectors.oc_cli import (
+    OpenShiftCLI,
+    OpenShiftCLIError,
+    oc_call_budget,
+)
+from aura.process import CalledProcessError
 from aura.contracts import AuditEventType, CommandState
 from test_failure_matrix import (
     COMMAND_ID,
@@ -20,7 +27,7 @@ class CountingRunner:
 
     def __call__(self, args: Sequence[str]) -> str:
         self.calls += 1
-        return '{"items": []}'
+        return '{"items": [], "metadata": {"resourceVersion": "1"}}'
 
 
 class OcReadingCollector:
@@ -95,3 +102,65 @@ def test_cached_resource_reads_count_once(tmp_path) -> None:
     resource.resource_version()
 
     assert runner.calls == 1
+
+
+class FailingRunner:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, args: Sequence[str]) -> str:
+        self.calls += 1
+        raise CalledProcessError(1, list(args), stderr="forbidden")
+
+
+def test_a_failed_read_is_not_retried(tmp_path) -> None:
+    runner = FailingRunner()
+    resource = OpenShiftCLI(
+        kubeconfig_path=tmp_path / "kubeconfig",
+        command_runner=runner,
+    ).resource("clusterdeployments")
+
+    with oc_call_budget(limit=1):
+        for read in (resource.items, resource.resource_version):
+            with pytest.raises(OpenShiftCLIError, match="forbidden"):
+                read()
+
+    assert runner.calls == 1
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        '{"items": []}',
+        '{"items": [], "metadata": {}}',
+        '{"items": [], "metadata": []}',
+        '{"items": [], "metadata": {"resourceVersion": 7}}',
+    ],
+    ids=["no-metadata", "no-version", "metadata-list", "non-string"],
+)
+def test_a_list_without_its_resource_version_is_an_error(
+    tmp_path,
+    response,
+) -> None:
+    resource = OpenShiftCLI(
+        kubeconfig_path=tmp_path / "kubeconfig",
+        command_runner=lambda args: response,
+    ).resource("clusterdeployments")
+
+    with pytest.raises(
+        OpenShiftCLIError,
+        match="without metadata.resourceVersion for clusterdeployments",
+    ):
+        resource.resource_version()
+
+
+def test_an_empty_resource_version_is_kept(tmp_path) -> None:
+    # `oc get -o json` returns a List whose resourceVersion is empty.
+    resource = OpenShiftCLI(
+        kubeconfig_path=tmp_path / "kubeconfig",
+        command_runner=lambda args: (
+            '{"items": [], "metadata": {"resourceVersion": ""}}'
+        ),
+    ).resource("clusterdeployments")
+
+    assert resource.resource_version() == ""
