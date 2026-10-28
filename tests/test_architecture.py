@@ -41,77 +41,148 @@ def spawns_a_process(name: str) -> bool:
     )
 
 
-def os_process_calls(path: Path) -> list[str]:
-    """Return os functions that start a program, used or imported."""
+# Modules that start programs or processes without going through os.
+PROCESS_MODULES = {"pty", "multiprocessing", "asyncio.subprocess"}
+PROCESS_FUNCTIONS = {
+    ("asyncio", "create_subprocess_exec"),
+    ("asyncio", "create_subprocess_shell"),
+}
+# What each parser reads, keyed by the module that defines it.
+PARSE_FUNCTIONS = {
+    ("json", "load"),
+    ("json", "loads"),
+    ("pydantic_core", "from_json"),
+    ("yaml", "safe_load"),
+    ("yaml", "safe_load_all"),
+    ("yaml", "load"),
+    ("yaml", "load_all"),
+    ("yaml", "full_load"),
+    ("yaml", "unsafe_load"),
+}
+# Parsing that any object can do, whatever module it comes from.
+PARSE_METHODS = {"model_validate_json", "validate_json", "validate_strings"}
 
-    found: list[str] = []
-    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-        if (
-            isinstance(node, ast.Attribute)
-            and isinstance(node.value, ast.Name)
-            and node.value.id == "os"
-            and spawns_a_process(node.attr)
+
+def module_bindings(tree: ast.AST) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
+    """Return names bound to modules and names bound to module members,
+    through any alias."""
+
+    modules: dict[str, str] = {}
+    members: dict[str, tuple[str, str]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.asname:
+                    modules[alias.asname] = alias.name
+                else:
+                    top = alias.name.split(".")[0]
+                    modules[top] = top
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            for alias in node.names:
+                members[alias.asname or alias.name] = (node.module, alias.name)
+    return modules, members
+
+
+def referenced(
+    node: ast.AST,
+    modules: dict[str, str],
+    members: dict[str, tuple[str, str]],
+) -> tuple[str, str] | None:
+    """Return (module, member) that a name or attribute refers to."""
+
+    if isinstance(node, ast.Name):
+        return members.get(node.id)
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+        module = modules.get(node.value.id)
+        if module is not None:
+            return module, node.attr
+    return None
+
+
+def process_calls(path: Path) -> list[str]:
+    """Return every reference that can start a program or process."""
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    modules, members = module_bindings(tree)
+    found = [
+        f"import {module}"
+        for module in {*modules.values(), *(m for m, _ in members.values())}
+        if module in PROCESS_MODULES
+    ]
+    found.extend(
+        f"from {module} import {name}"
+        for module, name in members.values()
+        if (module == "os" and spawns_a_process(name))
+        or (module, name) in PROCESS_FUNCTIONS
+    )
+    for node in ast.walk(tree):
+        target = referenced(node, modules, members)
+        if target is not None and (
+            (target[0] == "os" and spawns_a_process(target[1]))
+            or target in PROCESS_FUNCTIONS
         ):
-            found.append(f"os.{node.attr}")
-        elif isinstance(node, ast.ImportFrom) and node.module == "os":
-            found.extend(
-                f"os.{alias.name}"
-                for alias in node.names
-                if spawns_a_process(alias.name)
-            )
+            found.append(".".join(target))
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "getattr"
+            and node.args
+            and isinstance(node.args[0], ast.Name)
+            and modules.get(node.args[0].id) == "os"
+        ):
+            found.append("getattr(os, ...)")
     return found
 
 
-def test_only_the_process_module_starts_programs_through_os() -> None:
+def test_only_the_process_module_starts_programs() -> None:
     offenders = {
         str(path.relative_to(SOURCE.parent)): calls
         for path in sorted(SOURCE.rglob("*.py"))
         if path != PROCESS_MODULE
-        if (calls := os_process_calls(path))
+        if (calls := process_calls(path))
     }
 
     assert offenders == {}
 
 
 JSON_STORE_MODULE = SOURCE / "json_store.py"
-# JSON parsing outside json_store, with why none of it loads a stored record.
-JSON_PARSERS_ALLOWED = {
-    # `oc` output, not a stored record.
+# Parsing outside json_store, with why none of it loads a stored record.
+PARSERS_ALLOWED = {
+    # `oc` output.
     ("collectors/oc_cli.py", "_read_oc"),
     # Reads only `command_id` of an audit record that failed to load.
     ("cli.py", "_names_another_command"),
+    # fleet-clusters YAML files and patched file text.
+    ("collectors/git_inventory.py", "_load_yaml"),
+    ("proposals.py", "_metadata_mapping"),
+    ("proposals.py", "_yaml_mapping"),
+    ("services/cluster_edit.py", "_mapping"),
+    ("services/cluster_edit.py", "_parsed"),
+    ("services/rerun.py", "_metadata"),
+    ("services/scaffold.py", "_mapping"),
+    ("services/scaffold.py", "_secret_fields"),
 }
 
-def is_json_parse(call: ast.Call) -> bool:
-    function = call.func
-    if isinstance(function, ast.Name):
-        return function.id == "from_json"
-    if not isinstance(function, ast.Attribute):
-        return False
-    if function.attr in {"from_json", "model_validate_json"}:
-        return True
-    return (
-        function.attr in {"load", "loads"}
-        and isinstance(function.value, ast.Name)
-        and function.value.id == "json"
-    )
 
+def parse_calls(path: Path) -> set[tuple[str, str]]:
+    """Return (module, enclosing function) for each parse reference."""
 
-def json_parse_calls(path: Path) -> set[tuple[str, str]]:
-    """Return (module, enclosing function) for each JSON parse call."""
-
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    modules, members = module_bindings(tree)
     found: set[tuple[str, str]] = set()
     relative = str(path.relative_to(SOURCE))
 
     def visit(node: ast.AST, function: str) -> None:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             function = node.name
-        if isinstance(node, ast.Call) and is_json_parse(node):
+        if referenced(node, modules, members) in PARSE_FUNCTIONS or (
+            isinstance(node, ast.Attribute) and node.attr in PARSE_METHODS
+        ):
             found.add((relative, function))
         for child in ast.iter_child_nodes(node):
             visit(child, function)
 
-    visit(ast.parse(path.read_text(encoding="utf-8")), "<module>")
+    visit(tree, "<module>")
     return found
 
 
@@ -120,10 +191,10 @@ def test_only_json_store_parses_stored_records() -> None:
         call
         for path in sorted(SOURCE.rglob("*.py"))
         if path != JSON_STORE_MODULE
-        for call in json_parse_calls(path)
+        for call in parse_calls(path)
     }
 
-    assert calls == JSON_PARSERS_ALLOWED
+    assert calls == PARSERS_ALLOWED
 
 
 def test_every_store_loads_through_parse_record() -> None:
