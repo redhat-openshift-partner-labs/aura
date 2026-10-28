@@ -36,7 +36,11 @@ from aura.scaffold import (
 )
 from aura.scaffold import infra_prefix
 from aura.services.diagnosis import cwa_evidence_items
-from aura.services.proposal import ProposalRefused, pinned_git_revision
+from aura.services.proposal import (
+    ProposalRefused,
+    patch_check_record,
+    pinned_git_revision,
+)
 
 
 TIERS = ("base", "virt", "ai")
@@ -120,13 +124,17 @@ class ScaffoldProposalGenerator:
             added_file_patch(path, result.files[path][1])
             for path in sorted(result.files)
         )
-        reasons = self._definition_check.check(
+        patch_check = patch_check_record(
             base_commit=str(base_commit),
             patch=patch,
             cluster_name=cluster,
+            require_definition=True,
+            reasons=self._definition_check.check(
+                base_commit=str(base_commit),
+                patch=patch,
+                cluster_name=cluster,
+            ),
         )
-        if reasons:
-            raise ProposalRefused(reasons)
 
         proposal_id = uuid5(
             snapshot.command_id,
@@ -158,6 +166,7 @@ class ScaffoldProposalGenerator:
             trigger_effect=EXPECTED_TRIGGER_EFFECTS[proposal_type],
             reversibility=EXPECTED_REVERSIBILITY[proposal_type],
             patch=patch,
+            patch_check=patch_check,
             **_scaffold_text(
                 request,
                 scaffold_commit=scaffold_commit,

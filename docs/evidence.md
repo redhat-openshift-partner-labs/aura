@@ -174,6 +174,7 @@ The CWA assembler emits all required slots:
 - Audit event ID.
 - Assembler version and assembly timestamp.
 - Optional model provider, model name, and response digest.
+- Optional `patch_check`: the stored proposal's patch-check outcome, or the `refused` outcome and reasons when the patch check refused the proposal.
 - `trace_digest`, a SHA-256 digest over canonical JSON of the other fields, verified on load. A trace stored before this field existed fails to load, and the Phase 3 guard refuses its proposal, which must be re-proposed; no current command reads stored traces.
 
 The trace is stored even when diagnosis or a proposal is refused. For a stored proposal, the trace records provider `aura`, the generator name as model name, and the `proposal_digest` as response digest.
@@ -253,6 +254,17 @@ The contract enforces these invariants regardless of which generator produced th
 | Other | Requires `scaffold_commit` and `scaffold_run`; `cluster_name` is at most 49 characters | | | `PipelineRun` for the `post-provision` Pipeline with only `apiVersion`, `kind`, `metadata` (`generateName`, `namespace`, and `annotations` limited to `aura.openshiftpartnerlabs.com/proposal-id` and `aura.openshiftpartnerlabs.com/source-pipeline-run`), and `spec` (`pipelineRef` with only `name`, `params`, `workspaces`, `taskRunTemplate` with only `serviceAccountName` and a `podTemplate` of `securityContext`, `imagePullSecrets`, `nodeSelector`, and `tolerations`); `generateName` `post-provision-<id>-` in `openshift-pipelines`; unique parameter names with `cluster-name` equal to the target; each workspace with exactly one of `volumeClaimTemplate` (`spec`), `persistentVolumeClaim` (`claimName`), `secret` (a non-empty `secretName` and `items` of `key`, `path`, and `mode`), `configMap` (`name`), or `emptyDir`, and a relative `subPath` without `..`; no secret-named parameters or fields outside those Secret bindings |
 
 Patches must be Git-format diffs. Every proposal names exactly one cluster, and every patched path must belong to it.
+
+`patch_check` records the outcome of checking a Git proposal's patch against `fleet-clusters` during generation, after the evidence is frozen:
+
+| Field | Rule |
+| --- | --- |
+| `base_commit`, `cluster_name` | Equal the proposal's |
+| `patch_digest` | SHA-256 of the proposal's `patch` |
+| `require_definition` | `false` for deprovision, which checks only that the patch applies; `true` for scaffold and cluster edit, which also require one complete definition |
+| `outcome` | `applies` or `complete` on a stored proposal; `refused`, with `reasons`, only on the CWA trace of a refused proposal |
+
+A rerun proposal has no `patch_check`. Proposals stored before the field existed have none; `proposal_digest` leaves an absent `patch_check` out, so their digests still verify.
 
 `scaffold_run` records how the pinned scaffold produced a scaffold patch, and only scaffold proposals carry it:
 

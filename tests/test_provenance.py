@@ -251,7 +251,7 @@ def test_trace_digest_detects_a_changed_field() -> None:
     assert len(trace.trace_digest) == 64
     with pytest.raises(ValueError, match="trace digest"):
         CWATrace.model_validate(document)
-    updated = trace.with_response("p", "m", OTHER_DIGEST)
+    updated = trace.with_changes(response_digest=OTHER_DIGEST)
     assert updated.response_digest == OTHER_DIGEST
     assert updated.trace_digest != trace.trace_digest
 

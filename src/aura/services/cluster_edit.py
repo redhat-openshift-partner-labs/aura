@@ -128,7 +128,7 @@ class ClusterEditProposalGenerator:
             )
 
         patch = _patch(path, current, updated)
-        check_patch(
+        patch_check = check_patch(
             self._patch_check,
             base_commit=str(base_commit),
             patch=patch,
@@ -157,6 +157,7 @@ class ClusterEditProposalGenerator:
             trigger_effect=EXPECTED_TRIGGER_EFFECTS[proposal_type],
             reversibility=EXPECTED_REVERSIBILITY[proposal_type],
             patch=patch,
+            patch_check=patch_check,
             **_cluster_edit_text(
                 cluster,
                 path,

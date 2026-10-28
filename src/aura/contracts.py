@@ -293,6 +293,50 @@ def compute_audit_event_digest(event: AuditEvent) -> str:
     )
 
 
+class PatchCheckOutcome(StrEnum):
+    """How a Git proposal's patch fared against its base commit."""
+
+    APPLIES = "applies"
+    COMPLETE = "complete"
+    REFUSED = "refused"
+
+
+class PatchCheckRecord(BaseModel):
+    """The outcome of checking a Git patch against fleet-clusters.
+
+    The check runs during generation, after the evidence is frozen, so
+    the outcome is recorded on the proposal and its CWA trace.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    base_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
+    cluster_name: str = Field(min_length=1)
+    patch_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    require_definition: bool
+    outcome: PatchCheckOutcome
+    reasons: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> "PatchCheckRecord":
+        refused = self.outcome is PatchCheckOutcome.REFUSED
+        if refused != bool(self.reasons):
+            raise ValueError("only a refused patch check has reasons")
+        reject_blank_entries(self.reasons, "reasons")
+        passed = (
+            PatchCheckOutcome.COMPLETE
+            if self.require_definition
+            else PatchCheckOutcome.APPLIES
+        )
+        if not refused and self.outcome is not passed:
+            raise ValueError(
+                f"a passed patch check that requires a definition is "
+                f"{PatchCheckOutcome.COMPLETE.value}, otherwise "
+                f"{PatchCheckOutcome.APPLIES.value}"
+            )
+        return self
+
+
 __all__ = [
     "ARCHIVE_SUFFIX",
     "AuditEvent",
@@ -302,6 +346,8 @@ __all__ = [
     "CommandType",
     "EvidenceItem",
     "EvidenceSnapshot",
+    "PatchCheckOutcome",
+    "PatchCheckRecord",
     "compute_audit_event_digest",
     "compute_command_record_digest",
     "compute_command_request_digest",

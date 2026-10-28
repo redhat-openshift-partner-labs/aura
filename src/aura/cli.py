@@ -1274,10 +1274,10 @@ def _diagnosis_trace(
 ) -> CWATrace:
     if diagnosis_record is None:
         return assembly.trace
-    return assembly.trace.with_response(
-        diagnosis_record.provider_name,
-        diagnosis_record.model_name,
-        diagnosis_record.response_digest,
+    return assembly.trace.with_changes(
+        model_provider=diagnosis_record.provider_name,
+        model_name=diagnosis_record.model_name,
+        response_digest=diagnosis_record.response_digest,
     )
 
 
@@ -1949,17 +1949,21 @@ def _propose_and_trace(
     clock: Callable[[], datetime],
 ) -> tuple[Proposal | None, str | None, CWATrace]:
     created_at = clock()
-    proposal, refusal_error = _result_or_refusal(
-        lambda: _generated(generator, assembly, created_at),
-        ProposalRefused,
-        "proposal",
-    )
-    if proposal is None:
-        return None, refusal_error, assembly.trace
-    return proposal, None, assembly.trace.with_response(
-        generator.provider_name,
-        generator.generator,
-        proposal.proposal_digest,
+    try:
+        proposal = _generated(generator, assembly, created_at)
+    except ProposalRefused as refusal:
+        # A refused patch check is recorded on the trace (task 1.8).
+        trace = (
+            assembly.trace.with_changes(patch_check=refusal.patch_check)
+            if refusal.patch_check is not None
+            else assembly.trace
+        )
+        return None, f"proposal refused: {refusal}", trace
+    return proposal, None, assembly.trace.with_changes(
+        model_provider=generator.provider_name,
+        model_name=generator.generator,
+        response_digest=proposal.proposal_digest,
+        patch_check=proposal.patch_check,
     )
 
 

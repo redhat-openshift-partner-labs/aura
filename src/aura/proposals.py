@@ -19,7 +19,12 @@ from pydantic import (
 )
 
 from aura.canonical import canonical_digest
-from aura.contracts import ARCHIVE_SUFFIX, reject_blank_entries
+from aura.contracts import (
+    ARCHIVE_SUFFIX,
+    PatchCheckOutcome,
+    PatchCheckRecord,
+    reject_blank_entries,
+)
 from aura.redaction import redact, redact_parameters
 
 
@@ -252,6 +257,7 @@ class Proposal(BaseModel):
     rollback: str = Field(min_length=1)
     patch: str | None = None
     pipeline_run: dict[str, Any] | None = None
+    patch_check: PatchCheckRecord | None = None
     proposal_digest: str = Field(default="")
 
     @field_validator(
@@ -286,6 +292,7 @@ class Proposal(BaseModel):
             _validate_git_proposal(self)
         else:
             _validate_rerun_proposal(self)
+        _validate_patch_check(self)
         computed_digest = compute_proposal_digest(self)
         if not self.proposal_digest:
             self.proposal_digest = computed_digest
@@ -295,11 +302,44 @@ class Proposal(BaseModel):
 
 
 def compute_proposal_digest(proposal: Proposal) -> str:
-    """Return a canonical SHA-256 digest over every other proposal field."""
+    """Return a canonical SHA-256 digest over every other proposal field.
 
-    return canonical_digest(
-        proposal.model_dump(mode="json", exclude={"proposal_digest"})
-    )
+    An absent patch check is left out, so proposals stored before the
+    field existed keep their digests.
+    """
+
+    excluded = {"proposal_digest"}
+    if proposal.patch_check is None:
+        excluded.add("patch_check")
+    return canonical_digest(proposal.model_dump(mode="json", exclude=excluded))
+
+
+def patch_digest(patch: str) -> str:
+    return hashlib.sha256(patch.encode("utf-8")).hexdigest()
+
+
+def _validate_patch_check(proposal: Proposal) -> None:
+    record = proposal.patch_check
+    if record is None:
+        return
+    if proposal.proposal_type not in GIT_PROPOSAL_TYPES:
+        raise ValueError(
+            f"{proposal.proposal_type.value} proposals must not include "
+            "patch_check"
+        )
+    expected = {
+        "base_commit": proposal.base_commit,
+        "cluster_name": proposal.cluster_name,
+        "patch_digest": patch_digest(proposal.patch or ""),
+        "require_definition": (
+            proposal.proposal_type is not ProposalType.DEPROVISION
+        ),
+    }
+    for field, value in expected.items():
+        if getattr(record, field) != value:
+            raise ValueError(f"patch_check {field} does not match proposal")
+    if record.outcome is PatchCheckOutcome.REFUSED:
+        raise ValueError("a proposal's patch check must not be refused")
 
 
 def tier_metadata_keys(tier: object) -> tuple[str, ...]:
@@ -844,6 +884,7 @@ def _without_named_secrets(manifest: dict[str, Any]) -> dict[str, Any]:
 
 
 __all__ = [
+    "patch_digest",
     "CLUSTER_NAME_PATTERN",
     "RERUN_PROPOSAL_ANNOTATION",
     "RERUN_SOURCE_ANNOTATION",

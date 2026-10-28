@@ -196,7 +196,7 @@ E4 compares an action, not the whole proposal. `action_digest` is the SHA-256 of
 | `scaffold_commit` | As stored; scaffold only |
 | `pipeline_run` | Reruns only; without `metadata.name`, `metadata.generateName`, and annotations whose keys start with `aura.openshiftpartnerlabs.com/` |
 
-Excluded, because they change on every regeneration: `proposal_id`, `command_id`, `created_at`, `base_commit`, `evidence_snapshot_id`, `evidence_snapshot_digest`, `cwa_snapshot_id`, `cwa_trace_id`, `scaffold_run`, `generator`, `generator_version`, and the descriptive fields `summary`, `expected_effect`, `risks`, `reversibility`, and `rollback`. The approver signs the stored proposal's digests, so the descriptive fields they read are the approved ones. Adapters use the approved proposal's commit message and patch, so the trailer names the approved `proposal_id`.
+Excluded, because they change on every regeneration: `proposal_id`, `command_id`, `created_at`, `base_commit`, `evidence_snapshot_id`, `evidence_snapshot_digest`, `cwa_snapshot_id`, `cwa_trace_id`, `scaffold_run`, `patch_check`, which G8 recomputes, `generator`, `generator_version`, and the descriptive fields `summary`, `expected_effect`, `risks`, `reversibility`, and `rollback`. The approver signs the stored proposal's digests, so the descriptive fields they read are the approved ones. Adapters use the approved proposal's commit message and patch, so the trailer names the approved `proposal_id`.
 
 ## Guard
 

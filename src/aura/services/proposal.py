@@ -5,7 +5,13 @@ from datetime import datetime
 from typing import Protocol, final
 from uuid import UUID, uuid5
 
-from aura.contracts import ARCHIVE_SUFFIX, CommandType, EvidenceItem
+from aura.contracts import (
+    ARCHIVE_SUFFIX,
+    CommandType,
+    EvidenceItem,
+    PatchCheckOutcome,
+    PatchCheckRecord,
+)
 from aura.cwa import CWASlotName, CWASnapshot
 from aura.proposals import (
     EXPECTED_REVERSIBILITY,
@@ -13,6 +19,7 @@ from aura.proposals import (
     Proposal,
     ProposalType,
     deprovision_sentinel_patch,
+    patch_digest,
 )
 from aura.services.diagnosis import cwa_evidence_items
 from aura.services.evidence import (
@@ -39,9 +46,15 @@ class ProposalGenerationError(Exception):
 class ProposalRefused(Exception):
     """Raised when evidence does not satisfy a proposal's preconditions."""
 
-    def __init__(self, reasons: list[str]) -> None:
+    def __init__(
+        self,
+        reasons: list[str],
+        *,
+        patch_check: PatchCheckRecord | None = None,
+    ) -> None:
         super().__init__("; ".join(reasons))
         self.reasons = reasons
+        self.patch_check = patch_check
 
 
 class PatchCheck(Protocol):
@@ -63,8 +76,9 @@ def check_patch(
     patch: str,
     cluster_name: str,
     require_definition: bool,
-) -> None:
-    """Refuse a Git proposal whose patch the check reports on."""
+) -> PatchCheckRecord:
+    """Return the outcome of a Git proposal's patch check, refusing the
+    proposal, with the outcome, when the check reports reasons."""
 
     reasons = patch_check.check(
         base_commit=base_commit,
@@ -72,8 +86,40 @@ def check_patch(
         cluster_name=cluster_name,
         require_definition=require_definition,
     )
+    return patch_check_record(
+        base_commit=base_commit,
+        patch=patch,
+        cluster_name=cluster_name,
+        require_definition=require_definition,
+        reasons=reasons,
+    )
+
+
+def patch_check_record(
+    *,
+    base_commit: str,
+    patch: str,
+    cluster_name: str,
+    require_definition: bool,
+    reasons: list[str],
+) -> PatchCheckRecord:
     if reasons:
-        raise ProposalRefused(reasons)
+        outcome = PatchCheckOutcome.REFUSED
+    elif require_definition:
+        outcome = PatchCheckOutcome.COMPLETE
+    else:
+        outcome = PatchCheckOutcome.APPLIES
+    record = PatchCheckRecord(
+        base_commit=base_commit,
+        cluster_name=cluster_name,
+        patch_digest=patch_digest(patch),
+        require_definition=require_definition,
+        outcome=outcome,
+        reasons=reasons,
+    )
+    if reasons:
+        raise ProposalRefused(reasons, patch_check=record)
+    return record
 
 
 class ProposalService(EvidenceCommandService):
@@ -145,7 +191,7 @@ class DeprovisionProposalGenerator:
             reasons.append("no pinned Git base commit in evidence")
         if reasons:
             raise ProposalRefused(reasons)
-        check_patch(
+        patch_check = check_patch(
             self._patch_check,
             base_commit=str(base_commit),
             patch=deprovision_sentinel_patch(cluster),
@@ -173,6 +219,7 @@ class DeprovisionProposalGenerator:
             generator_version=self.generator_version,
             trigger_effect=EXPECTED_TRIGGER_EFFECTS[proposal_type],
             reversibility=EXPECTED_REVERSIBILITY[proposal_type],
+            patch_check=patch_check,
             **_deprovision_text(cluster, proposal_id),
         )
 
@@ -270,6 +317,7 @@ __all__ = [
     "DeprovisionProposalGenerator",
     "PatchCheck",
     "check_patch",
+    "patch_check_record",
     "cluster_preconditions",
     "correlation_item",
     "pinned_git_revision",

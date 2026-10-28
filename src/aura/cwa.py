@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 
 from aura.canonical import canonical_digest
-from aura.contracts import assign_self_digest
+from aura.contracts import PatchCheckRecord, assign_self_digest
 from pydantic import (
     AwareDatetime,
     BaseModel,
@@ -104,6 +104,7 @@ class CWATrace(BaseModel):
         default=None,
         pattern=r"^[0-9a-f]{64}$",
     )
+    patch_check: PatchCheckRecord | None = None
     trace_digest: str = Field(default="")
 
     @field_validator(
@@ -122,21 +123,11 @@ class CWATrace(BaseModel):
         assign_self_digest(self, "trace_digest", "CWA trace")
         return self
 
-    def with_response(
-        self,
-        model_provider: str,
-        model_name: str,
-        response_digest: str,
-    ) -> "CWATrace":
-        """Return a validated copy that records the model response."""
+    def with_changes(self, **changes: object) -> "CWATrace":
+        """Return a validated copy with changed fields and a new digest."""
 
-        values = self.model_dump(mode="json")
-        values.update(
-            model_provider=model_provider,
-            model_name=model_name,
-            response_digest=response_digest,
-            trace_digest="",
-        )
+        values = self.model_dump()
+        values.update(changes, trace_digest="")
         return CWATrace.model_validate(values)
 
 
