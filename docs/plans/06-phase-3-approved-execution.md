@@ -74,18 +74,19 @@ Phase 3 commands read and write only the [Execution Store](#execution-store), wh
 | --- | --- | --- |
 | `PublishedProposal` | `proposal submit` | `publication_id`, `proposal_id`, `proposal_digest`, the proposal record, its CWA trace, its `proposal_created` event, its command record, `created_at`, `publication_digest` |
 | `ApprovalRecord` | `proposal approve`, `proposal reject` | `approval_id`, `command_id`, `proposal_id`, `proposal_digest`, `action_digest`, `decision` (`approved` or `rejected`), `principal`, `signature`, `created_at`, `expires_at`, `approval_digest` |
-| `ExecutionRecord` | `execute`, `execution status` | `record_id`, `execution_id`, `command_id`, `proposal_id`, `proposal_digest`, `action_digest`, `proposal_type`, `cluster_name`, `approval_ids`, `adapter`, `adapter_version`, `phase`, `external_result`, `failure_reason`, `rollback`, `resolution` (`timeout_margin` or `manual`, on resolution records only), `principal`, `signature`, `confirmation` (on `manual` resolutions only), `created_at`, `execution_digest` |
-| `PipelineRunObservation` | `execution status` | `observation_id`, `execution_id`, `command_id`, PipelineRun name, UID, and namespace, the `Succeeded` condition's status and reason, start and completion times, `observed_at`, `principal`, `signature`, `observation_digest` |
+| `ExecutionRecord` | `execute`, `execution status` | `record_id`, `execution_id`, `command_id`, `proposal_id`, `proposal_digest`, `action_digest`, `proposal_type`, `cluster_name`, `approval_ids`, `adapter`, `adapter_version`, `phase`, `external_result`, `failure_reason`, `rollback`, `resolution` (`timeout_margin` or `manual`, on resolution records only), `confirmation_id` (on `manual` resolutions only), `audit_event_digest`, `principal`, `signature`, `created_at`, `execution_digest` |
+| `PipelineRunObservation` | `execution status` | `observation_id`, `execution_id`, `command_id`, PipelineRun name, UID, and namespace, the `Succeeded` condition's status and reason, start and completion times, `observed_at`, `audit_event_digest`, `principal`, `signature`, `observation_digest` |
+| `ResolutionConfirmation` | `execution confirm` | `confirmation_id`, `execution_id`, `command_id`, `statement`, `audit_event_digest`, `principal`, `signature`, `created_at`, `confirmation_digest` |
 
-All records of one execution share its `execution_id`; each has its own `record_id`. The store allows one `dispatching` record per `proposal_id`, so a second dispatch of the same proposal fails at the write, whatever its idempotency key or the machine it runs on, and one terminal record per `execution_id`. A proposal is dispatched at most once. Every record's digest is verified on load, every signed record's signature is verified against the allowed-signers list, and each record is anchored to its audit event (I3, I9).
+All records of one execution share its `execution_id`; each has its own `record_id`. The store allows one `dispatching` record per `proposal_id`, so a second dispatch of the same proposal fails at the write, whatever its idempotency key or the machine it runs on, and one terminal record per `execution_id`. A proposal is dispatched at most once. Every record's digest is verified on load, every signed record's signature is verified against the allowed-signers list at the row's `stored_at`, and each record is anchored to its audit event (I3, I9). Hub administrators retire a key by setting its `valid-before` option in the list, never by removing it, so records it signed earlier keep verifying. Every Phase 3 command reads the list, and the `aura-execution-store` ConfigMap, in one `oc` call.
 
-Signed payloads are the canonical JSON of the record's fields except `signature`, `confirmation`, and the record's own digest. Approvals use SSH signature namespace `aura-approve`; execution records and observations use `aura-execute`, so a signature of one kind never verifies as the other. A `confirmation` is an `aura-approve` signature over the same payload by a principal other than the record's. A `PublishedProposal` is unsigned, as Phase 2 proposals are: approvers sign its digests, and G8 compares its action with a fresh regeneration. The guard refuses a signed record whose `created_at` is more than five minutes after the guard's clock, and an approval whose `expires_at` is more than 24 hours after its `created_at`.
+Signed payloads are the canonical JSON of the record's fields except `signature` and the record's own digest, so each signature also covers `audit_event_digest`, the digest of the record's audit event. Approvals and confirmations use SSH signature namespace `aura-approve`; execution records and observations use `aura-execute`, so a signature of one kind never verifies as the other. A `manual` resolution counts only when its `confirmation_id` names a confirmation of the same execution by a principal other than the resolution's. A `PublishedProposal` is unsigned, as Phase 2 proposals are: approvers sign its digests, and G8 compares its action with a fresh regeneration. The guard refuses a signed record whose `created_at` is more than five minutes after the guard's clock, and an approval whose `expires_at` is more than 24 hours after its `created_at`.
 
 The derived state is the first row that matches:
 
 | Derived state | Condition |
 | --- | --- |
-| `submitted`, `running`, `succeeded`, `failed`, `merged`, `closed`, `not_dispatched` | The highest-ranked result record's `phase`: the terminal record (`succeeded`, `failed`, `merged`, `closed`, or `not_dispatched`), else `running`, else `submitted` |
+| `handed_off`, `submitted`, `running`, `succeeded`, `failed`, `merged`, `closed`, `not_dispatched` | The highest-ranked result record's `phase`: the terminal record (`handed_off`, `succeeded`, `failed`, `merged`, `closed`, or `not_dispatched`), else `running`, else `submitted` |
 | `awaiting_operator` | A `dispatching` record with no result record |
 | `rejected` | A rejection record |
 | `stale` | Git-stale under the [Phase 2 rule](05-phase-2-proposals.md#acceptance-criteria) |
@@ -93,7 +94,7 @@ The derived state is the first row that matches:
 | `awaiting_approval` | At least one approval record, but fewer unexpired approvals than D11 requires |
 | `proposal_ready` | None of the above |
 
-`submitted` means a pull request is open, a PipelineRun was created, or the hand-off mailbox was written. `running`, `succeeded`, and `failed` follow the PipelineRun observations. `merged` and `closed` follow the pull request; pipelines that a merge starts are observed with the Phase 1 commands. `not_dispatched` means `execution status` found no external effect for an `awaiting_operator` execution.
+`handed_off` means the hand-off mailbox was written under D8 (a); it is terminal, because applying and merging it are the operator's, and the pipelines a merge starts are observed with the Phase 1 commands. `submitted` means a pull request is open or a PipelineRun was created. `running`, `succeeded`, and `failed` follow the PipelineRun observations. `merged` and `closed` follow the pull request; pipelines that a merge starts are observed with the Phase 1 commands. `not_dispatched` means `execution status` found no external effect for an `awaiting_operator` execution.
 
 Trust boundary:
 
@@ -122,8 +123,10 @@ stateDiagram-v2
   approved --> stale
   approved --> awaiting_operator
   approved --> submitted
+  approved --> handed_off
   approved --> failed
   awaiting_operator --> submitted
+  awaiting_operator --> handed_off
   awaiting_operator --> not_dispatched
   submitted --> running
   submitted --> merged
@@ -132,7 +135,7 @@ stateDiagram-v2
   running --> failed
 ```
 
-Aura never retries automatically, and no result lets the same proposal be dispatched again; a new attempt needs a new proposal and new approvals. An `awaiting_operator` execution is resolved by `execution status`, which looks up the external effect by its deterministic name: the PipelineRun `aura-rerun-<proposal-id>`, the branch `aura/<proposal-id>` and its pull request, or the recorded mailbox path. It records `submitted` or `not_dispatched` only when signed with `aura-execute`, and only after the `dispatching` record is older than the adapter timeout plus five minutes, so a call still in flight cannot be recorded as `not_dispatched`. A pruned PipelineRun cannot be told apart from one never created, so a Tekton `not_dispatched` with resolution `timeout_margin` is recorded only before the hub's PipelineRun retention period has passed since the `dispatching` record; task 0.3 records that period, and Aura reads it from its configuration. After it, `not_dispatched` needs resolution `manual`, which carries a `confirmation` and a `failure_reason` stating how the operators confirmed that no run took place. Until it is resolved, the execution keeps its cluster open under G11. Without a signature, `execution status` reports what it finds and writes only its command record and audit events. This lookup is how the [adapter tests](07-testing-security-rollout.md#adapter-tests)' safe retry after an ambiguous failure is met: the operator re-proposes only after `not_dispatched` is recorded.
+Aura never retries automatically, and no result lets the same proposal be dispatched again; a new attempt needs a new proposal and new approvals. An `awaiting_operator` execution is resolved by `execution status`, which looks up the external effect by its deterministic name: the PipelineRun `aura-rerun-<proposal-id>`, the branch `aura/<proposal-id>` and its pull request, or the recorded mailbox path. It records `submitted` or `not_dispatched` only when signed with `aura-execute`, and only after the `dispatching` record is older than the adapter timeout plus five minutes, so a call still in flight cannot be recorded as `not_dispatched`. Its result records follow an `execution_observed` event. A pruned PipelineRun cannot be told apart from one never created, so a Tekton `not_dispatched` with resolution `timeout_margin` is recorded only before the hub's PipelineRun retention period has passed since the `dispatching` record. Aura reads that period from ConfigMap `aura-execution-store`; task 0.3 records how the hub prunes, and when pruning is by count rather than age, or keeps runs for less than the adapter timeout plus five minutes, the ConfigMap sets no period and every Tekton `not_dispatched` needs resolution `manual`. A `manual` resolution names a `ResolutionConfirmation` and has a `failure_reason` stating how the operators confirmed that no run took place. Until it is resolved, the execution keeps its cluster open under G11. Without a signature, `execution status` reports what it finds and writes only its command record and audit events. This lookup is how the [adapter tests](07-testing-security-rollout.md#adapter-tests)' safe retry after an ambiguous failure is met: the operator re-proposes only after `not_dispatched` is recorded.
 
 ## Execution Store
 
@@ -140,11 +143,13 @@ D13 places Phase 3 records in a database behind one store interface with two bac
 
 | Table | Rows | Key constraints |
 | --- | --- | --- |
-| `published_proposals` | `PublishedProposal` | Unique `publication_id`; unique `proposal_id` |
+| `published_proposals` | `PublishedProposal` | Unique `publication_id`, derived from `proposal_id`, so a lost acknowledgement is resolved by read-back; unique `proposal_id` |
 | `approvals` | `ApprovalRecord` | Unique `approval_id` |
 | `executions` | `ExecutionRecord` | Unique `record_id`; unique `proposal_id` among `dispatching` rows; unique `execution_id` among terminal rows |
 | `pipeline_run_observations` | `PipelineRunObservation` | Unique `observation_id` |
-| `commands` | Terminal command records of Phase 3 commands | Unique idempotency key |
+| `resolution_confirmations` | `ResolutionConfirmation` | Unique `confirmation_id` |
+| `cwa_snapshots`, `cwa_traces`, `regenerated_proposals` | The CWA records and proposals that G8's regeneration writes | Unique snapshot, trace, and proposal IDs |
+| `commands` | Terminal command records of Phase 3 commands | Unique login and idempotency key |
 | `audit_events` | Audit events of Phase 3 commands | Unique `event_id`; unique non-null `previous_event_id` (I2) |
 | `evidence_snapshots` | Evidence snapshots collected by Phase 3 commands | Unique `snapshot_id` |
 | `schema_versions` | One row per applied migration, inserted by the administrator | Unique version |
@@ -152,14 +157,15 @@ D13 places Phase 3 records in a database behind one store interface with two bac
 
 Rules:
 
-- Phase 3 commands read and write only this store. `proposal submit` alone also reads the Phase 0–2 JSON stores, to load the proposal it publishes. Those stores stay unchanged.
+- Phase 3 commands read and write only this store. `proposal submit` alone also reads the Phase 0–2 JSON stores, through the same directory flags the Phase 2 commands take, to load the proposal it publishes. Those stores stay unchanged.
+- Idempotency keys are unique per database login, which PostgreSQL sets with a `CURRENT_USER` default and the SQLite backend takes from the configuration. A run that loses a race for its key at the terminal insert stores `command_failed` naming the winning run and stores no terminal record ([I1 change](#invariant-changes)).
 - Every row stores its record's canonical JSON as text, never as `jsonb`, which reorders keys, and copies, as columns, of the fields that constraints and queries use. Load verifies the digest (I9), the signature where the record is signed, and that each column equals its JSON field, and refuses a row that fails any check (I8).
 - No row is updated or deleted, so Aura's role needs `INSERT` and `SELECT` only, and only `SELECT` on `schema_versions` and `deployment`.
 - Each write is idempotent by record ID. When a write's outcome is unknown, such as a connection lost before the commit is acknowledged, Aura reads the row back by its ID: an identical row counts as stored, an absent row as not stored, and an unreachable store ends the command `failed` with the record ID in the message. A `dispatching` record in that last case counts as stored, so the execution is `awaiting_operator` ([I4 change](#invariant-changes)).
-- `execute` dispatches in one transaction: it re-reads the approvals, rejections, and executions that G5, G6, and G11 check, then inserts the `dispatching` record. PostgreSQL runs the transaction at `SERIALIZABLE` isolation and SQLite under `BEGIN IMMEDIATE` with a busy timeout, so of two concurrent dispatches for one cluster, one fails. The failed command ends `failed` and is not retried. Every other statement uses SQL that both backends support, including the partial unique indexes.
+- `execute` dispatches in one transaction: it re-reads the approvals, rejections, and executions that G5, G6, and G11 check, then inserts the `dispatching` record. PostgreSQL runs the transaction at `SERIALIZABLE` isolation and SQLite under `BEGIN IMMEDIATE` with a busy timeout, so of two concurrent dispatches for one cluster, one fails. The losing command ends `refused` under the rule its recheck failed, and is not retried. Every other statement uses SQL that both backends support, including the partial unique indexes, except the time arithmetic, which each backend supplies.
 - Each row has `stored_at`, set by the database's `CURRENT_TIMESTAMP` at insert. G11's hourly limit counts by `stored_at`, not by a client's `created_at`.
-- Migrations are versioned files in the repository that only add tables, columns, and indexes. The administrator applies them in production, because Aura's role cannot run DDL; tests apply them to SQLite. Aura accepts a stored version, the highest in `schema_versions`, inside the range it supports, so operators on adjacent releases keep working, and refuses one outside it.
-- The hub ConfigMap `aura-execution-store` in namespace `aura` names the production store's deployment ID. G10 compares it with the store's `deployment` row; the ConfigMap is read in the same `oc` call as `aura-allowed-signers`.
+- Migrations are versioned files in the repository that only add tables, columns, and indexes. The administrator applies them in production, because Aura's role cannot run DDL; tests apply them to SQLite. Aura accepts a stored version, the highest in `schema_versions`, inside the range it supports, so operators on adjacent releases keep working, and refuses one outside it. Within a range, contracts gain only optional fields; a release that adds a required field starts a new range that excludes older clients.
+- The hub ConfigMap `aura-execution-store` in namespace `aura` names the production store's deployment ID and the PipelineRun retention period. G10 compares the ID with the store's `deployment` row.
 - `execution status` signed with `aura-execute` stores one observation per PipelineRun read, and a result record when the highest-ranked phase changes. The last observation stays readable after OpenShift Pipelines prunes the run.
 - Each record's audit event is stored first, in the same store, as the [write order](#guard) requires.
 
@@ -167,14 +173,15 @@ Rules:
 
 | Command | Command type | Who | Records written |
 | --- | --- | --- | --- |
-| `proposal submit` | `proposal.submit` (new) | `proposer`, as for creating a proposal | Command, audit events, `PublishedProposal`. Refused unless the local proposal passes G3 and G4 |
+| `proposal submit` | `proposal.submit` (new) | `proposer`, as for creating a proposal | Command, `proposal_published` event, `PublishedProposal`. Refused unless the local proposal passes G3 and G4 |
 | `proposal approve` | `proposal.approve` (new) | Signer with `aura-approve` | Command, `approval_recorded` event, `ApprovalRecord`. Refused for an unpublished proposal |
 | `proposal reject` | `proposal.reject` (new) | Signer with `aura-approve` | Command, `approval_recorded` event, `ApprovalRecord` |
 | `proposal status` | `proposal.status` | Unchanged | Unchanged; reports the derived state |
 | `execute` | `execute.patch` for Git types, `execute.pipeline` for reruns | Signer with `aura-execute` | Command, `execution_started` and `execution_finished` events, `ExecutionRecord`s. `--dry-run` runs the guard, writes the command record and audit events only, and prints the adapter request |
+| `execution confirm` | `execution.confirm` (new) | Signer with `aura-approve` | Command, `resolution_confirmed` event, `ResolutionConfirmation` |
 | `execution status` | `execution.status` (new) | `viewer`, `executor`, `admin`; a signer with `aura-execute` to store observations and results | Command and audit events; when signed, also `PipelineRunObservation`s and result `ExecutionRecord`s, including resolutions. PipelineRuns are read through `aura-readonly`; pull requests through the Git adapter's read method |
 
-`--role` stays for the read-only commands. `proposal approve`, `proposal reject`, `execute`, and signed `execution status` take their identity from the signature and ignore `--operator` and `--role`. Signing runs `ssh-keygen -Y sign` through `run_process` with standard input closed, so the key must be loaded in `ssh-agent`.
+`--role` stays for the read-only commands. `proposal approve`, `proposal reject`, `execution confirm`, `execute`, and signed `execution status` take their identity from the signature and ignore `--operator` and `--role`. Signing runs `ssh-keygen -Y sign` through `run_process` with standard input closed, so the key must be loaded in `ssh-agent`.
 
 ## Action Subset
 
@@ -295,8 +302,9 @@ Adopted in [Development](../development.md#project-invariants) in the task named
 
 | Invariant | Change | Task |
 | --- | --- | --- |
-| I3 | An approval record is written last within its command, after its `approval_recorded` event. An execution's `dispatching` record follows its `execution_started` event and precedes the adapter call; its result record follows its `execution_finished` event | 2.4, 3.5 |
-| I4 | For the execution store, a write whose outcome is unknown is resolved by reading the row back by its ID; a command whose write cannot be resolved ends `failed` and names the record ID, and an unresolved `dispatching` record counts as stored | 2.1 |
+| I1 | A Phase 3 command that loses a race for its idempotency key at the terminal insert stores `command_failed` naming the winning run instead of a terminal record | 2.1 |
+| I3 | New audit event types `proposal_published`, `execution_observed`, and `resolution_confirmed` precede the record each anchors. An approval record is written last within its command, after its `approval_recorded` event. An execution's `dispatching` record follows its `execution_started` event and precedes the adapter call; its result record follows its `execution_finished` event | 2.4, 3.5 |
+| I4 | For the execution store, a write whose outcome is unknown is resolved by reading the row back by its ID; a command whose write cannot be resolved ends `failed` and names the record ID, and an unresolved `dispatching` record counts as stored, and an unresolved approval or confirmation counts if it is stored, as the message states | 2.1 |
 | I5 | Aura writes to Git or Kubernetes only through an adapter's write method, after the guard passes, and only the approved action. It never pushes to a protected branch, merges, or calls the fleet EventListener, never writes Portal or RabbitMQ, and never modifies a protected repository's code | 4.3 |
 | I10 (new) | Every adapter write happens between a stored `dispatching` record and its result record, and only the guard calls an adapter's write method | 3.6 |
 
@@ -312,7 +320,7 @@ Use for every Phase 3 review:
 | --- | --- | --- |
 | 0.1 | The operator records D7–D13 in [Operator Decisions](#operator-decisions) | Every row has a decision |
 | 0.2 | Apply the decisions to this plan, to [Open Questions](08-open-questions.md), to the [Phase 2 plan](05-phase-2-proposals.md)'s lifecycle-fact "Test" column and Phase 3 Impact, to the [testing plan](07-testing-security-rollout.md), including its adapter assertion 5 on safe retry, to the [target architecture](02-target-architecture.md)'s database model, and to the status lines in [Status](../status.md), the [plans index](readme.md), and the [README](../../README.md); the operator approves the plan | Status says approved, with the commit |
-| 0.3 | The operator provides, before the Stage 4 and Stage 5 live runs: the staging hub (D9), `aura-executor` (D10), a staging PostgreSQL with the schema applied, a login in Aura's insert-only role, a `deployment` row, and ConfigMap `aura-execution-store` naming it (D13); and the hub's PipelineRun retention period | Each is listed in [Validation](../validation.md) with how to reach it |
+| 0.3 | The operator provides, before the Stage 4 and Stage 5 live runs: the staging hub (D9), `aura-executor` (D10), a staging PostgreSQL with the schema applied, a login in Aura's insert-only role, a `deployment` row, and ConfigMap `aura-execution-store` naming it and, when pruning allows, the PipelineRun retention period (D13); and how the hub prunes PipelineRuns | Each is listed in [Validation](../validation.md) with how to reach it |
 
 ## Stage 1: Hardening Carried from Phases 0–2
 
@@ -338,7 +346,7 @@ Requires D7, D11, and D13. No external writes.
 
 | Task | Work | Done when |
 | --- | --- | --- |
-| 2.1 | Aura's configuration file and its loader: the execution store connection, the adapters enabled, Aura's Git identity, the adapter timeout, and the PipelineRun retention period. The [Execution Store](#execution-store) interface and SQLite backend, with the migrations, the schema-version range check, read-back of unknown write outcomes, and the dispatch transaction. Extend the shared invariant harness to intercept execution store inserts; adopt the I4 change. Update [Security](../security.md) and [Architecture](../architecture.md) | Store contract tests pass on SQLite: a tampered row, a bad signature, and a column that differs from its JSON are refused on load; a version outside the range is refused; an unknown outcome is resolved by read-back; two dispatches for one cluster cannot both commit; the store issues no `UPDATE` or `DELETE` statement |
+| 2.1 | Aura's configuration file and its loader: the execution store connection and login, the adapters enabled, Aura's Git identity, and the adapter timeout. The [Execution Store](#execution-store) interface and SQLite backend, with the migrations, the schema-version range check, read-back of unknown write outcomes, and the dispatch transaction. Extend the shared invariant harness to intercept execution store inserts; adopt the I1 and I4 changes. Update [Security](../security.md) and [Architecture](../architecture.md) | Store contract tests pass on SQLite: a tampered row, a bad signature, and a column that differs from its JSON are refused on load; a version outside the range is refused; a signature from a key retired after `stored_at` still verifies; an unknown outcome is resolved by read-back; a key raced by two runs leaves one terminal record; two dispatches for one cluster cannot both commit; the store issues no `UPDATE` or `DELETE` statement |
 | 2.2 | `PublishedProposal` and `ApprovalRecord` contracts and the new command types; the schema export test covers them | Contract negatives pass, one per rule |
 | 2.3 | Signing and verification through `run_process` and `ssh-keygen -Y`, with the allowed-signers list read from the ConfigMap through `aura-readonly` and a local list for tests only. Add `get` on ConfigMaps `aura-allowed-signers` and `aura-execution-store` in namespace `aura`, by resource name, to the `aura-readonly` manifests in `deploy/`, with a manifest test | Tests with generated keys refuse a wrong principal, a wrong namespace, a tampered payload, an unlisted key, a future `created_at`, and an expiry beyond 24 hours, and accept a valid signature; two keys of one principal count as one approver; the manifest test fails for any other ConfigMap grant |
 | 2.4 | `proposal submit`, `proposal approve`, and `proposal reject`, with failure-matrix rows; adopt the I3 change for approvals | Shared harness proves I1–I4 and I6–I9 for all three; an approver on a second store client approves a proposal submitted from the first |
@@ -365,7 +373,7 @@ Requires D9 and D10. Tests inject the store check in G10 with the local signer l
 | Task | Work | Done when |
 | --- | --- | --- |
 | 4.1 | Tekton adapter with a fake runner: the deterministic name, `AlreadyExists`, a timeout to `awaiting_operator`, and API errors | Failure-matrix rows pass; a test covers the longest name |
-| 4.2 | `execution status` for PipelineRuns, storing observations, including resolution of `awaiting_operator` | One test per derived state from a PipelineRun; resolution is refused without an `aura-execute` signature, before the timeout margin, and as `timeout_margin` after the retention period; `manual` is refused without a confirmation by another principal; a pruned run reports its last observed state |
+| 4.2 | `execution status` for PipelineRuns, storing observations, including resolution of `awaiting_operator`; `execution confirm` | One test per derived state from a PipelineRun; resolution is refused without an `aura-execute` signature, before the timeout margin, and as `timeout_margin` after the retention period; `manual` is refused without a confirmation by another principal; a pruned run reports its last observed state |
 | 4.3 | Adopt the I5 change | [Development](../development.md#project-invariants) updated |
 | 4.4 | Live, in staging, with operator approval: confirm `oc whoami` is `system:serviceaccount:aura:aura-executor` and that it can create nothing but PipelineRuns in `openshift-pipelines`; confirm the store's deployment ID matches `aura-execution-store` and that a login in Aura's database role cannot update, delete, truncate, or alter; then run one approved rerun and its `execution status` | Rollout Gate 6; recorded in [Validation](../validation.md) |
 
@@ -375,7 +383,7 @@ Requires D8, and D10 and D12 under D8 (b). Live runs need task 0.3's staging sto
 
 | Task | Work | Done when |
 | --- | --- | --- |
-| 5.1 | Under D8 (a): the hand-off adapter writes the mailbox. Under D8 (b): first re-verify from `fleet`, read-only, that pull-request events and non-`main` pushes start no pipeline, and stop if either does | The mailbox applies with `git am` to `base_commit` in a test; or the re-verification is recorded in the [lifecycle facts](05-phase-2-proposals.md#lifecycle-facts) |
+| 5.1 | Under D8 (a): the hand-off adapter writes the mailbox. Under D8 (b): first re-verify from `fleet`, read-only, that pull-request events and non-`main` pushes start no pipeline, and stop if either does | The mailbox applies with `git am` to `base_commit` in a test, and the execution ends `handed_off`; or the re-verification is recorded in the [lifecycle facts](05-phase-2-proposals.md#lifecycle-facts) |
 | 5.2 | Under D8 (b): the pull-request adapter per [Git Adapter](#git-adapter), with a fake host API | One negative test per "must not" |
 | 5.3 | With operator approval, against the staging store: under D8 (a), one approved hand-off of each Git type, its mailbox applied with `git am` to a clone at `base_commit`; under D8 (b), one approved execution of each Git type against a test repository | Rollout Gate 5; recorded in [Validation](../validation.md) |
 | 5.4 | `execution status` for pull requests under D8 (b), including resolution of `awaiting_operator` | One test per derived state from a pull request |
