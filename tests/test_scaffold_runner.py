@@ -194,6 +194,53 @@ def test_runner_refuses_oversized_output(trees, behavior, message) -> None:
         run(trees, "--environment", behavior)
 
 
+def test_runner_never_reads_an_oversized_file_whole(
+    trees,
+    monkeypatch,
+) -> None:
+    reads: list[str] = []
+    read_bytes = Path.read_bytes
+
+    def spy(path: Path) -> bytes:
+        reads.append(path.name)
+        return read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", spy)
+
+    with pytest.raises(ScaffoldRunError, match="large-0.yaml exceeds"):
+        run(trees, "--environment", f"files={4 * MIB}")
+
+    assert "large-0.yaml" not in reads
+
+
+def test_runner_reports_why_the_scaffold_cannot_start(
+    trees,
+    monkeypatch,
+) -> None:
+    import aura.scaffold_runner as scaffold_runner
+    from aura.process import ProcessError
+
+    run_process = scaffold_runner.run_process
+
+    def missing_directory(argv, **options: object) -> object:
+        # Only the scaffold itself runs with a working directory.
+        if options.get("cwd") is None:
+            return run_process(argv, **options)
+        raise ProcessError(
+            "cannot use working directory /gone for python: "
+            "No such file or directory",
+            timed_out=False,
+        )
+
+    monkeypatch.setattr(scaffold_runner, "run_process", missing_directory)
+
+    with pytest.raises(
+        ScaffoldRunError,
+        match="^cannot use working directory /gone for python: ",
+    ):
+        run(trees)
+
+
 @pytest.mark.parametrize("behavior", [f"stdout={MIB}", f"files={MIB}"])
 def test_runner_accepts_output_at_the_limit(trees, behavior) -> None:
     result = run(trees, "--environment", behavior)

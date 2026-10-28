@@ -116,8 +116,7 @@ class SubprocessScaffoldRunner:
                 raise ScaffoldRunError(
                     f"scaffold timed out after {self._timeout:g} seconds"
                     if error.timed_out
-                    else f"cannot run scaffold with {self._python}: "
-                    f"{error.__cause__}"
+                    else str(error)
                 ) from error
             _require_stream_size("stdout", completed.stdout)
             _require_stream_size("stderr", completed.stderr)
@@ -350,10 +349,14 @@ def _entries(root: Path) -> dict[str, tuple[str, ...]]:
             if stat.S_ISLNK(info.st_mode):
                 found[relative] = ("link", os.readlink(path))
             elif stat.S_ISREG(info.st_mode):
+                # Hash in chunks, so an oversized file is never held in
+                # memory before the size check refuses it.
+                with path.open("rb") as stream:
+                    digest = hashlib.file_digest(stream, "sha256")
                 found[relative] = (
                     "file",
                     oct(info.st_mode & 0o111),
-                    hashlib.sha256(path.read_bytes()).hexdigest(),
+                    digest.hexdigest(),
                 )
             elif not stat.S_ISDIR(info.st_mode):
                 found[relative] = ("special",)
@@ -384,7 +387,7 @@ def _require_stream_size(name: str, stream: bytes) -> None:
 
 
 def _require_file_sizes(root: Path, paths: list[str]) -> None:
-    """Refuse oversized output before any file is read."""
+    """Refuse oversized output before any file is read into memory."""
 
     total = 0
     for relative in paths:
