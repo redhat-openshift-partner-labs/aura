@@ -7,6 +7,7 @@ command runners report failures with them.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -66,6 +67,14 @@ def run_process(
             timed_out=True,
         ) from error
     except OSError as error:
+        # subprocess names a missing working directory in filename, which
+        # otherwise names the program.
+        if cwd is not None and error.filename in (cwd, os.fspath(cwd)):
+            raise ProcessError(
+                f"cannot use working directory {cwd} for {argv[0]}: "
+                f"{error.strerror}",
+                timed_out=False,
+            ) from error
         raise ProcessError(
             f"cannot run {argv[0]}: {error}",
             timed_out=False,

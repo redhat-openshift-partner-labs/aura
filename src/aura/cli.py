@@ -623,10 +623,15 @@ def _fail_unexpected(
 ) -> int:
     """Fail a command whose route raised an error it does not handle."""
 
-    # The exception text may carry secret values, so only its type is
-    # stored; the full message goes to standard error alone (I6).
-    reason = f"internal error: {type(error).__name__}"
-    message = f"{reason}: {error}"
+    if isinstance(error, OSError):
+        # An OS error names an errno and a path, as handled filesystem
+        # errors do, so it is reported and stored whole (task 1.4).
+        reason = message = f"filesystem error: {error}"
+    else:
+        # The exception text may carry secret values, so only its type is
+        # stored; the full message goes to standard error alone (I6).
+        reason = f"internal error: {type(error).__name__}"
+        message = f"{reason}: {error}"
     try:
         JsonCommandStore(args.command_dir).load(command.idempotency_key)
     except CommandNotFound:

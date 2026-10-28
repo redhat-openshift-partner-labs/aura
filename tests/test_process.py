@@ -98,3 +98,16 @@ def test_missing_program_raises_process_error(tmp_path: Path) -> None:
         run_process([str(missing)], env=None, timeout=10)
 
     assert not error.value.timed_out
+
+
+def test_missing_working_directory_is_reported_as_such(tmp_path: Path) -> None:
+    missing = tmp_path / "missing-directory"
+
+    with pytest.raises(ProcessError) as error:
+        run_process(python("pass"), env=None, timeout=10, cwd=missing)
+
+    assert str(error.value) == (
+        f"cannot use working directory {missing} for {sys.executable}: "
+        "No such file or directory"
+    )
+    assert not error.value.timed_out

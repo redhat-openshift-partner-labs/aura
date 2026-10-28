@@ -643,6 +643,36 @@ def test_unexpected_read_error_fails_closed(
         ]
 
 
+@pytest.mark.parametrize("scenario", SCENARIOS, ids=scenario_id)
+def test_unhandled_os_error_is_a_filesystem_error(
+    tmp_path,
+    monkeypatch,
+    scenario,
+) -> None:
+    error = PermissionError(13, "Permission denied", "/unreadable")
+    reason = "filesystem error: [Errno 13] Permission denied: '/unreadable'"
+
+    class FailingOSCollector:
+        def collect(self, **_: object) -> EvidenceSnapshot:
+            raise error
+
+    run, before = execute(
+        scenario, tmp_path, monkeypatch, collector=FailingOSCollector()
+    )
+
+    assert run.exit_code == 2
+    assert run.stdout == ""
+    assert run.stderr == f"aura: {reason}\n"
+    assert check(tmp_path, before).status is CommandState.FAILED
+    if scenario.audited:
+        chain = command_chain(tmp_path / "audit", COMMAND_ID)
+        assert [event.event_type for event in chain] == [
+            AuditEventType.COMMAND_RECEIVED,
+            AuditEventType.COMMAND_FAILED,
+        ]
+        assert chain[-1].data["reason"] == reason
+
+
 class SecretMessageCollector:
     def collect(self, **_: object) -> EvidenceSnapshot:
         raise RuntimeError("token=collector-secret")
