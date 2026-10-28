@@ -1,0 +1,9 @@
+# Staging and development PostgreSQL for Aura's execution store.
+# Create the superuser Secret first; see docs/security.md#staging-database.
+# Apply with: oc apply -k deploy/postgresql
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- namespace.yaml
+- service.yaml
+- statefulset.yaml

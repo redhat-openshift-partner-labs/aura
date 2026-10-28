@@ -11,7 +11,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync pytest
 Expected current result:
 
 ```text
-1105 passed
+1113 passed
 ```
 
 Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `53ea23d` after the C0.4 caveat was closed, passed with 1105 tests on Python 3.13.17 in `linux/arm64`.
@@ -68,6 +68,7 @@ The test classes every change must include are defined in [Development Workflow]
 - The failure-injection matrix: every command's documented write order, a failure of each write in turn before writing and after linking, and each route's read errors, with invariants I1–I4 checked after every run.
 - Fixture validity and secret redaction, including field spelling variants.
 - Read-only RBAC manifests: every read of every `oc` client, built in each way the CLI builds it, including the Tekton `--namespace` option, is covered by a `list` grant in `deploy/`, and the roles grant nothing beyond the clients' cluster-wide and Pipeline-namespace reads. An `aura` client subclass or constructor option the test does not build fails it.
+- Staging database manifests in `deploy/postgresql/`: the official `postgres` image pinned to an exact release, the data volume at `/var/lib/postgresql`, the superuser password read from a mounted Secret, a restricted pod, and every object in `aura-db`.
 
 ## Local Fixture
 

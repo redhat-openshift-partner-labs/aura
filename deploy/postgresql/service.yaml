@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: aura-postgresql
+  namespace: aura-db
+  labels:
+    app.kubernetes.io/name: aura-postgresql
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: aura-postgresql
+  ports:
+  - name: postgresql
+    port: 5432
+    targetPort: postgresql

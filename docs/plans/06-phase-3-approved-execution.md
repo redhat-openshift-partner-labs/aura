@@ -320,7 +320,7 @@ Use for every Phase 3 review:
 | --- | --- | --- |
 | 0.1 | The operator records D7–D13 in [Operator Decisions](#operator-decisions) | Every row has a decision |
 | 0.2 | Apply the decisions to this plan, to [Open Questions](08-open-questions.md), to the [Phase 2 plan](05-phase-2-proposals.md)'s lifecycle-fact "Test" column and Phase 3 Impact, to the [testing plan](07-testing-security-rollout.md), including its adapter assertion 5 on safe retry, to the [target architecture](02-target-architecture.md)'s database model, and to the status lines in [Status](../status.md), the [plans index](readme.md), and the [README](../../README.md); the operator approves the plan | Status says approved, with the commit |
-| 0.3 | The operator provides, before the Stage 4 and Stage 5 live runs: the staging hub (D9), `aura-executor` (D10), a staging PostgreSQL with the schema applied, a login in Aura's insert-only role, a `deployment` row, and ConfigMap `aura-execution-store` naming it and, when pruning allows, the PipelineRun retention period (D13); and how the hub prunes PipelineRuns | Each is listed in [Validation](../validation.md) with how to reach it |
+| 0.3 | The operator provides, before the Stage 4 and Stage 5 live runs: the staging hub (D9), `aura-executor` (D10), a staging PostgreSQL with the schema applied, deployable from [`deploy/postgresql/`](../../deploy/postgresql) as [Security](../security.md#staging-database) describes, a login in Aura's insert-only role, a `deployment` row, and ConfigMap `aura-execution-store` naming it and, when pruning allows, the PipelineRun retention period (D13); and how the hub prunes PipelineRuns | Each is listed in [Validation](../validation.md) with how to reach it |
 
 ## Stage 1: Hardening Carried from Phases 0–2
 

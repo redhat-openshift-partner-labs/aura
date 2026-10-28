@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: aura-postgresql
+  namespace: aura-db
+  labels:
+    app.kubernetes.io/name: aura-postgresql
+spec:
+  serviceName: aura-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aura-postgresql
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: aura-postgresql
+    spec:
+      automountServiceAccountToken: false
+      # OpenShift's restricted-v2 SCC assigns the UID and fsGroup; the
+      # image's entrypoint runs initdb under an arbitrary UID.
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: postgresql
+        image: docker.io/library/postgres:18.6-trixie
+        env:
+        # Read by the entrypoint only when the data directory is empty.
+        - name: POSTGRES_PASSWORD_FILE
+          value: /run/secrets/aura-postgresql/password
+        - name: POSTGRES_DB
+          value: aura
+        ports:
+        - name: postgresql
+          containerPort: 5432
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "--username=postgres", "--dbname=aura"]
+          periodSeconds: 10
+        livenessProbe:
+          exec:
+            command: ["pg_isready", "--username=postgres", "--dbname=aura"]
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          failureThreshold: 6
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 1Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        # PostgreSQL 18+ images declare this volume and keep PGDATA in
+        # /var/lib/postgresql/18/docker.
+        - name: data
+          mountPath: /var/lib/postgresql
+        - name: superuser
+          mountPath: /run/secrets/aura-postgresql
+          readOnly: true
+      volumes:
+      - name: superuser
+        secret:
+          secretName: aura-postgresql
+          defaultMode: 0440
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi

@@ -93,6 +93,48 @@ oc --kubeconfig "$HOME/.kube/aura-readonly" auth can-i list pipelines.tekton.dev
 
 Every command must print `yes`. Write verbs such as `create`, `patch`, and `delete` must print `no`.
 
+## Staging Database
+
+[`deploy/postgresql/`](../deploy/postgresql) deploys PostgreSQL for the Phase 3 [Execution Store](plans/06-phase-3-approved-execution.md#execution-store) in staging and development (D13). It is a separate kustomization, so `oc apply -k deploy` never deploys it. Production enablement, including TLS, backups, and high availability, is out of its scope.
+
+| Manifest | Creates |
+| --- | --- |
+| `namespace.yaml` | Namespace `aura-db`, separate from `aura`, so access granted to Aura operators in `aura` does not reach the database's Secret, pods, or volume |
+| `service.yaml` | Headless Service `aura-postgresql` on port 5432 |
+| `statefulset.yaml` | One-replica StatefulSet running the official image `docker.io/library/postgres:18.6-trixie`, with a 10Gi volume from the default StorageClass mounted at `/var/lib/postgresql`, which PostgreSQL 18 images declare. The pod runs under OpenShift's restricted-v2 SCC with no service account token, and creates database `aura` |
+
+`tests/test_postgresql_manifests.py` keeps the image pinned to an exact official release, the volume at the image's declared path, the password in a mounted Secret, and every object in `aura-db`.
+
+Prerequisites: cluster-administrator access to the hub, and a hub that can pull from Docker Hub.
+
+Create the namespace and the superuser Secret as the database administrator. The password is generated into the Secret and never appears on a command line:
+
+```bash
+oc apply -f deploy/postgresql/namespace.yaml
+```
+
+```bash
+openssl rand -base64 32 | tr -d '\n' | oc -n aura-db create secret generic aura-postgresql --from-file=password=/dev/stdin
+```
+
+Preview and apply the database:
+
+```bash
+oc apply -k deploy/postgresql --dry-run=server
+```
+
+```bash
+oc apply -k deploy/postgresql
+```
+
+Wait until the pod is ready:
+
+```bash
+oc -n aura-db rollout status statefulset/aura-postgresql
+```
+
+The Secret is read only on the first start, when the data directory is empty; changing it later does not change the superuser password. The Service is reachable only inside the cluster. For staging, the administrator reaches it with `oc -n aura-db port-forward statefulset/aura-postgresql 5432:5432`. Phase 3 task 3.7 adds the SQL that creates Aura's insert-only role and grants, and task 0.3 records the staging store's connection in [Validation](validation.md).
+
 ## Secret Redaction
 
 `RedactionPolicy` removes values for these field names:
