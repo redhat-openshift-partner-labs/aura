@@ -432,9 +432,39 @@ Requires D8, and D10 and D12 under D8 (b). Live runs need task 0.3's staging sto
 | 0 | 0.1 Decisions | Done | |
 | 0 | 0.2 Apply decisions and approval | Done | `a6e7554`, `fe3fc8b`, `a61a08c` |
 | 0 | 0.3 Stage 4 prerequisites | Pending | |
-| 1 | 1.1–1.11 Hardening | Pending | |
+| 1 | 1.1–1.11 Hardening | Done; plan edits await the operator's confirmation, see [Stage 1 Record](#stage-1-record) | `7e2fca9`, `9beb53d`, `4889513`, `b989aff`, `d88ab1c`, `3689b4c`, `ab480a9`, `71d82cc`, `8dc07a5`, `c74d7d3`; review fixes `1de5003`, `2171460`, `3c3e054` |
 | 2 | 2.1–2.5 Identity and approvals | Pending | |
 | 3 | 3.1–3.7 Guard and dry run | Pending | |
 | 4 | 4.1–4.4 Tekton adapter | Pending | |
 | 5 | 5.1–5.4 Git execution | Pending | |
 | 6 | 6.1–6.5 Acceptance gate | Pending | |
+
+## Stage 1 Record
+
+Implemented 2026-10-27. Each closure backlog row the stage targets names its fixing commits.
+
+P3.16 evidence, from the stage review, which ran each fix commit's tests against its parent's source:
+
+| Task | Before its fix |
+| --- | --- |
+| 1.1–1.4, 1.5 save revalidation, 1.6 stored digests, 1.9, 1.10, 1.11 | Failed because the behavior was missing |
+| 1.6 provenance, 1.8 | Failed only at import, because the module or contract did not exist. Removing each reference check and each patch-check line from the finished code one at a time made a test fail |
+| 1.5 loader rule and store discovery, 1.7 | Structural tests of code that had no violation, so they cannot fail before the fix. Seeded violations, including every alias and indirect call the review found, each made them fail |
+
+The review found an `OSError` text leak, a size check that ran after files were read, a hidden scaffold start error, chokepoint rules that missed aliased calls, and stale docs; `1de5003`, `2171460`, and `3c3e054` fix them test-first. Two commits changed existing tests without saying so in their messages: `b989aff` rebuilt `make_command` in `tests/test_command_store.py` with `model_validate`, because save now refuses a stale digest, and `71d82cc` made `CountingRunner` in `tests/test_oc_call_budget.py` return `metadata.resourceVersion`.
+
+Plan edits made during Stage 1 that the operator has not yet confirmed (P3-1):
+
+1. Task 1.6: an existing trace without `trace_digest` fails to load wherever it is read, because no command reads traces today; the plan had said such traces still load for read-only commands.
+2. Task 0.3: the staging PostgreSQL is deployable from `deploy/postgresql/`, added at the operator's request.
+3. [Action Subset](#action-subset): `patch_check` is excluded, because G8 recomputes it.
+
+Backlog, from the stage review, for the stage that owns each item:
+
+- `_last_audit_event` still fails closed on a stray non-ID file or an unreadable record of another command (Stage 3 failure matrix).
+- `CWATrace.trace_digest` covers absent optional fields, so a future optional trace field changes stored traces' digests; `proposal_digest` leaves an absent `patch_check` out (next schema change).
+- A new Git proposal without `patch_check` still validates (G8, task 3.4).
+- `aura.provenance` does not check the trace's audit event type or the diagnosis provider and model against the trace (task 3.3).
+- The 1.9 error cache is per `OpenShiftResource` instance; `OpenShiftCLI.resource()` builds a new one per call (next `oc` client change).
+- The scaffold size limits do not cap the number of generated files (next scaffold change).
+- Store discovery covers only `JsonRecordStore` subclasses; the command store is checked separately (Stage 2 store work).

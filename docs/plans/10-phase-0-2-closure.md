@@ -226,34 +226,34 @@ Not blocking Phases 0–2 (R2).
 | Live-state staleness, comparing a defined action subset | Phase 3 guard rule G8, task 3.4 |
 | `git_checked` is always true; keep or remove in a schema revision | Next schema change |
 | `pinned_git_revision` first-match versus last-match has no test | Next schema change |
-| Output size limits for scaffold streams and files | Phase 3 task 1.10 |
+| Output size limits for scaffold streams and files | Phase 3 task 1.10; fixed in `8dc07a5`, `2171460` |
 | Scaffold risks do not tell the operator to push the scaffold commit alone | Phase 2 polish after closure |
 | Phase 2 open questions 1–4 (D5), including stranded deprovision sentinels | `fleet-clusters` and `fleet` maintainers; edit kinds in Phase 3 |
 | Move legacy rerun records out of `local/rerun/proposals/` | Operator |
 | A stored proposal whose cluster name contains `-archive` no longer loads after `08f40da`; none exist under `local/` | Operator |
-| When `_fail_unexpected` cannot read `--audit-dir`, the command stores `failed` without `command_failed`; an unrelated malformed audit record is enough | Phase 3 task 1.2 |
-| `command_failed` from `_fail_unexpected` stores the raw exception text without redaction | Phase 3 task 1.1 |
-| An `OSError` a route does not handle reports as `internal error` rather than as a filesystem error | Phase 3 task 1.4 |
-| A refusal path that raises after `command_refused` ends the chain `command_refused` then `command_failed` | Phase 3 task 1.3 |
-| `tests/test_architecture.py` checks only `subprocess` imports, not `os.system`, `os.posix_spawn`, or `os.exec*` | Phase 3 task 1.7 |
-| `ProcessError` reports `cannot run` when the cause is a missing `cwd` | Phase 3 task 1.4 |
-| A failed `oc` read retried within one command spends a second budget call | Phase 3 task 1.9 |
+| When `_fail_unexpected` cannot read `--audit-dir`, the command stores `failed` without `command_failed`; an unrelated malformed audit record is enough | Phase 3 task 1.2; fixed in `9beb53d` |
+| `command_failed` from `_fail_unexpected` stores the raw exception text without redaction | Phase 3 task 1.1; fixed in `7e2fca9`, `1de5003` |
+| An `OSError` a route does not handle reports as `internal error` rather than as a filesystem error | Phase 3 task 1.4; fixed in `4889513`, `1de5003` |
+| A refusal path that raises after `command_refused` ends the chain `command_refused` then `command_failed` | Phase 3 task 1.3; fixed in `9beb53d` |
+| `tests/test_architecture.py` checks only `subprocess` imports, not `os.system`, `os.posix_spawn`, or `os.exec*` | Phase 3 task 1.7; fixed in `ab480a9`, `3c3e054` |
+| `ProcessError` reports `cannot run` when the cause is a missing `cwd` | Phase 3 task 1.4; fixed in `4889513`, `2171460` |
+| A failed `oc` read retried within one command spends a second budget call | Phase 3 task 1.9; fixed in `71d82cc` |
 | `oc` runs with standard input closed, so an interactive exec-credential kubeconfig cannot prompt | Operator: use a token kubeconfig |
 | Failure-matrix model-failure rows do not cover the diagnosis model in `inventory-diagnosed` | Next failure-matrix change |
 | A non-`OSError` raised by the terminal command record write itself can still leave a stored proposal next to a failed command (review F2, option A) | Phase 3 guard rule G4, task 3.3 |
 | The Phase 1 live RBAC check covered ClusterDeployments, ManagedClusters, PipelineRuns, and Pipelines; the TaskRuns grant's write verbs were not checked live (the manifest test covers them) | Next live validation |
 | The C1.1 checkout tests compare files only, not directory modification times or new empty directories | Next Git collector change |
-| No structural test requires every record loader to go through `json_store.parse_record`; a loader that bypasses it passes the suite | Phase 3 task 1.5 |
-| `tests/test_stored_digests.py` lists contracts and stores by hand; a new one is skipped silently | Phase 3 task 1.5 |
-| Cross-record digests (`CWATrace`, `DiagnosisRecord`, and `Proposal` references) are not checked against their targets on load, and `CWATrace` has no self-digest | Phase 3 task 1.6 |
-| Stores do not revalidate a record on save, so a `model_copy` with a stale digest is stored and then cannot be read | Phase 3 task 1.5 |
-| A blank-digest audit event anywhere in `--audit-dir` makes `_fail_unexpected` store `failed` without `command_failed` | Phase 3 task 1.2 |
-| The patch-check outcome is not recorded in the evidence or the CWA trace; it depends on the checkout at generation time | Phase 3 task 1.8 |
+| No structural test requires every record loader to go through `json_store.parse_record`; a loader that bypasses it passes the suite | Phase 3 task 1.5; fixed in `b989aff`, `3689b4c`, `3c3e054` |
+| `tests/test_stored_digests.py` lists contracts and stores by hand; a new one is skipped silently | Phase 3 task 1.5; fixed in `b989aff`, `3689b4c`, `3c3e054` |
+| Cross-record digests (`CWATrace`, `DiagnosisRecord`, and `Proposal` references) are not checked against their targets on load, and `CWATrace` has no self-digest | Phase 3 task 1.6; fixed in `d88ab1c` |
+| Stores do not revalidate a record on save, so a `model_copy` with a stale digest is stored and then cannot be read | Phase 3 task 1.5; fixed in `b989aff`, `3689b4c`, `3c3e054` |
+| A blank-digest audit event anywhere in `--audit-dir` makes `_fail_unexpected` store `failed` without `command_failed` | Phase 3 task 1.2; fixed in `9beb53d` |
+| The patch-check outcome is not recorded in the evidence or the CWA trace; it depends on the checkout at generation time | Phase 3 task 1.8; fixed in `c74d7d3` |
 | `generator_version` stays `0.1.0` for deprovision and cluster-edit despite the new patch-check refusals | Next generator change |
 | A cluster-edit whose existing `metadata.yaml` has a secret-named key ends `failed` (`generated proposal is invalid`), not `refused` | Next generator change |
 | No unit test runs the real `GitPatchCheck(require_definition=True)` on a cluster-edit patch; the CLI failure-matrix scenarios cover it | Next failure-matrix change |
 | The Phase 2 record's Status calls its grades independently reconciled; the Stage 4 regrades are the author's until the Stage 5 blind review | Stage 5 task 5.1 |
 | C2.20 and C1.17 were run at `1d1bc1c` and `ea7ec7b`; a later source change needs the affected live runs repeated at the closure commit | Stage 5 |
-| `OpenShiftResource.resource_version()` reports `unknown` when an `oc` list lacks `metadata.resourceVersion`; real lists always carry it, and test runners omit it | Phase 3 task 1.11 |
+| `OpenShiftResource.resource_version()` reports `unknown` when an `oc` list lacks `metadata.resourceVersion`; real lists always carry it, and test runners omit it | Phase 3 task 1.11; fixed in `71d82cc` |
 | `tests/test_contract_schemas.py` compares only property names: a changed field type, `extra="allow"`, or a nested model passes it, and the adapter contracts are not exported | Next schema change |
 | Phase 0 deliverable 8 has one fixture, from `fleet-clusters`; none from the other protected repositories | Operator |
