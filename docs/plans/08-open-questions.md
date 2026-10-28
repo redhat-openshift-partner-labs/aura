@@ -26,7 +26,7 @@ If yes, define:
 
 Default: Aura may propose a PR but never merge it.
 
-Status: pending as decisions D8 (execution path) and D12 (merge method) in the [Phase 3 plan](06-phase-3-approved-execution.md#operator-decisions).
+Status: decided 2026-10-27 as D8 and D12 in the [Phase 3 plan](06-phase-3-approved-execution.md#operator-decisions). Aura writes a `git am` mailbox and the operator applies it (D8 (a)); pull requests from a bot account's fork come later (D8 (b)), and Aura never merges.
 
 ## Fleet-Clusters Data
 
@@ -94,7 +94,7 @@ Needed decisions:
 
 Default: start with local CLI identity and explicit role configuration.
 
-Status: pending as decisions D7 (identity) and D11 (approval policy, emergencies, expiry, revocation) in the [Phase 3 plan](06-phase-3-approved-execution.md#operator-decisions).
+Status: decided 2026-10-27 as D7 and D11 in the [Phase 3 plan](06-phase-3-approved-execution.md#operator-decisions). Approvals and execution requests are SSH-signed and verified against an allowed-signers list in a hub ConfigMap; the approver is not the executor, `deprovision` needs two approvers, there is no emergency self-approval, approvals expire after at most 24 hours, and a rejection revokes an approval before dispatch.
 
 ## Portal Integration
 
@@ -158,4 +158,15 @@ Options:
 | Full migration | High cost and risk |
 
 Default: ignore the legacy path until Aura's core value is proven.
+
+### Should operators submit Aura requests through the queue?
+
+Asked 2026-10-27. The operator states that the current system accepts requests through an n8n endpoint that publishes to RabbitMQ. Aura is not designed to replace RabbitMQ ([Decision Summary](readme.md#decision-summary)), and Phase 3 does not use it: requests reach Aura through the CLI.
+
+| Option | Tradeoff |
+| --- | --- |
+| CLI only | No queue dependency; matches Phases 0–3 |
+| n8n endpoint that publishes Aura requests to RabbitMQ, consumed by an Aura worker | Reuses the current intake; needs a long-running Aura consumer whose acknowledgements change RabbitMQ state, which I5 forbids until a phase allows it, and deduplication of redelivered messages by idempotency key |
+
+Default: CLI only through Phase 3. Revisit with the decision to run Aura as a service.
 

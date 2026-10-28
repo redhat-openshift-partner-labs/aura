@@ -2,7 +2,7 @@
 
 ## Status
 
-Revised 2026-10-27; replaces the draft aligned on 2026-10-20. Awaits the [Operator Decisions](#operator-decisions) D7–D12 and approval of this plan. Phases 0–2 were signed off on 2026-10-26. Stage 3 closes the [Phase 3 Entry Conditions](10-phase-0-2-closure.md#phase-3-entry-conditions) E2–E4 before any adapter writes to an external system. E1 stays bound to connecting an external model, which this plan does not do.
+Revised 2026-10-27; replaces the draft aligned on 2026-10-20. The [Operator Decisions](#operator-decisions) D7–D13 were recorded on 2026-10-27; the plan awaits the operator's approval. Phases 0–2 were signed off on 2026-10-26. Stage 3 closes the [Phase 3 Entry Conditions](10-phase-0-2-closure.md#phase-3-entry-conditions) E2–E4 before any adapter writes to an external system. E1 stays bound to connecting an external model, which this plan does not do.
 
 ## Objective
 
@@ -12,7 +12,7 @@ Phase 3 is not autonomous operation. Every execution requires an explicit approv
 
 ## Rules
 
-The closure plan's [rules](10-phase-0-2-closure.md#rules) R2–R6 apply, reading "closure criterion" as a Phase 3 [acceptance criterion](#acceptance-criteria). Reviews use this plan's [Review Brief](#review-brief). The closure plan's [Session Guardrails](10-phase-0-2-closure.md#session-guardrails) apply, except that Stage 4 live runs use `~/.kube/aura-executor` against the staging hub and first confirm the identity and grants that task 4.4 lists. In addition:
+The closure plan's [rules](10-phase-0-2-closure.md#rules) R2–R6 apply, reading "closure criterion" as a Phase 3 [acceptance criterion](#acceptance-criteria). Reviews use this plan's [Review Brief](#review-brief). The closure plan's [Session Guardrails](10-phase-0-2-closure.md#session-guardrails) apply, except that Stage 4 live runs use `~/.kube/aura-executor` against the staging hub and the staging PostgreSQL through Aura's insert-only role, and first confirm the identities and grants that task 4.4 lists. In addition:
 
 | Rule | Statement |
 | --- | --- |
@@ -25,7 +25,7 @@ The closure plan's [rules](10-phase-0-2-closure.md#rules) R2–R6 apply, reading
 
 ## Operator Decisions
 
-Pending. A stage that depends on a decision does not start until the decision is recorded here. IDs continue from the closure plan's D1–D6.
+Recorded on 2026-10-27: the operator accepted every recommendation, so each row's Recommendation is its decision. D13 was added the same day, when the operator stated that Aura will have a database. A stage that depends on a prerequisite a decision names, such as the staging hub, a credential, or a database, does not start until the operator provides it. IDs continue from the closure plan's D1–D6.
 
 | ID | Question | Options | Recommendation | Blocks |
 | --- | --- | --- | --- | --- |
@@ -35,6 +35,7 @@ Pending. A stage that depends on a decision does not start until the decision is
 | D10 | Which credentials do the adapters use? | Tekton: ServiceAccount `aura-executor` in namespace `aura` with `create` and `get` on `pipelineruns.tekton.dev` in `openshift-pipelines` only, used through `~/.kube/aura-executor`. Git, only under D8 (b): a fine-grained token for a bot account, scoped to pushing its fork and opening pull requests on `fleet-clusters` | As listed. The operator creates both; Aura's manifests in `deploy/` add the ServiceAccount, Role, and RoleBinding, as Phase 0 did for `aura-readonly` | Stage 4, Stage 5 under D8 (b) |
 | D11 | Who may approve and execute? 08 open question 3 asks whether the proposer may approve | (a) One approver for every type, who is not the executor; (b) as (a), plus a second, distinct approver for `deprovision` | (b). Separation is enforced between approvers and the executor, because both sign; the proposer's identity is unsigned in Phase 2 records, so a proposer may approve. No emergency self-approval. Approvals expire at most 24 hours after signing. A rejection recorded after an approval revokes it before dispatch | Stage 2 |
 | D12 | Can `fleet-clusters` enforce the merge method, and does a squash keep `[skip-provision]`? | (a) Branch protection enforces rebase or squash, and the squash message keeps the commit message; (b) neither is enforceable, so the pull request states the method and the reviewer enforces it | The operator checks the repository settings, including the default squash message, required reviewers, and base branch `main`; Aura records which applies in each pull request | Stage 5 under D8 (b) |
+| D13 | Where are Phase 3 records stored, given that Aura will have a database: SQLite for development, PostgreSQL in production? | (a) JSON stores under one store root, as in Phases 0–2; (b) Phase 3 records in the database through one store interface; (c) every store in the database | (b), decided by the operator. Approvals, executions, and PipelineRun observations go to the [Execution Store](#execution-store): SQLite for development and tests, one shared PostgreSQL in production. The CLI runs on operators' machines and connects to it. Aura's database role has `INSERT` and `SELECT` only, and someone other than the operators who run Aura administers the database. The Phase 0–2 JSON stores stay; moving them is deferred | Stage 2 (SQLite); Stage 4 live runs (PostgreSQL) |
 
 ## Execution Scope
 
@@ -67,14 +68,14 @@ Deferred actions:
 
 A proposal's `status` is inside its `proposal_digest`, so proposal records stay immutable and a proposal's lifecycle state is derived from the append-only records that name it.
 
-`execute` and `execution status` read and write approval, execution, and command records under one store root set in Aura's configuration file, never by a CLI flag, so changing a directory cannot hide an earlier execution.
+Approval and execution records live in the [Execution Store](#execution-store). The Phase 3 commands write their command records and audit events to the JSON stores under one store root set in Aura's configuration file, never by a CLI flag.
 
 | Record | Written by | Fields |
 | --- | --- | --- |
 | `ApprovalRecord` | `proposal approve`, `proposal reject` | `approval_id`, `command_id`, `proposal_id`, `proposal_digest`, `action_digest`, `decision` (`approved` or `rejected`), `principal`, `signature`, `created_at`, `expires_at`, `approval_digest` |
 | `ExecutionRecord` | `execute`, `execution status` | `execution_id`, `command_id`, `proposal_id`, `proposal_digest`, `action_digest`, `approval_ids`, `adapter`, `adapter_version`, `phase`, `external_result`, `failure_reason`, `rollback`, `created_at`, `execution_digest`; `principal` and `signature` on the `dispatching` record only |
 
-The `dispatching` record is stored at a path derived from `proposal_id` with the store's exclusive create, so a second dispatch of the same proposal fails at the write, whatever its idempotency key. A proposal is dispatched at most once. Result records follow in `phase` order. Every record's digest is verified on load and anchored to its audit event (I3, I9).
+The execution store allows one `dispatching` record per `proposal_id`, so a second dispatch of the same proposal fails at the write, whatever its idempotency key or the machine it runs on. A proposal is dispatched at most once. Result records follow in `phase` order. Every record's digest is verified on load and anchored to its audit event (I3, I9).
 
 Signed payloads are the canonical JSON of the record's fields except `signature` and the record's own digest. Approvals use SSH signature namespace `aura-approve`, and execution requests use `aura-execute`, so a signature of one kind never verifies as the other. The guard refuses a signed record whose `created_at` is more than five minutes after the guard's clock, and an approval whose `expires_at` is more than 24 hours after its `created_at`.
 
@@ -90,9 +91,15 @@ The derived state is the first row that matches:
 | `awaiting_approval` | At least one approval record, but fewer unexpired approvals than D11 requires |
 | `proposal_ready` | None of the above |
 
-`submitted` means a pull request is open, a PipelineRun was created, or the hand-off mailbox was written. `running`, `succeeded`, and `failed` follow the PipelineRun. `merged` and `closed` follow the pull request; pipelines that a merge starts are observed with the Phase 1 commands. `not_dispatched` means `execution status` found no external effect for an `awaiting_operator` execution.
+`submitted` means a pull request is open, a PipelineRun was created, or the hand-off mailbox was written. `running`, `succeeded`, and `failed` follow the latest PipelineRun observation. `merged` and `closed` follow the pull request; pipelines that a merge starts are observed with the Phase 1 commands. `not_dispatched` means `execution status` found no external effect for an `awaiting_operator` execution.
 
-Trust boundary: local records are under the control of whoever runs Aura, who can delete them or point the configuration at a new store root. The guard therefore also checks the external systems (G6), and approvals expire after 24 hours, so a fresh store cannot reuse an old approval beyond that window. Duties are separated by the signatures and the hub-held signer list, not by local file permissions.
+Trust boundary:
+
+- The shared PostgreSQL store with its insert-only role keeps approvals and executions out of any operator's power to delete or edit, and shows every operator's guard every dispatch, so P3.7 and G11 hold across machines.
+- The CLI runs on the operator's machine, so an operator who edits the configuration or runs a modified CLI can bypass the shared store. G10 refuses a SQLite store for any adapter other than the test-only `recording` adapter, which stops this by accident. The guard also checks the external systems (G6), and approvals expire after 24 hours.
+- The executor holds `aura-executor`, which can create PipelineRuns without Aura. The guard separates duties among operators who use Aura; it does not contain a hostile executor. Containing one needs Aura to run as a service that holds the adapter credentials, which this plan does not include.
+- Duties are separated by the signatures and the hub-held signer list, not by database grants or local file permissions.
+- Audit events stay in each operator's JSON audit chain, so the chain for an execution is on the machine that ran it.
 
 ```mermaid
 stateDiagram-v2
@@ -120,6 +127,25 @@ stateDiagram-v2
 ```
 
 Aura never retries automatically, and no result lets the same proposal be dispatched again; a new attempt needs a new proposal and new approvals. An `awaiting_operator` execution is resolved by `execution status`, which looks up the external effect by its deterministic name: the PipelineRun `aura-rerun-<proposal-id>`, the branch `aura/<proposal-id>` and its pull request, or the recorded mailbox path. It records `submitted` or `not_dispatched` only when signed with `aura-execute`, and only after the `dispatching` record is older than the adapter timeout plus five minutes, so a call still in flight cannot be recorded as `not_dispatched`. Without a signature it reports what it finds and records nothing. This lookup is how the [adapter tests](07-testing-security-rollout.md#adapter-tests)' safe retry after an ambiguous failure is met: the operator re-proposes only after `not_dispatched` is recorded.
+
+## Execution Store
+
+D13 places Phase 3 records in a database behind one store interface with two backends: SQLite for development and tests, and a shared PostgreSQL in production. The backend and its connection come from Aura's configuration file; the password is read from a file the configuration names, and is redacted from every stored record and message (I6).
+
+| Table | Rows | Key constraint |
+| --- | --- | --- |
+| `approvals` | One `ApprovalRecord` each | Unique `approval_id` |
+| `executions` | One `ExecutionRecord` each | Unique `execution_id`; unique `proposal_id` among rows whose `phase` is `dispatching` |
+| `pipeline_run_observations` | One read of an Aura-created PipelineRun by `execution status`: `execution_id`, the observing `command_id`, name, UID, namespace, the `Succeeded` condition's status and reason, start and completion times, `observed_at`, and `observation_digest` | Unique `observation_id` |
+
+Rules:
+
+- Every row stores the record's canonical JSON and its digest, and the digest is verified on load (I9).
+- Every write is one `INSERT` in its own transaction; no row is updated or deleted. Aura's role therefore needs `INSERT` and `SELECT` only, and a failed write leaves no row (I4).
+- Both backends use SQL that both support, including the partial unique index on `executions`.
+- Schema migrations are versioned files in the repository. The database administrator applies them in production, because Aura's role cannot run DDL; tests apply them to SQLite. Aura refuses to read or write when the stored schema version differs from the one it expects.
+- `execution status` stores one observation per PipelineRun read, and a result `ExecutionRecord` only when the derived phase changes. The last observation stays readable after OpenShift Pipelines prunes the run, so Gate 7 does not depend on the hub keeping it.
+- Each row is anchored to its audit event by digest, and the audit event is stored first, as the [write order](#guard) requires.
 
 ## Commands
 
@@ -159,12 +185,12 @@ The guard runs these checks in order before any adapter call. The first failure 
 | G3 | The stored proposal loads, its digest verifies, and the digest equals the one in its `proposal_created` event and in its CWA trace's `response_digest`; its CWA trace has a self-digest | Backlog: digest anchoring | Modified proposal after approval; proposal with invalid schema |
 | G4 | The command record named by the proposal's `command_id` is `succeeded` | E3 | |
 | G5 | The approvals D11 requires exist for this `proposal_id`, `proposal_digest`, and `action_digest`: unexpired, each signed by a distinct key with `aura-approve` whose principal is not the executor's, with no rejection | D7, D11 | Missing approval; wrong approver role |
-| G6 | The proposal's derived state is `approved`, the command's idempotency key is new, and the external systems show no earlier effect: no PipelineRun on the hub carries this proposal's ID annotation, read through `aura-readonly`, and, under D8 (b), no branch `aura/<proposal-id>` exists in the fork | One execution per proposal | Duplicate idempotency key |
+| G6 | The proposal's derived state, read from the execution store, is `approved`, the command's idempotency key is new, and the external systems show no earlier effect: no PipelineRun on the hub carries this proposal's ID annotation, read through `aura-readonly`, and, under D8 (b), no branch `aura/<proposal-id>` exists in the fork | One execution per proposal | Duplicate idempotency key |
 | G7 | The proposal is not Git-stale | Phase 2 staleness | Stale proposal |
 | G8 | Evidence re-collected now regenerates the proposal with the same generator, and the regenerated `action_digest` equals the approved one. A regeneration refusal is a guard refusal | E2, E4 | Stale proposal |
 | G9 | The proposal validates against the current contract, touches exactly one cluster, and stays inside its type's paths | Phase 2 contract | Proposal touching two clusters; out-of-scope target; missing required commit message; bare deprovision sentinel; direct PipelineRun for pre-provision, provision, or deprovision |
-| G10 | The adapter for the type is allow-listed and enabled by configuration; no adapter targets the EventListener | D8, D9, D10 | Unknown adapter; EventListener as the execution path |
-| G11 | No other execution for the same cluster is open: `awaiting_operator`, `submitted`, or `running`; and fewer than the configured limit of executions, default 5, were dispatched in the past hour | Security requirement 8 (D3) | |
+| G10 | The adapter for the type is allow-listed and enabled by configuration; no adapter targets the EventListener; any adapter other than `recording` requires the PostgreSQL backend | D8, D9, D10, D13 | Unknown adapter; EventListener as the execution path |
+| G11 | In the execution store, no other execution for the same cluster is open: `awaiting_operator`, `submitted`, or `running`; and fewer than the configured limit of executions, default 5, were dispatched in the past hour | Security requirement 8 (D3), D13 | |
 | G12 | A read-only preflight passes: for Tekton, the executor identity can create PipelineRuns in `openshift-pipelines`; for a pull request, the token is valid | Reachability | Valid proposal and authorized approver dispatches |
 
 Write order, extending I3:
@@ -226,8 +252,9 @@ The Tekton adapter must not:
 | --- | --- | --- |
 | Git, D8 (b) only | Bot account token from D10 | Push branches to its fork, open pull requests on `fleet-clusters` |
 | Tekton | `aura-executor` ServiceAccount from D10, separate from `aura-readonly` | `create` and `get` on `pipelineruns.tekton.dev` in `openshift-pipelines` |
+| Execution store | Aura's database role from D13 | `INSERT` and `SELECT` on `approvals`, `executions`, `pipeline_run_observations`, and the schema-version table; no `UPDATE`, `DELETE`, `TRUNCATE`, or DDL |
 
-Neither credential is visible to the read-only collectors or to CWA. Only the adapter modules read them, for their write methods and, for pull-request status, the Git adapter's read method.
+None of these credentials is visible to the read-only collectors or to CWA. Only the adapter modules read the adapter credentials, for their write methods and, for pull-request status, the Git adapter's read method. Only the execution store module reads the database credential.
 
 ## Audit Record
 
@@ -251,7 +278,7 @@ Adopted in [Development](../development.md#project-invariants) in the task named
 
 | Invariant | Change | Task |
 | --- | --- | --- |
-| I3 | An approval record is written last within its command, after its `approval_recorded` event. An execution's `dispatching` record follows its `execution_started` event and precedes the adapter call; its result record follows its `execution_finished` event | 2.3, 3.5 |
+| I3 | An approval record is written last within its command, after its `approval_recorded` event. An execution's `dispatching` record follows its `execution_started` event and precedes the adapter call; its result record follows its `execution_finished` event | 2.4, 3.5 |
 | I5 | Aura writes to Git or Kubernetes only through an adapter's write method, after the guard passes, and only the approved action. It never pushes to a protected branch, merges, or calls the fleet EventListener, and never modifies a protected repository's code | 4.3 |
 | I10 (new) | Every adapter write happens between a stored `dispatching` record and its result record, and only the guard calls an adapter's write method | 3.6 |
 
@@ -267,6 +294,7 @@ Use for every Phase 3 review:
 | --- | --- | --- |
 | 0.1 | The operator records D7–D12 in [Operator Decisions](#operator-decisions) | Every row has a decision |
 | 0.2 | Apply the decisions to this plan, to [Open Questions](08-open-questions.md), to the [Phase 2 plan](05-phase-2-proposals.md)'s lifecycle-fact "Test" column and Phase 3 Impact, and to the [testing plan](07-testing-security-rollout.md), including its adapter assertion 5 on safe retry; the operator approves the plan | Status says approved, with the commit |
+| 0.3 | The operator provides, before Stage 4 live runs: the staging hub (D9), `aura-executor` (D10), and a staging PostgreSQL with Aura's insert-only role and the schema applied (D13) | Each is listed in [Validation](../validation.md) with how to reach it |
 
 ## Stage 1: Hardening Carried from Phases 0–2
 
@@ -288,14 +316,15 @@ The closure plan's [Backlog](10-phase-0-2-closure.md#backlog) rows targeted at P
 
 ## Stage 2: Identity and Approvals
 
-Requires D7 and D11. No external writes.
+Requires D7, D11, and D13. No external writes.
 
 | Task | Work | Done when |
 | --- | --- | --- |
-| 2.1 | `ApprovalRecord` contract and the new command types; the schema export test covers them | Contract negatives pass, one per rule |
-| 2.2 | Signing and verification through `run_process` and `ssh-keygen -Y`, with the allowed-signers list read from the ConfigMap through `aura-readonly` and a local list for tests only. Add `get` on ConfigMap `aura-allowed-signers` in namespace `aura`, by resource name, to the `aura-readonly` manifests in `deploy/`, with a manifest test | Tests with generated keys refuse a wrong principal, a wrong namespace, a tampered payload, an unlisted key, a future `created_at`, and an expiry beyond 24 hours, and accept a valid signature; the manifest test fails for any other ConfigMap grant |
-| 2.3 | `proposal approve` and `proposal reject`, with failure-matrix rows; adopt the I3 change for approvals | Shared harness proves I1–I4 and I6–I9 for both |
-| 2.4 | `proposal status` reports the derived state | One test per derived state reachable without execution records, including all approvals expired |
+| 2.1 | [Execution Store](#execution-store) interface and SQLite backend, with the migrations and the schema-version check; add the PostgreSQL driver as a dependency | Store contract tests pass on SQLite: a tampered row is refused on load, a schema-version mismatch is refused, a failed insert leaves no row, and the store issues no `UPDATE` or `DELETE` statement |
+| 2.2 | `ApprovalRecord` contract and the new command types; the schema export test covers them | Contract negatives pass, one per rule |
+| 2.3 | Signing and verification through `run_process` and `ssh-keygen -Y`, with the allowed-signers list read from the ConfigMap through `aura-readonly` and a local list for tests only. Add `get` on ConfigMap `aura-allowed-signers` in namespace `aura`, by resource name, to the `aura-readonly` manifests in `deploy/`, with a manifest test | Tests with generated keys refuse a wrong principal, a wrong namespace, a tampered payload, an unlisted key, a future `created_at`, and an expiry beyond 24 hours, and accept a valid signature; the manifest test fails for any other ConfigMap grant |
+| 2.4 | `proposal approve` and `proposal reject`, storing approvals in the execution store, with failure-matrix rows; adopt the I3 change for approvals | Shared harness proves I1–I4 and I6–I9 for both |
+| 2.5 | `proposal status` reports the derived state | One test per derived state reachable without execution records, including all approvals expired |
 
 ## Stage 3: Guard and Dry Run
 
@@ -307,8 +336,9 @@ Requires Stage 2. No external writes; closes E2–E4.
 | 3.2 | `action_digest` per [Action Subset](#action-subset) | One test per included field that changes the digest, and one per excluded field that does not |
 | 3.3 | Guard rules G1–G12 | One negative test per rule that fails when the rule is removed, and one test per guard test case in the rule table (Rollout Gate 4) |
 | 3.4 | G8 regeneration for each proposal type, using the Phase 2 generators and collectors | Per type: unchanged evidence regenerates an equal `action_digest`, and a changed Git or live input is refused; E2 and E4 closed in the [closure plan](10-phase-0-2-closure.md#phase-3-entry-conditions) |
-| 3.5 | `execute`, with the recording adapter injected by tests and `--dry-run` stopping before step 2; failure-matrix rows for every write in [Guard](#guard), including two commands racing for the same proposal; adopt the I3 change for executions | E3 closed; shared harness proves the invariants for `execute` |
-| 3.6 | Structural test: adapter implementations live in `src/aura/execution/`, only the guard calls their write methods, and only they read adapter credentials; adopt I10 | The test fails for a call from any other module |
+| 3.5 | `execute`, with the recording adapter injected by tests and `--dry-run` stopping before step 2; failure-matrix rows for every write in [Guard](#guard), including two commands racing for the same proposal through separate store connections; adopt the I3 change for executions | E3 closed; shared harness proves the invariants for `execute` |
+| 3.6 | Structural test: adapter implementations live in `src/aura/execution/`, only the guard calls their write methods, only they read adapter credentials, and only the execution store module reads the database credential; adopt I10 | The test fails for a call or read from any other module |
+| 3.7 | PostgreSQL backend. The store contract tests run against PostgreSQL in CI through a service container, and locally when a test database URL is set; CI fails if that URL is missing. A repository SQL file grants Aura's role exactly the rights in [Credentials](#credentials) | The contract tests pass on both backends; connected as Aura's role, `UPDATE`, `DELETE`, `TRUNCATE`, and DDL fail |
 
 ## Stage 4: Tekton Adapter
 
@@ -317,9 +347,9 @@ Requires D9 and D10.
 | Task | Work | Done when |
 | --- | --- | --- |
 | 4.1 | Tekton adapter with a fake runner: the deterministic name, `AlreadyExists`, a timeout to `awaiting_operator`, and API errors | Failure-matrix rows pass; a test covers the longest name |
-| 4.2 | `execution status` for PipelineRuns, including resolution of `awaiting_operator` | One test per derived state from a PipelineRun; resolution is refused without an `aura-execute` signature and before the timeout margin |
+| 4.2 | `execution status` for PipelineRuns, storing observations, including resolution of `awaiting_operator` | One test per derived state from a PipelineRun; resolution is refused without an `aura-execute` signature and before the timeout margin; a pruned run reports its last observed state |
 | 4.3 | Adopt the I5 change | [Development](../development.md#project-invariants) updated |
-| 4.4 | Live, in staging, with operator approval: confirm `oc whoami` is `system:serviceaccount:aura:aura-executor` and that it can create nothing but PipelineRuns in `openshift-pipelines`; then run one approved rerun and its `execution status` | Rollout Gate 6; recorded in [Validation](../validation.md) |
+| 4.4 | Live, in staging, with operator approval: confirm `oc whoami` is `system:serviceaccount:aura:aura-executor` and that it can create nothing but PipelineRuns in `openshift-pipelines`; confirm Aura's database role cannot update, delete, or truncate; then run one approved rerun and its `execution status` | Rollout Gate 6; recorded in [Validation](../validation.md) |
 
 ## Stage 5: Git Execution
 
@@ -352,7 +382,7 @@ Requires D8, and D10 and D12 under D8 (b).
 | P3.4 | A proposal whose command record is not `succeeded` cannot execute (E3) |
 | P3.5 | A proposal whose stored digest differs from its `proposal_created` event or CWA trace cannot execute |
 | P3.6 | An approval counts only with a verified `aura-approve` signature from a listed key whose principal is not the executor's, before it expires and without a rejection; `deprovision` needs two distinct approvers (D7, D11) |
-| P3.7 | A proposal is dispatched at most once, under any idempotency key or store directory while its approvals are unexpired |
+| P3.7 | A proposal is dispatched at most once, under any idempotency key, store directory, or operator machine that uses the shared execution store |
 | P3.8 | A multi-cluster change is rejected |
 | P3.9 | A deprovision execution produces one standalone commit that adds only `deprovision/<id>-archive` |
 | P3.10 | A `cluster_edit` that adds a file always carries `[skip-provision]`, and its pull request or mailbox states the required merge method |
@@ -365,15 +395,19 @@ Requires D8, and D10 and D12 under D8 (b).
 | P3.17 | An approved Tekton execution succeeds in staging (Gate 6), and Git execution is validated in a test repository (Gate 5) or, under D8 (a), by applying the mailbox |
 | P3.18 | The runbook and rollback procedure are complete (Gate 8) |
 | P3.19 | Protected repository code remains unchanged |
+| P3.20 | Approval and execution records pass the same store contract tests on SQLite and PostgreSQL, and Aura's production role can insert and select them but cannot update, delete, truncate, or alter them (D13) |
+| P3.21 | An Aura-created PipelineRun's last observed state stays readable from the execution store after OpenShift Pipelines prunes the run |
 
 ## Progress
 
 | Stage | Task | State | Commits |
 | --- | --- | --- | --- |
-| 0 | 0.1–0.2 Decisions and approval | Pending | |
+| 0 | 0.1 Decisions | Done | |
+| 0 | 0.2 Apply decisions and approval | Applied; awaiting approval | |
+| 0 | 0.3 Stage 4 prerequisites | Pending | |
 | 1 | 1.1–1.11 Hardening | Pending | |
-| 2 | 2.1–2.4 Identity and approvals | Pending | |
-| 3 | 3.1–3.6 Guard and dry run | Pending | |
+| 2 | 2.1–2.5 Identity and approvals | Pending | |
+| 3 | 3.1–3.7 Guard and dry run | Pending | |
 | 4 | 4.1–4.4 Tekton adapter | Pending | |
 | 5 | 5.1–5.4 Git execution | Pending | |
 | 6 | 6.1–6.5 Acceptance gate | Pending | |

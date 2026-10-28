@@ -187,6 +187,8 @@ Minimum Aura tables:
 
 The database stores command and audit state, not authoritative cluster state.
 
+Status 2026-10-27: Phase 3 adds the first tables, `approvals`, `executions`, and `pipeline_run_observations`, in its [Execution Store](06-phase-3-approved-execution.md#execution-store), using SQLite for development and PostgreSQL in production (D13). Operator identity comes from the hub-held allowed-signers list (D7), not an `operators` table. The other records stay in JSON stores until a later phase moves them.
+
 ## Repository Strategy
 
 Initial implementation should live in this repository to avoid premature fragmentation:

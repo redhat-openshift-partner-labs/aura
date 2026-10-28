@@ -2,7 +2,7 @@
 
 ## Status
 
-Aligned on 2026-10-20 with the approved [Phase 2](05-phase-2-proposals.md) plan: proposals are generated deterministically, and no model writes any part of a proposal.
+Aligned on 2026-10-20 with the approved [Phase 2](05-phase-2-proposals.md) plan: proposals are generated deterministically, and no model writes any part of a proposal. The [Phase 3](06-phase-3-approved-execution.md#operator-decisions) decisions D7–D13 were applied on 2026-10-27.
 
 ## Testing Strategy
 
@@ -89,7 +89,17 @@ Required assertions:
 2. Adapter cannot access unrelated resources.
 3. Adapter records result and failure reason.
 4. Adapter does not expose secrets.
-5. Adapter can be safely retried after an ambiguous failure.
+5. An ambiguous failure leaves the execution `awaiting_operator`, and `execution status` resolves it by looking up the external effect by its deterministic name. Aura never retries; a new attempt needs a new proposal and new approvals ([Records and State](06-phase-3-approved-execution.md#records-and-state)).
+
+### Execution Store Tests
+
+The same store contract tests run against SQLite and PostgreSQL ([Execution Store](06-phase-3-approved-execution.md#execution-store)). Required assertions:
+
+1. A row whose stored digest does not match its record is refused on load.
+2. A second `dispatching` record for the same proposal is refused.
+3. A failed insert leaves no row.
+4. Aura's PostgreSQL role cannot update, delete, truncate, or alter a table.
+5. A schema-version mismatch is refused.
 
 ### Model Evaluation
 

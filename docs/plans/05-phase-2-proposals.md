@@ -37,8 +37,8 @@ Re-verified on 2026-10-23 against `fleet` commit `9464f0b` and `fleet-clusters` 
 
 | Event | Effect | Test |
 | --- | --- | --- |
-| A pull request is opened or updated | No Tekton pipeline starts: the `pre-provision` and `deprovision` triggers accept only `push` events, and GitHub pull request payloads never carry `action: post-provision`. The `check-new-overlays` Action runs read-only and checks only cluster directories the pull request adds. | No Aura behavior: Aura never opens, updates, or merges a pull request; the operator does |
-| A push to any branch other than `main` | No pipeline starts; both push triggers require `refs/heads/main`. | No Aura behavior: Aura never pushes to any branch |
+| A pull request is opened or updated | No Tekton pipeline starts: the `pre-provision` and `deprovision` triggers accept only `push` events, and GitHub pull request payloads never carry `action: post-provision`. The `check-new-overlays` Action runs read-only and checks only cluster directories the pull request adds. | No Aura behavior: under [D8](06-phase-3-approved-execution.md#operator-decisions) (a), decided 2026-10-27, Aura writes a `git am` mailbox and never opens, updates, or merges a pull request. Phase 3 task 5.1 re-verifies this row before Aura opens a pull request under D8 (b) |
+| A push to any branch other than `main` | No pipeline starts; both push triggers require `refs/heads/main`. | No Aura behavior: under D8 (a), Aura never pushes to any branch. Phase 3 task 5.1 re-verifies this row before Aura pushes a branch under D8 (b) |
 | A merge to `main` whose commits only modify existing files, by any merge method | No pipeline starts, because no commit adds a file. A merged pull request must contain only the proposal's change: any commit in it that adds a file under `provision/` or `deprovision/` triggers a pipeline. | No Aura behavior: the merge method is the operator's choice; each proposal's patch is checked to touch one cluster, and Phase 3 owns how it is merged |
 
 Disabling the webhook is not needed for modify-only changes, and it would drop every other push during the window.
@@ -284,7 +284,7 @@ The deprovision and cluster-edit types and `proposal status` meet these criteria
 
 Approval of this plan requires these changes to [Phase 3](06-phase-3-approved-execution.md) before it is implemented:
 
-- The Git adapter is the execution path for scaffold, deprovision, and edit proposals, and it must push the proposal as the head commit with the required message.
+- The Git adapter is the execution path for scaffold, deprovision, and edit proposals. Under D8 (a), decided 2026-10-27, it writes the approved patch and its required message as a `git am` mailbox, and the operator applies, pushes, and merges it; the [required merge method](06-phase-3-approved-execution.md#git-adapter) keeps the proposal's commit as the push head commit.
 - The Tekton adapter is limited to post-provision reruns, created through the Kubernetes API.
 - The guard refuses stale proposals and proposals whose `proposal_digest` changed.
 - The guard re-collects evidence immediately before executing, regenerates the proposal, and refuses when the regenerated action differs from the approved one. This is where live-state staleness is enforced. The comparison covers a defined action subset, not the full `proposal_digest`, because the digest also covers fields that always change on regeneration, such as `proposal_id`, `command_id`, `created_at`, the evidence and CWA references, and a rerun's `base_commit`. The subset is at least the proposal type, cluster, trigger effect, and the patch or the PipelineRun manifest without Aura's annotations; Phase 3 defines it exactly in its [Action Subset](06-phase-3-approved-execution.md#action-subset).

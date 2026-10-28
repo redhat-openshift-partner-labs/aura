@@ -262,7 +262,7 @@ Aura is built so the safe thing is the only thing it can do.
 | --- | --- | --- |
 | [Phase 1](docs/plans/04-phase-1-read-only-assistant.md) | Read-only inventory, workflow inspection, and diagnosis | ✅ Shipped and validated |
 | [Phase 2](docs/plans/05-phase-2-proposals.md) | Deterministic proposals, never applied | 🚧 Deprovision, cluster-edit, and rerun proposals done; scaffold proposals next |
-| [Phase 3](docs/plans/06-phase-3-approved-execution.md) | Guarded execution after explicit human approval | 📝 Revised, awaiting decisions and approval |
+| [Phase 3](docs/plans/06-phase-3-approved-execution.md) | Guarded execution after explicit human approval | 📝 Decisions recorded, awaiting approval |
 
 Current numbers, validation runs, and remaining gaps live in [Implementation Status](docs/status.md).
 
