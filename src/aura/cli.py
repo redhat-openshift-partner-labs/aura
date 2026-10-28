@@ -621,11 +621,14 @@ def _fail_unexpected(
 ) -> int:
     """Fail a command whose route raised an error it does not handle."""
 
-    message = f"internal error: {type(error).__name__}: {error}"
+    # The exception text may carry secret values, so only its type is
+    # stored; the full message goes to standard error alone (I6).
+    reason = f"internal error: {type(error).__name__}"
+    message = f"{reason}: {error}"
     try:
         JsonCommandStore(args.command_dir).load(command.idempotency_key)
     except CommandNotFound:
-        return _fail_unrecorded(args, command, message, clock)
+        return _fail_unrecorded(args, command, message, reason, clock)
     except CommandRecordUnreadable as unreadable:
         print(f"aura: {message}", file=sys.stderr)
         print(f"aura: {unreadable}", file=sys.stderr)
@@ -638,6 +641,7 @@ def _fail_unrecorded(
     args: argparse.Namespace,
     command: CommandEnvelope,
     message: str,
+    reason: str,
     clock: Callable[[], datetime],
 ) -> int:
     try:
@@ -659,9 +663,10 @@ def _fail_unrecorded(
     return _fail_command(
         args,
         command,
-        message,
+        reason,
         previous_event_id=previous_event_id,
         clock=clock,
+        message=message,
     )
 
 
@@ -720,7 +725,11 @@ def _fail_command(
     *,
     previous_event_id: UUID | None,
     clock: Callable[[], datetime],
+    message: str | None = None,
 ) -> int:
+    """Store a failed command; `message`, when given, is printed instead
+    of the stored `error`."""
+
     state_machine = CommandStateMachine()
     failed = command.with_status(
         state_machine.transition(command.status, CommandState.FAILED)
@@ -739,7 +748,7 @@ def _fail_command(
             (AuditEventAlreadyStored,),
         )
         command_store_error = command_store_error or audit_error
-    print(f"aura: {command_store_error or error}", file=sys.stderr)
+    print(f"aura: {command_store_error or message or error}", file=sys.stderr)
     return 2
 
 

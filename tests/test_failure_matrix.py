@@ -636,6 +636,34 @@ def test_unexpected_read_error_fails_closed(
         ]
 
 
+class SecretMessageCollector:
+    def collect(self, **_: object) -> EvidenceSnapshot:
+        raise RuntimeError("token=collector-secret")
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [scenario for scenario in SCENARIOS if scenario.audited],
+    ids=scenario_id,
+)
+def test_unexpected_error_text_is_not_stored(
+    tmp_path,
+    monkeypatch,
+    scenario,
+) -> None:
+    run, before = execute(
+        scenario, tmp_path, monkeypatch, collector=SecretMessageCollector()
+    )
+
+    assert_internal_failure(
+        run, tmp_path, before, RuntimeError("token=collector-secret")
+    )
+    failed = command_chain(tmp_path / "audit", COMMAND_ID)[-1]
+    assert failed.data["reason"] == "internal error: RuntimeError"
+    for path in set(stored(tmp_path)) - set(before):
+        assert b"collector-secret" not in path.read_bytes(), path
+
+
 @pytest.mark.parametrize(
     ("scenario", "target"),
     MODEL_FAILURES,
