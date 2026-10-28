@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import TypeVar
 from uuid import UUID, uuid4, uuid5
 
+from pydantic_core import from_json
+
 from pydantic import ValidationError
 
 from aura.audit_store import (
@@ -645,7 +647,7 @@ def _fail_unrecorded(
     clock: Callable[[], datetime],
 ) -> int:
     try:
-        previous_event_id = _last_audit_event_id(
+        last_event = _last_audit_event(
             args.audit_dir,
             command.command_id,
         )
@@ -660,33 +662,72 @@ def _fail_unrecorded(
         print(f"aura: {message}", file=sys.stderr)
         print(f"aura: {store_error or lookup_error}", file=sys.stderr)
         return 2
+    if (
+        last_event is not None
+        and last_event.event_type is AuditEventType.COMMAND_REFUSED
+    ):
+        # The chain already ends with the refusal, so store the refused
+        # record and append nothing (task 1.3, I2).
+        return _store_refused_command(args, command, message)
     return _fail_command(
         args,
         command,
         reason,
-        previous_event_id=previous_event_id,
+        previous_event_id=last_event.event_id if last_event else None,
         clock=clock,
         message=message,
     )
 
 
-def _last_audit_event_id(
+def _store_refused_command(
+    args: argparse.Namespace,
+    command: CommandEnvelope,
+    message: str,
+) -> int:
+    state_machine = CommandStateMachine()
+    refused = command
+    # A refusal is reachable only once evidence collection has started.
+    if not state_machine.can_transition(refused.status, CommandState.REFUSED):
+        refused = refused.with_status(
+            state_machine.transition(
+                refused.status, CommandState.COLLECTING_EVIDENCE
+            )
+        )
+    refused = refused.with_status(
+        state_machine.transition(refused.status, CommandState.REFUSED)
+    )
+    store_error = _store_terminal_command(args, refused)
+    print(f"aura: {message}", file=sys.stderr)
+    if store_error is not None:
+        print(f"aura: {store_error}", file=sys.stderr)
+    return 2
+
+
+def _last_audit_event(
     audit_dir: Path | None,
     command_id: UUID,
-) -> UUID | None:
+) -> AuditEvent | None:
     """Return the stored event of a command that no other event follows."""
 
     if audit_dir is None or not audit_dir.exists():
         return None
     store = JsonAuditEventStore(audit_dir)
-    events = [
-        event
-        for event in map(store.load, store.record_ids())
-        if event.command_id == command_id
-    ]
+    events: list[AuditEvent] = []
+    for record_id in store.record_ids():
+        try:
+            event = store.load(record_id)
+        except ValueError:
+            # Another command's malformed record does not affect this
+            # command's chain (task 1.2); one that may be this command's
+            # still fails closed.
+            if _names_another_command(store, record_id, command_id):
+                continue
+            raise
+        if event.command_id == command_id:
+            events.append(event)
     followed = {event.previous_event_id for event in events}
     return next(
-        (event.event_id for event in events if event.event_id not in followed),
+        (event for event in events if event.event_id not in followed),
         None,
     )
 
@@ -716,6 +757,23 @@ def _complete_command(
         return 2
     print(output)
     return 0
+
+
+def _names_another_command(
+    store: JsonAuditEventStore,
+    record_id: UUID,
+    command_id: UUID,
+) -> bool:
+    """Return whether an unloadable audit record names another command."""
+
+    try:
+        document = from_json(
+            store.root.joinpath(f"{record_id}.json").read_bytes()
+        )
+        other = document.get("command_id") if isinstance(document, dict) else None
+        return isinstance(other, str) and UUID(other) != command_id
+    except ValueError:
+        return False
 
 
 def _fail_command(

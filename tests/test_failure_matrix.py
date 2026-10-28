@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid5
 
 import pytest
 
@@ -12,8 +13,14 @@ import aura.cli as cli
 from aura.collectors.git_inventory import GitInventoryError
 from aura.collectors.git_staleness import ProposalRecordUnreadable
 from aura.collectors.oc_cli import OpenShiftCLIError
+from aura.audit_store import JsonAuditEventStore
 from aura.command_store import JsonCommandStore
-from aura.contracts import AuditEventType, CommandState, EvidenceSnapshot
+from aura.contracts import (
+    AuditEvent,
+    AuditEventType,
+    CommandState,
+    EvidenceSnapshot,
+)
 from aura.proposal_store import JsonProposalStore, ProposalNotFound
 from aura.state import CommandStateMachine
 from failure_injection import WRITE_PHASES, deny_access, run_cli
@@ -714,6 +721,45 @@ def test_unexpected_error_after_terminal_record_writes_nothing(
     assert event_types(tmp_path)[-1] is AuditEventType.PROPOSAL_CREATED
 
 
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        scenario
+        for scenario in SCENARIOS
+        if scenario.audited and scenario.status is CommandState.REFUSED
+    ],
+    ids=scenario_id,
+)
+def test_unexpected_error_after_command_refused_keeps_the_refusal(
+    tmp_path,
+    monkeypatch,
+    scenario,
+) -> None:
+    store_terminal = cli._store_terminal_command
+    raised: list[CommandState] = []
+
+    def refuse_then_fail(args, command):
+        # Fail the route's own refused record once; the failure path's
+        # write goes through.
+        if not raised:
+            raised.append(command.status)
+            raise RuntimeError("injected terminal failure")
+        return store_terminal(args, command)
+
+    monkeypatch.setattr(cli, "_store_terminal_command", refuse_then_fail)
+
+    run, before = execute(scenario, tmp_path, monkeypatch)
+
+    assert run.exit_code == 2
+    assert run.stdout == ""
+    assert run.stderr == internal_error(
+        RuntimeError("injected terminal failure")
+    )
+    assert raised == [CommandState.REFUSED]
+    assert check(tmp_path, before).status is CommandState.REFUSED
+    assert event_types(tmp_path)[-1] is AuditEventType.COMMAND_REFUSED
+
+
 def test_unexpected_error_with_unreadable_terminal_record_writes_nothing(
     tmp_path,
     monkeypatch,
@@ -765,6 +811,88 @@ def test_unexpected_error_with_unreadable_audit_stores_failed_record(
     ]
     record = JsonCommandStore(tmp_path / "commands").load(KEY)
     assert record.status is CommandState.FAILED
+
+
+def write_other_event(root: Path, command_id: UUID, **changes: object) -> None:
+    event = AuditEvent(
+        event_id=UUID(int=7),
+        command_id=command_id,
+        event_type=AuditEventType.COMMAND_RECEIVED,
+        occurred_at=datetime(2026, 1, 1, tzinfo=UTC),
+        actor="other",
+        data={},
+    )
+    document = {**event.model_dump(mode="json"), **changes}
+    (root / "audit").mkdir()
+    (root / "audit" / f"{event.event_id}.json").write_text(
+        json.dumps(document), encoding="utf-8"
+    )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [{"event_digest": ""}, {"actor": ""}, {"event_type": "unknown"}],
+    ids=["blank-digest", "invalid-field", "unknown-type"],
+)
+def test_unexpected_error_skips_another_commands_malformed_event(
+    tmp_path,
+    monkeypatch,
+    changes,
+) -> None:
+    write_other_event(tmp_path, UUID(int=8), **changes)
+
+    run, _ = execute(
+        scenario_named("inventory-audited"),
+        tmp_path,
+        monkeypatch,
+        collector=FailingReadCollector(RuntimeError),
+    )
+
+    # The invariant helpers load every audit record, including the
+    # malformed one, so this command's records are read by ID.
+    assert run.exit_code == 2
+    assert run.stderr == internal_error(injected(RuntimeError))
+    assert [write.label for write in run.writes] == [
+        RECEIVED,
+        "CommandEnvelope",
+        "AuditEvent:command_failed",
+    ]
+    record = JsonCommandStore(tmp_path / "commands").load(KEY)
+    assert record.status is CommandState.FAILED
+    failed = JsonAuditEventStore(tmp_path / "audit").load(
+        uuid5(COMMAND_ID, AuditEventType.COMMAND_FAILED.value)
+    )
+    assert failed.previous_event_id == uuid5(COMMAND_ID, "command_received")
+
+
+@pytest.mark.parametrize(
+    "contents",
+    ["{", json.dumps({"command_id": str(COMMAND_ID), "event_digest": ""})],
+    ids=["unparseable", "names-this-command"],
+)
+def test_unexpected_error_fails_closed_on_an_unattributable_event(
+    tmp_path,
+    monkeypatch,
+    contents,
+) -> None:
+    (tmp_path / "audit").mkdir()
+    (tmp_path / "audit" / f"{UUID(int=7)}.json").write_text(
+        contents, encoding="utf-8"
+    )
+
+    run, _ = execute(
+        scenario_named("inventory-audited"),
+        tmp_path,
+        monkeypatch,
+        collector=FailingReadCollector(RuntimeError),
+    )
+
+    assert run.exit_code == 2
+    assert run.stderr.startswith(internal_error(injected(RuntimeError)))
+    assert [write.label for write in run.writes] == [
+        RECEIVED,
+        "CommandEnvelope",
+    ]
 
 
 def test_keyboard_interrupt_passes_through(tmp_path, monkeypatch) -> None:
