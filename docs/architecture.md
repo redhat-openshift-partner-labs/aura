@@ -136,7 +136,7 @@ The command exits with code `2`. Evidence, CWA snapshot, CWA trace, and audit re
 | Idempotency key reused for a different request | CLI exits `2` before evidence collection |
 | Record write failure | Command stored as `failed` when possible; CLI exits `2` with the operating-system error |
 | Unreadable idempotency-key record | CLI exits `2` before evidence collection |
-| Unhandled error after the idempotency check | CLI prints `aura: internal error`, stores a `failed` record unless a terminal record is already stored, and exits `2` |
+| Unhandled error after the idempotency check | CLI prints `aura: internal error`, or `aura: filesystem error` for an `OSError`, stores a `failed` record unless a terminal record is already stored or a `refused` record when the chain already ends with `command_refused`, and exits `2` |
 | Invalid Git definition | Emitted as `cluster_definition_invalid`; other definitions are still collected |
 
 Command records are written only in a terminal state. `succeeded`, `failed`, and `refused` records are immutable; a new attempt requires a new idempotency key.

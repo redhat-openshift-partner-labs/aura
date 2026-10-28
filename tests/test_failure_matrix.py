@@ -673,6 +673,35 @@ def test_unhandled_os_error_is_a_filesystem_error(
         assert chain[-1].data["reason"] == reason
 
 
+@pytest.mark.parametrize(
+    "scenario",
+    [scenario for scenario in SCENARIOS if scenario.audited],
+    ids=scenario_id,
+)
+def test_unhandled_os_error_without_errno_stores_only_its_type(
+    tmp_path,
+    monkeypatch,
+    scenario,
+) -> None:
+    class SecretOSCollector:
+        def collect(self, **_: object) -> EvidenceSnapshot:
+            raise OSError("token=collector-secret")
+
+    run, before = execute(
+        scenario, tmp_path, monkeypatch, collector=SecretOSCollector()
+    )
+
+    assert run.exit_code == 2
+    assert run.stderr == (
+        "aura: filesystem error: OSError: token=collector-secret\n"
+    )
+    assert check(tmp_path, before).status is CommandState.FAILED
+    failed = command_chain(tmp_path / "audit", COMMAND_ID)[-1]
+    assert failed.data["reason"] == "filesystem error: OSError"
+    for path in set(stored(tmp_path)) - set(before):
+        assert b"collector-secret" not in path.read_bytes(), path
+
+
 class SecretMessageCollector:
     def collect(self, **_: object) -> EvidenceSnapshot:
         raise RuntimeError("token=collector-secret")

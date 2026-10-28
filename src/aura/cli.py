@@ -623,10 +623,14 @@ def _fail_unexpected(
 ) -> int:
     """Fail a command whose route raised an error it does not handle."""
 
-    if isinstance(error, OSError):
-        # An OS error names an errno and a path, as handled filesystem
-        # errors do, so it is reported and stored whole (task 1.4).
+    if isinstance(error, OSError) and error.errno is not None:
+        # An OS error with an errno names only the errno, its text, and
+        # the path, as handled filesystem errors do (task 1.4).
         reason = message = f"filesystem error: {error}"
+    elif isinstance(error, OSError):
+        # Without an errno, the text is free-form and may carry secrets.
+        reason = f"filesystem error: {type(error).__name__}"
+        message = f"{reason}: {error}"
     else:
         # The exception text may carry secret values, so only its type is
         # stored; the full message goes to standard error alone (I6).

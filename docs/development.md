@@ -176,7 +176,7 @@ For each command, list every step that reads external state or writes a record, 
 | Response event write (`model_called` or `proposal_created`) | `2` | `failed` | No proposal | `context_assembled` |
 | Proposal write | `2` | `failed` | No proposal | `proposal_created` |
 | Terminal command record write | `2` | None | Prior records only | Not applicable |
-| Any error the route does not handle, after the idempotency check | `2` | `failed`, unless a terminal record is already stored | No proposal | The last audit event stored |
+| Any error the route does not handle, after the idempotency check | `2` | `failed`, unless a terminal record is already stored; `refused` when the chain already ends with `command_refused` | No proposal | The last audit event stored; no new event after `command_refused` |
 
 Rows that do not apply to a command are omitted from its matrix. A new command or write step adds rows. Actionable artifacts are records a later phase could act on, currently proposals. Evidence snapshots, CWA snapshots and traces, and diagnosis records written before the failure may remain as provenance.
 
