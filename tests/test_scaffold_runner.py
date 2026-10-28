@@ -169,6 +169,38 @@ def test_runner_passes_a_minimal_environment(trees, monkeypatch) -> None:
     }
 
 
+MIB = 1024 * 1024
+
+
+@pytest.mark.parametrize(
+    ("behavior", "message"),
+    [
+        (f"stdout={MIB + 1}", "scaffold stdout exceeds 1048576 bytes"),
+        (f"stderr={MIB + 1}", "scaffold stderr exceeds 1048576 bytes"),
+        (
+            f"files={MIB + 1}",
+            f"scaffold output provision/{NEW}/large-0.yaml exceeds "
+            "1048576 bytes",
+        ),
+        (
+            "files=" + ",".join([str(MIB)] * 9),
+            "scaffold output exceeds 8388608 bytes in total",
+        ),
+    ],
+    ids=["stdout", "stderr", "file", "total"],
+)
+def test_runner_refuses_oversized_output(trees, behavior, message) -> None:
+    with pytest.raises(ScaffoldRunError, match=message):
+        run(trees, "--environment", behavior)
+
+
+@pytest.mark.parametrize("behavior", [f"stdout={MIB}", f"files={MIB}"])
+def test_runner_accepts_output_at_the_limit(trees, behavior) -> None:
+    result = run(trees, "--environment", behavior)
+
+    assert result.exit_code == 0
+
+
 def test_runner_keeps_option_values_with_spaces(trees) -> None:
     result = run(trees, "--htpasswd-provider-name", "Acme Corp")
 

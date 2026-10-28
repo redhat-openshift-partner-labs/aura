@@ -290,7 +290,7 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura propose scaffold \
   --command-dir ./local/commands
 ```
 
-The command prints the stored `Proposal`. Its `patch` adds `provision/<id>/`; merging it starts pre-provision, provision, and post-provision. Unmet preconditions and unusable scaffold output, including any change other than adding files, refuse the command with every reason. A scaffold that cannot run at all, such as on a timeout, a missing commit, a symlink in an export that points outside it, or a generated file that is not UTF-8, fails the command. Undecodable bytes in the scaffold's standard output or error are replaced, not fatal. See [Scaffold Proposal](evidence.md#scaffold-proposal).
+The command prints the stored `Proposal`. Its `patch` adds `provision/<id>/`; merging it starts pre-provision, provision, and post-provision. Unmet preconditions and unusable scaffold output, including any change other than adding files, refuse the command with every reason. A scaffold that cannot run at all, such as on a timeout, standard output or error over 1 MiB, a generated file over 1 MiB or generated files over 8 MiB in total, a missing commit, a symlink in an export that points outside it, or a generated file that is not UTF-8, fails the command. Undecodable bytes in the scaffold's standard output or error are replaced, not fatal. See [Scaffold Proposal](evidence.md#scaffold-proposal).
 
 ## `proposal status`
 

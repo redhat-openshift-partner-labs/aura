@@ -88,7 +88,16 @@ def main(args):
         sys.stdout.flush()
         sys.stdout.buffer.write(b"\\xff\\n")
         sys.stdout.buffer.flush()
+    if behavior.startswith("stdout="):
+        sys.stdout.write("x" * int(behavior.removeprefix("stdout=")))
+    if behavior.startswith("stderr="):
+        sys.stderr.write("x" * int(behavior.removeprefix("stderr=")))
     files = overlay_files(args)
+    if behavior.startswith("files="):
+        for index, size in enumerate(behavior.removeprefix("files=").split(",")):
+            files[f"provision/{values['--name']}/large-{index}.yaml"] = (
+                "x" * int(size)
+            )
     if behavior == "template":
         marker = os.path.join(values["--cluster-templates-dir"], "marker.txt")
         with open(marker, encoding="utf-8") as stream:

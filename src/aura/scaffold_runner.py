@@ -39,6 +39,10 @@ _BOOTSTRAP = (
     "import sys; sys.path.insert(0, sys.argv[1]); "
     "from scaffold.cli import main; sys.exit(main(sys.argv[2:]))"
 )
+# Scaffold output is held in memory and stored in the proposal (I8).
+MAX_STREAM_BYTES = 1024 * 1024
+MAX_FILE_BYTES = 1024 * 1024
+MAX_TOTAL_FILE_BYTES = 8 * 1024 * 1024
 _CHECK_NAMESPACE = UUID("8b0f6a2e-2f53-4f1e-9a52-2b8f5c7f9d10")
 _DEFINITION_KINDS = frozenset(
     {
@@ -115,12 +119,15 @@ class SubprocessScaffoldRunner:
                     else f"cannot run scaffold with {self._python}: "
                     f"{error.__cause__}"
                 ) from error
+            _require_stream_size("stdout", completed.stdout)
+            _require_stream_size("stderr", completed.stderr)
             after = _entries(workspace)
             added = sorted(
                 path
                 for path in set(after) - set(before)
                 if after[path][0] != "special"
             )
+            _require_file_sizes(workspace, added)
             return ScaffoldResult(
                 exit_code=completed.returncode,
                 stdout=completed.stdout_text(),
@@ -365,6 +372,32 @@ def _changes(
         *(f"special {path}" for path, entry in after.items() if entry[0] == "special"),
     ]
     return tuple(sorted(changes))
+
+
+def _require_stream_size(name: str, stream: bytes) -> None:
+    # The stream is checked once the scaffold exits; the run timeout
+    # bounds how much it can write before then.
+    if len(stream) > MAX_STREAM_BYTES:
+        raise ScaffoldRunError(
+            f"scaffold {name} exceeds {MAX_STREAM_BYTES} bytes"
+        )
+
+
+def _require_file_sizes(root: Path, paths: list[str]) -> None:
+    """Refuse oversized output before any file is read."""
+
+    total = 0
+    for relative in paths:
+        size = (root / relative).lstat().st_size
+        if size > MAX_FILE_BYTES:
+            raise ScaffoldRunError(
+                f"scaffold output {relative} exceeds {MAX_FILE_BYTES} bytes"
+            )
+        total += size
+    if total > MAX_TOTAL_FILE_BYTES:
+        raise ScaffoldRunError(
+            f"scaffold output exceeds {MAX_TOTAL_FILE_BYTES} bytes in total"
+        )
 
 
 def _read(root: Path, relative: str) -> tuple[str, str]:
