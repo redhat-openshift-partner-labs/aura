@@ -193,3 +193,34 @@ def test_cli_rejects_a_record_stored_under_another_key_before_collection(
     assert run.exit_code == 2
     assert run.stderr == f"aura: idempotency key record is unreadable: {KEY}\n"
     assert run.writes == []
+
+
+@pytest.mark.parametrize("directory", ["commands", *STORES])
+def test_every_store_refuses_a_record_whose_digest_is_stale(
+    tmp_path: Path,
+    monkeypatch,
+    directory: str,
+) -> None:
+    runs = tmp_path / "runs"
+    paths = [
+        path
+        for path in stored_records(runs, monkeypatch)
+        if "/".join(path.relative_to(runs).parts[1:-1]) == directory
+    ]
+    assert paths, directory
+    target = tmp_path / "saved"
+    if directory == "commands":
+        store, model = JsonCommandStore(target), CommandEnvelope
+    else:
+        store = STORES[directory](target)
+        model = store.record_type
+    record = model.model_validate_json(paths[0].read_text(encoding="utf-8"))
+    # model_copy skips validation, so the copy keeps a digest of other values.
+    stale = record.model_copy(
+        update={field: "0" * 64 for field in SELF_DIGESTS[model]}
+    )
+
+    with pytest.raises(ValueError):
+        store.save(stale)
+
+    assert not target.exists() or list(target.iterdir()) == []

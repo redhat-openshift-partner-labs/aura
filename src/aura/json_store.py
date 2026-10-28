@@ -39,6 +39,10 @@ def save_private_json(
 ) -> Path:
     """Save a private JSON record while rejecting duplicate records."""
 
+    text = record.model_dump_json(indent=2)
+    # Revalidate what is written, so a copy whose digests no longer match
+    # its fields is refused here rather than stored unreadable (I9).
+    parse_record(text, type(record), type(record).__name__)
     root.mkdir(parents=True, exist_ok=True)
     root.chmod(0o700)
     temporary_path = path.with_name(
@@ -54,7 +58,7 @@ def save_private_json(
             os.fchmod(descriptor, 0o600)
             with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
                 descriptor = -1
-                stream.write(record.model_dump_json(indent=2))
+                stream.write(text)
                 stream.flush()
                 os.fsync(stream.fileno())
         finally:

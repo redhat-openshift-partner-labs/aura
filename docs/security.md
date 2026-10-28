@@ -193,6 +193,7 @@ All current stores use exclusive, atomic publication:
 The evidence, CWA, audit, diagnosis, and proposal stores also fail to load a record whose own ID differs from its file name, so a record copied or renamed under another valid ID is rejected rather than reported under the wrong ID. The command store is separate: it treats a record whose idempotency key differs from its file name as not found.
 
 Snapshots and responses include SHA-256 digests over canonical JSON.
+Every store revalidates a record before writing it, so a copy whose digests no longer match its fields is refused rather than stored unreadable. Only `json_store` parses a stored record; `tests/test_architecture.py` fails for a JSON parse anywhere else that is not on its allow list, and for a store that overrides how records load.
 Records are serialized to a private temporary file, flushed with `fsync`, and linked into their final name only after the complete write. A failed write leaves no partial final record. When a record write fails with an operating-system error, the command is stored as `failed` if the command store is writable, and the CLI exits `2`.
 
 ## Operational cautions

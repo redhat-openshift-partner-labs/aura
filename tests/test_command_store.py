@@ -25,9 +25,19 @@ BASE_COMMAND = CommandEnvelope(
 )
 
 
-def make_command(idempotency_key: str) -> CommandEnvelope:
-    return BASE_COMMAND.model_copy(
-        update={"idempotency_key": idempotency_key}
+def make_command(
+    idempotency_key: str,
+    **changes: object,
+) -> CommandEnvelope:
+    # Validate a fresh copy so its digests match the changed fields.
+    return CommandEnvelope.model_validate(
+        {
+            **BASE_COMMAND.model_dump(mode="json"),
+            "idempotency_key": idempotency_key,
+            **changes,
+            "request_digest": "",
+            "record_digest": "",
+        }
     )
 
 
@@ -45,9 +55,7 @@ def test_json_command_store_saves_and_loads_by_key(tmp_path) -> None:
 def test_json_command_store_rejects_duplicate_key(tmp_path) -> None:
     store = JsonCommandStore(tmp_path)
     store.save(make_command("test-key"))
-    replacement = make_command("test-key").model_copy(
-        update={"command_id": UUID(int=2)}
-    )
+    replacement = make_command("test-key", command_id=str(UUID(int=2)))
 
     with pytest.raises(CommandAlreadyStored):
         store.save(replacement)
