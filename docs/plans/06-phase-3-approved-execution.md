@@ -2,7 +2,7 @@
 
 ## Status
 
-Revised 2026-10-27; replaces the draft aligned on 2026-10-20. The [Operator Decisions](#operator-decisions) D7–D13 were recorded on 2026-10-27; the plan awaits the operator's approval. Phases 0–2 were signed off on 2026-10-26. Stage 3 closes the [Phase 3 Entry Conditions](10-phase-0-2-closure.md#phase-3-entry-conditions) E2–E4 before any adapter writes to an external system. E1 stays bound to connecting an external model, which this plan does not do.
+Revised 2026-10-27; replaces the draft aligned on 2026-10-20. The [Operator Decisions](#operator-decisions) D7–D13 were recorded on 2026-10-27, and the operator approved the plan as of `a61a08c` the same day; Stage 1 is next. Phases 0–2 were signed off on 2026-10-26. Stage 3 closes the [Phase 3 Entry Conditions](10-phase-0-2-closure.md#phase-3-entry-conditions) E2–E4 before any adapter writes to an external system. E1 stays bound to connecting an external model, which this plan does not do.
 
 ## Objective
 
@@ -430,7 +430,7 @@ Requires D8, and D10 and D12 under D8 (b). Live runs need task 0.3's staging sto
 | Stage | Task | State | Commits |
 | --- | --- | --- | --- |
 | 0 | 0.1 Decisions | Done | |
-| 0 | 0.2 Apply decisions and approval | Applied; awaiting approval | |
+| 0 | 0.2 Apply decisions and approval | Done | `a6e7554`, `fe3fc8b`, `a61a08c` |
 | 0 | 0.3 Stage 4 prerequisites | Pending | |
 | 1 | 1.1–1.11 Hardening | Pending | |
 | 2 | 2.1–2.5 Identity and approvals | Pending | |
