@@ -35,6 +35,44 @@ def test_only_the_process_module_imports_subprocess() -> None:
     assert PROCESS_MODULE in modules
 
 
+def spawns_a_process(name: str) -> bool:
+    return name in {"system", "popen"} or name.startswith(
+        ("posix_spawn", "exec", "spawn", "fork")
+    )
+
+
+def os_process_calls(path: Path) -> list[str]:
+    """Return os functions that start a program, used or imported."""
+
+    found: list[str] = []
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "os"
+            and spawns_a_process(node.attr)
+        ):
+            found.append(f"os.{node.attr}")
+        elif isinstance(node, ast.ImportFrom) and node.module == "os":
+            found.extend(
+                f"os.{alias.name}"
+                for alias in node.names
+                if spawns_a_process(alias.name)
+            )
+    return found
+
+
+def test_only_the_process_module_starts_programs_through_os() -> None:
+    offenders = {
+        str(path.relative_to(SOURCE.parent)): calls
+        for path in sorted(SOURCE.rglob("*.py"))
+        if path != PROCESS_MODULE
+        if (calls := os_process_calls(path))
+    }
+
+    assert offenders == {}
+
+
 JSON_STORE_MODULE = SOURCE / "json_store.py"
 # JSON parsing outside json_store, with why none of it loads a stored record.
 JSON_PARSERS_ALLOWED = {

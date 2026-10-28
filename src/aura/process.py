@@ -1,7 +1,7 @@
 """Run external programs through one chokepoint.
 
-No other Aura module imports subprocess; tests/test_architecture.py enforces
-it. CalledProcessError and TimeoutExpired are re-exported because injected
+No other Aura module imports subprocess or starts a program through os;
+tests/test_architecture.py enforces it. CalledProcessError and TimeoutExpired are re-exported because injected
 command runners report failures with them.
 """
 
