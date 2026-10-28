@@ -174,6 +174,7 @@ The CWA assembler emits all required slots:
 - Audit event ID.
 - Assembler version and assembly timestamp.
 - Optional model provider, model name, and response digest.
+- `trace_digest`, a SHA-256 digest over canonical JSON of the other fields, verified on load. A trace stored before this field existed fails to load, and the Phase 3 guard refuses its proposal, which must be re-proposed; no current command reads stored traces.
 
 The trace is stored even when diagnosis or a proposal is refused. For a stored proposal, the trace records provider `aura`, the generator name as model name, and the `proposal_digest` as response digest.
 

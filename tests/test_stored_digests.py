@@ -46,6 +46,7 @@ SELF_DIGESTS = {
     EvidenceSnapshot: ("snapshot_digest",),
     AuditEvent: ("event_digest",),
     CWASnapshot: ("snapshot_digest",),
+    CWATrace: ("trace_digest",),
     DiagnosisRecord: ("response_digest",),
     Proposal: ("proposal_digest",),
 }
@@ -53,6 +54,7 @@ STORES = {
     "snapshot": JsonEvidenceSnapshotStore,
     "audit": JsonAuditEventStore,
     "cwa/snapshots": JsonCWASnapshotStore,
+    "cwa/traces": JsonCWATraceStore,
     "diagnosis": JsonDiagnosisStore,
     "proposal": JsonProposalStore,
 }

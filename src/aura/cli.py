@@ -1274,12 +1274,10 @@ def _diagnosis_trace(
 ) -> CWATrace:
     if diagnosis_record is None:
         return assembly.trace
-    return assembly.trace.model_copy(
-        update={
-            "model_provider": diagnosis_record.provider_name,
-            "model_name": diagnosis_record.model_name,
-            "response_digest": diagnosis_record.response_digest,
-        }
+    return assembly.trace.with_response(
+        diagnosis_record.provider_name,
+        diagnosis_record.model_name,
+        diagnosis_record.response_digest,
     )
 
 
@@ -1958,12 +1956,10 @@ def _propose_and_trace(
     )
     if proposal is None:
         return None, refusal_error, assembly.trace
-    return proposal, None, assembly.trace.model_copy(
-        update={
-            "model_provider": generator.provider_name,
-            "model_name": generator.generator,
-            "response_digest": proposal.proposal_digest,
-        }
+    return proposal, None, assembly.trace.with_response(
+        generator.provider_name,
+        generator.generator,
+        proposal.proposal_digest,
     )
 
 

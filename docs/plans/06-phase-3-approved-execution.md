@@ -333,7 +333,7 @@ The closure plan's [Backlog](10-phase-0-2-closure.md#backlog) rows targeted at P
 | 1.3 | A refusal path that raises after `command_refused` keeps `command_refused` as the chain's last event | I2 |
 | 1.4 | Report an `OSError` a route does not handle as a filesystem error, and a missing `cwd` as such in `ProcessError` | I7 |
 | 1.5 | Stores revalidate a record on save; a structural test requires every loader to use `json_store.parse_record`; `tests/test_stored_digests.py` discovers contracts and stores instead of listing them | I9 |
-| 1.6 | Verify cross-record digests (`CWATrace`, `DiagnosisRecord`, and `Proposal` references) on load, and add a self-digest to new `CWATrace` records. Schema change, listed here: existing traces without the field still load for read-only commands, and G3 refuses their proposals, which must be re-proposed | I9 |
+| 1.6 | Verify cross-record digests (`CWATrace`, `DiagnosisRecord`, and `Proposal` references) on load, and add a self-digest to new `CWATrace` records. Schema change, listed here: no command reads stored traces, so an existing trace without the field fails only when its proposal's provenance loads, and G3 refuses that proposal, which must be re-proposed | I9 |
 | 1.7 | `tests/test_architecture.py` also rejects `os.system`, `os.popen`, `os.posix_spawn*`, and `os.exec*` outside `aura/process.py` | R3 |
 | 1.8 | Record the patch-check outcome in the evidence and the CWA trace. Schema change, listed here | G8 prerequisite |
 | 1.9 | A retried failed `oc` read does not spend a second budget call | Security requirement 8 |

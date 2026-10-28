@@ -6,6 +6,7 @@ from typing import Any
 from uuid import UUID
 
 from aura.canonical import canonical_digest
+from aura.contracts import assign_self_digest
 from pydantic import (
     AwareDatetime,
     BaseModel,
@@ -103,6 +104,7 @@ class CWATrace(BaseModel):
         default=None,
         pattern=r"^[0-9a-f]{64}$",
     )
+    trace_digest: str = Field(default="")
 
     @field_validator(
         "assembler_version",
@@ -114,6 +116,28 @@ class CWATrace(BaseModel):
         if value is not None and not value.strip():
             raise ValueError("must not be blank")
         return value
+
+    @model_validator(mode="after")
+    def validate_trace_digest(self) -> "CWATrace":
+        assign_self_digest(self, "trace_digest", "CWA trace")
+        return self
+
+    def with_response(
+        self,
+        model_provider: str,
+        model_name: str,
+        response_digest: str,
+    ) -> "CWATrace":
+        """Return a validated copy that records the model response."""
+
+        values = self.model_dump(mode="json")
+        values.update(
+            model_provider=model_provider,
+            model_name=model_name,
+            response_digest=response_digest,
+            trace_digest="",
+        )
+        return CWATrace.model_validate(values)
 
 
 def compute_cwa_snapshot_digest(snapshot: CWASnapshot) -> str:

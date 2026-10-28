@@ -72,6 +72,20 @@ def _resolve_digest(
     return digest
 
 
+def assign_self_digest(record: BaseModel, field_name: str, label: str) -> None:
+    """Compute a record's digest over its other fields, assign it when
+    blank, and reject a stored value that differs."""
+
+    _assign_digest(
+        record,
+        field_name,
+        canonical_digest(
+            record.model_dump(mode="json", exclude={field_name})
+        ),
+        f"{label} digest does not match content",
+    )
+
+
 def _assign_digest(
     record: BaseModel,
     field_name: str,
