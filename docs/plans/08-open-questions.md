@@ -166,7 +166,7 @@ Asked 2026-10-27. The operator states that the current system accepts requests t
 | Option | Tradeoff |
 | --- | --- |
 | CLI only | No queue dependency; matches Phases 0–3 |
-| n8n endpoint that publishes Aura requests to RabbitMQ, consumed by an Aura worker | Reuses the current intake; needs a long-running Aura consumer whose acknowledgements change RabbitMQ state, which I5 forbids until a phase allows it, and deduplication of redelivered messages by idempotency key |
+| n8n endpoint that publishes Aura requests to RabbitMQ, consumed by an Aura worker | Reuses the current intake; needs a long-running Aura consumer whose acknowledgements change RabbitMQ state, which no phase plan allows and the Phase 3 I5 change forbids, and deduplication of redelivered messages by idempotency key |
 
 Default: CLI only through Phase 3. Revisit with the decision to run Aura as a service.
 

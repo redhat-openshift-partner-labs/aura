@@ -95,11 +95,12 @@ Required assertions:
 
 The same store contract tests run against SQLite and PostgreSQL ([Execution Store](06-phase-3-approved-execution.md#execution-store)). Required assertions:
 
-1. A row whose stored digest does not match its record is refused on load.
+1. A row whose digest, signature, or indexed columns do not match its record is refused on load.
 2. A second `dispatching` record for the same proposal is refused.
-3. A failed insert leaves no row.
-4. Aura's PostgreSQL role cannot update, delete, truncate, or alter a table.
-5. A schema-version mismatch is refused.
+3. A write whose outcome is unknown is resolved by reading the row back by its ID.
+4. Of two concurrent dispatches for one cluster, one fails.
+5. A login in Aura's PostgreSQL role cannot update, delete, truncate, or alter a table.
+6. A schema version outside the supported range is refused.
 
 ### Model Evaluation
 
@@ -146,7 +147,7 @@ Every evaluation case must record:
 | Gate 4 | Guard blocks all unauthorized execution |
 | Gate 5 | Approved Git patch execution succeeds in a test repository |
 | Gate 6 | Approved Tekton execution succeeds in staging |
-| Gate 7 | Audit trail reproduces every action |
+| Gate 7 | Audit trail reproduces every action; for Phase 3, from the execution store alone |
 | Gate 8 | Operator runbook and rollback procedure are complete |
 
 Phase 3 also starts only under the [Phase 3 Entry Conditions](10-phase-0-2-closure.md#phase-3-entry-conditions) recorded at the Phases 0–2 sign-off: conditions E2–E4 before any Phase 3 execution, and E1 before any external model is connected.
