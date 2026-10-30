@@ -161,6 +161,7 @@ Every command must preserve these. A change that touches an invariant must have 
 | I7 | Expected failures (argument, authorization, Git, `oc`, store, and filesystem errors) exit `2` with a concise message and no traceback. A traceback is a bug. |
 | I8 | Fail closed: a missing, unreadable, or malformed input is an error; Aura returns no empty or default result. |
 | I9 | IDs and digests are deterministic for the same inputs, and every digest is verified on load. |
+| I10 | Every adapter write happens between a stored `dispatching` record and its result record, and only `aura/execution/execute.py`, after the guard, calls an adapter's write method. Adapters live in `aura/execution/`, and only their modules read their credentials; only the execution store reads the database credential. `tests/test_architecture.py` enforces the structure. |
 
 ## Failure-Mode Matrix
 

@@ -222,3 +222,96 @@ def test_every_store_loads_through_parse_record() -> None:
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     }
     assert parse_record.__name__ in called
+
+
+EXECUTION = SOURCE / "execution"
+EXECUTE_MODULE = EXECUTION / "execute.py"
+# Credentials and the modules that may read them (I10, task 3.6). Stages 4
+# and 5 add the adapters' credentials here.
+CREDENTIAL_READERS = {
+    "password_file": {SOURCE / "config.py", EXECUTION / "store.py"},
+}
+
+
+def adapter_classes(tree: ast.AST) -> list[str]:
+    """Classes with a `write` method that takes an AdapterRequest."""
+
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        # The ExecutionAdapter protocol declares the method; it is no adapter.
+        if any(isinstance(base, ast.Name) and base.id == "Protocol" for base in node.bases):
+            continue
+        for item in node.body:
+            if (
+                isinstance(item, ast.FunctionDef)
+                and item.name == "write"
+                and any(
+                    isinstance(arg.annotation, ast.Name)
+                    and arg.annotation.id == "AdapterRequest"
+                    for arg in item.args.args
+                )
+            ):
+                found.append(node.name)
+    return found
+
+
+def adapter_write_calls(tree: ast.AST) -> int:
+    """Calls of `write` on an object named as an adapter."""
+
+    def named_adapter(node: ast.AST) -> bool:
+        if isinstance(node, ast.Name):
+            return "adapter" in node.id.lower()
+        if isinstance(node, ast.Attribute):
+            return "adapter" in node.attr.lower() or named_adapter(node.value)
+        return False
+
+    return sum(
+        1
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "write"
+        and named_adapter(node.func.value)
+    )
+
+
+def parsed() -> dict[Path, ast.AST]:
+    return {
+        path: ast.parse(path.read_text(encoding="utf-8"))
+        for path in sorted(SOURCE.rglob("*.py"))
+    }
+
+
+def test_adapters_live_in_the_execution_package() -> None:
+    misplaced = {
+        str(path.relative_to(SOURCE)): classes
+        for path, tree in parsed().items()
+        if EXECUTION not in path.parents
+        if (classes := adapter_classes(tree))
+    }
+
+    assert misplaced == {}
+
+
+def test_only_execute_calls_an_adapter_write() -> None:
+    callers = {
+        str(path.relative_to(SOURCE)): count
+        for path, tree in parsed().items()
+        if (count := adapter_write_calls(tree))
+    }
+
+    assert callers == {"execution/execute.py": 1}
+
+
+def test_only_their_modules_read_credentials() -> None:
+    for credential, readers in CREDENTIAL_READERS.items():
+        reading = {
+            path
+            for path, tree in parsed().items()
+            for node in ast.walk(tree)
+            if (isinstance(node, ast.Attribute) and node.attr == credential)
+            or (isinstance(node, ast.AnnAssign) and getattr(node.target, "id", None) == credential)
+        }
+        assert reading <= readers, (credential, reading - readers)
