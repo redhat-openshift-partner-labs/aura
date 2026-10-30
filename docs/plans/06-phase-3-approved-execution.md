@@ -25,7 +25,7 @@ The closure plan's [rules](10-phase-0-2-closure.md#rules) R2–R6 apply, reading
 
 ## Operator Decisions
 
-Recorded on 2026-10-27: the operator accepted every recommendation, so each row's Recommendation is its decision. D13 was added the same day, when the operator stated that Aura will have a database. On 2026-10-29 the operator confirmed the plan edits listed in the [Stage 1 Record](#stage-1-record). On 2026-10-30 the operator moved task 3.2 into Stage 2, ahead of task 2.4, because an approval signs the proposal's `action_digest`. A stage that depends on a prerequisite a decision names, such as the staging hub, a credential, or a database, does not start until the operator provides it. IDs continue from the closure plan's D1–D6.
+Recorded on 2026-10-27: the operator accepted every recommendation, so each row's Recommendation is its decision. D13 was added the same day, when the operator stated that Aura will have a database. On 2026-10-29 the operator confirmed the plan edits listed in the [Stage 1 Record](#stage-1-record). On 2026-10-30 the operator moved task 3.2 into Stage 2, ahead of task 2.4, because an approval signs the proposal's `action_digest`. On 2026-10-30 the operator also confirmed the plan edits listed in the [Stage 2 Record](#stage-2-record). A stage that depends on a prerequisite a decision names, such as the staging hub, a credential, or a database, does not start until the operator provides it. IDs continue from the closure plan's D1–D6.
 
 | ID | Question | Options | Recommendation | Blocks |
 | --- | --- | --- | --- | --- |
@@ -433,7 +433,7 @@ Requires D8, and D10 and D12 under D8 (b). Live runs need task 0.3's staging sto
 | 0 | 0.2 Apply decisions and approval | Done | `a6e7554`, `fe3fc8b`, `a61a08c` |
 | 0 | 0.3 Stage 4 prerequisites | Pending | |
 | 1 | 1.1–1.11 Hardening | Done; the operator confirmed its plan edits on 2026-10-29, see [Stage 1 Record](#stage-1-record) | `7e2fca9`, `9beb53d`, `4889513`, `b989aff`, `d88ab1c`, `3689b4c`, `ab480a9`, `71d82cc`, `8dc07a5`, `c74d7d3`; review fixes `1de5003`, `2171460`, `3c3e054` |
-| 2 | 2.1–2.5 and 3.2 Identity and approvals | Done; plan edits await the operator's confirmation, see [Stage 2 Record](#stage-2-record) | `b8e223b`, `29ecb84`, `186062d`, `cba8acd`, `b4a8f26`, `925a00d`, `bd92e5b`, `22e6c10`, `d19846f`; review fixes `7802ed1` and the commit that records this |
+| 2 | 2.1–2.5 and 3.2 Identity and approvals | Done; the operator confirmed its plan edits on 2026-10-30, see [Stage 2 Record](#stage-2-record) | `b8e223b`, `29ecb84`, `186062d`, `cba8acd`, `b4a8f26`, `925a00d`, `bd92e5b`, `22e6c10`, `d19846f`; review fixes `7802ed1` and the commit that records this |
 | 3 | 3.1–3.7 Guard and dry run | Pending | |
 | 4 | 4.1–4.4 Tekton adapter | Pending | |
 | 5 | 5.1–5.4 Git execution | Pending | |
@@ -479,7 +479,7 @@ Rule exceptions and notes:
 - `22e6c10` and `d19846f` changed existing tests without saying so in their messages (R4): the approve tests now read approvals with the signer list, and the staleness tests expect `published` and `derived_state`. `925a00d`'s message names `JsonCommandStore.find`; the function is `command_store.find_command`.
 - The shared store harness, `tests/store_invariants.py`, checks I1–I3 and, by reading every row through the store, I4 and I9. I6–I8 have their own tests: secrets in config errors, a tampered command row, and fail-closed reads.
 
-Plan edits made during Stage 2 that the operator has not yet confirmed (P3-1):
+Plan edits made during Stage 2, confirmed by the operator on 2026-10-30 (P3-1):
 
 1. A command's artifact, a publication or an approval, is inserted in one transaction with its terminal record, so a run that stores no terminal record leaves no artifact; the [Write order](#guard)'s separate artifact write becomes part of the terminal write.
 2. A race loser whose chain already ended with `command_failed` or `command_refused` stores no further event (I1 change), so the Stage 1 rule that `command_refused` stays last holds.
