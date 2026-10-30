@@ -101,7 +101,7 @@ The operator approved the [Phase 3](plans/06-phase-3-approved-execution.md) plan
 - A failed `oc` read is not retried within a command, and an `oc` list without `metadata.resourceVersion` is an error.
 - Scaffold output is limited to 1 MiB per stream, 1 MiB per generated file, and 8 MiB of generated files in total.
 
-`deploy/postgresql/` deploys the staging PostgreSQL for the Phase 3 execution store. Stage 2 added the execution store on SQLite, Aura's configuration file, SSH signing against the hub signer list, the action digest, `proposal submit`, `proposal approve`, and `proposal reject`, and the derived state in `proposal status`; no command executes a proposal yet.
+`deploy/postgresql/` deploys the staging PostgreSQL for the Phase 3 execution store. Stage 2 added the execution store on SQLite, Aura's configuration file, SSH signing against the hub signer list, the action digest, `proposal submit`, `proposal approve`, and `proposal reject`, and the derived state in `proposal status`. Stage 3 added the Command Guard G1–G12, G8's regeneration of a proposal from fresh evidence, `execute` with the test-only `recording` adapter, the structural test that pins adapters and credential reads, and the PostgreSQL backend with its grants file; no adapter writes outside Aura yet. Stage 3's plan edits await the operator's confirmation in the [Stage 3 Record](plans/06-phase-3-approved-execution.md#stage-3-record).
 
 ## Not Implemented
 
@@ -112,13 +112,23 @@ The operator approved the [Phase 3](plans/06-phase-3-approved-execution.md) plan
 - Portal integration.
 - RabbitMQ integration or replacement.
 - Long-running daemon, scheduler, or web UI.
-- Database-backed stores for Phases 0–2: their records stay in append-only JSON files. Phase 3 records are in the execution store, on SQLite until the PostgreSQL backend in Phase 3 task 3.7.
+- Database-backed stores for Phases 0–2: their records stay in append-only JSON files. Phase 3 records are in the execution store, on SQLite or PostgreSQL.
 - Meaningful OpenShift and Tekton source versions: `oc get -o json` returns a `List` with an empty `resourceVersion`, so those `source_version` values are empty, for example `pipelines=`.
 
 ## Recent Implementation Commits
 
 | Commit | Change |
 | --- | --- |
+| `8b13d07` | Stored G8's evidence, CWA records, and regenerated proposal |
+| `58762da` | Took the command login from the PostgreSQL session; PostgreSQL contract tests |
+| `111cf36` | Caught aliased adapter calls and credential reads |
+| `a7c159c` | Closed the Stage 3 review's guard and execute findings |
+| `d0155cd` | Added the PostgreSQL backend for the execution store |
+| `1b05cf8` | Pinned where adapters live and who calls them |
+| `2f6e685` | Added `execute`, dispatching through the guard |
+| `0a84abd` | Regenerated a proposal from fresh evidence for G8 |
+| `d6d12f7` | Added the Command Guard, G1–G12 |
+| `566c7df` | Added execution record, observation, and adapter contracts |
 | `3c3e054` | Resolved import aliases in the process and parsing chokepoint rules |
 | `2171460` | Hashed scaffold files in chunks and reported scaffold start failures |
 | `1de5003` | Stored only the type of an errno-less unhandled `OSError` |
@@ -210,4 +220,4 @@ The operator approved the [Phase 3](plans/06-phase-3-approved-execution.md) plan
 
 ## Next Work
 
-Phases 0–2 are closed. Next is [Phase 3](plans/06-phase-3-approved-execution.md), revised on 2026-10-27: its operator decisions D7–D13 are recorded, including a database for Phase 3 records (SQLite for development, PostgreSQL in production), and the operator approved the plan on 2026-10-27. Stage 1 hardening is done, and Stage 2, identity and approvals, is next; the plan follows its staged tasks under the [Phase 3 Entry Conditions](plans/10-phase-0-2-closure.md#phase-3-entry-conditions): E2–E4 before any Phase 3 execution and E1 before an external model is connected. Deferred items, including the stranded deprovision sentinels and legacy rerun records, are tracked only in the closure plan's [Backlog](plans/10-phase-0-2-closure.md#backlog).
+Phases 0–2 are closed. Next is [Phase 3](plans/06-phase-3-approved-execution.md), revised on 2026-10-27: its operator decisions D7–D13 are recorded, including a database for Phase 3 records (SQLite for development, PostgreSQL in production), and the operator approved the plan on 2026-10-27. Stages 1–3 are done, and Stage 4, the Tekton adapter, is next once its prerequisites in task 0.3 are provided; the plan follows its staged tasks under the [Phase 3 Entry Conditions](plans/10-phase-0-2-closure.md#phase-3-entry-conditions): E2–E4 before any Phase 3 execution and E1 before an external model is connected. Deferred items, including the stranded deprovision sentinels and legacy rerun records, are tracked only in the closure plan's [Backlog](plans/10-phase-0-2-closure.md#backlog).

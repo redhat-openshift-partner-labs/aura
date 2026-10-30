@@ -321,7 +321,7 @@ The check is Git-only and covers every proposal type, reruns included: it does n
 
 ## `proposal submit`
 
-Publishes a stored Phase 2 proposal to the Phase 3 [execution store](architecture.md#execution-store), so approvers and executors on other machines read the same records. Requires `proposer` or `admin`. The store comes only from Aura's configuration file; only the SQLite store is available until Phase 3 task 3.7.
+Publishes a stored Phase 2 proposal to the Phase 3 [execution store](architecture.md#execution-store), so approvers and executors on other machines read the same records. Requires `proposer` or `admin`. The store, SQLite or PostgreSQL, comes only from Aura's configuration file.
 
 ```bash
 uv run --no-sync aura proposal submit \
@@ -364,7 +364,7 @@ uv run --no-sync aura proposal approve \
 
 ## `execute`
 
-Dispatches one approved, published proposal through the [Command Guard](architecture.md#command-guard). Like approve, it takes identity from the `[signing]` section of Aura's configuration file; the key must be listed for `aura-execute`. Until Stages 4 and 5 add the real adapters, only the test-only `recording` adapter dispatches, when `[execution] adapters` enables it.
+Dispatches one approved, published proposal through the [Command Guard](architecture.md#command-guard). Like approve, it takes identity from the `[signing]` section of Aura's configuration file; the key must be listed for `aura-execute`. Until Stages 4 and 5 add the real adapters, only the test-only `recording` adapter dispatches, when `[execution] adapters` enables it and the store is SQLite.
 
 ```bash
 uv run --no-sync aura execute \
@@ -375,7 +375,7 @@ uv run --no-sync aura execute \
   --dry-run
 ```
 
-`--scaffold` names the scaffold checkout for a scaffold proposal. The command reads the hub signer list and runs G1–G12. G8 re-collects the evidence and stores it with the CWA snapshot, the CWA trace, and the regenerated proposal, so these records exist for a dry run and for a later refusal. With `--dry-run` the command stops after the guard and prints the adapter request. Otherwise it stores `execution_started` and the signed `dispatching` record in a locked transaction that rechecks G5, G6, and G11; calls the adapter; and stores `execution_finished`, the result record, and the terminal command record. A guard refusal names its rule. A proposal is dispatched at most once: a second `execute` is refused by G6. When the adapter reports no result, or a write after the dispatch fails, the `dispatching` record stands, the execution is `awaiting_operator`, and the message names `aura execution status`.
+`--scaffold` names the scaffold checkout for a scaffold proposal. The command reads the hub signer list and runs G1–G12. G8 re-collects the evidence and stores it with the CWA snapshot, the CWA trace, and the regenerated proposal, so these records exist for a dry run and for a later refusal. With `--dry-run` the command stops after the guard and prints the adapter request. Otherwise it stores `execution_started`, then stores the signed `dispatching` record in a locked transaction that rechecks G5, G6, and G11; calls the adapter; and stores `execution_finished`, the result record, and the terminal command record. A guard refusal names its rule. A proposal is dispatched at most once: a second `execute` is refused by G6, and a dispatch that loses the locked transaction to a concurrent one is a G6 refusal. An adapter that reports a failure ends the command `failed`, with the `failed` result record stored. When the adapter reports no result, the `dispatching` insert has an unknown outcome, or a write after the dispatch fails, the `dispatching` record stands, the execution is `awaiting_operator`, and the message names `aura execution status`, which Stage 4 adds.
 
 ## Output and Exit Codes
 

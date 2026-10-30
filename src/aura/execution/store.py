@@ -3,7 +3,7 @@
 Rows are only inserted: each holds its record's canonical JSON, its digest,
 and copies of the fields that constraints and queries use, so an insert-only
 database role can store them. Load verifies the digest and every copied
-column. SQLite serves development and tests; PostgreSQL is added in task 3.7.
+column. SQLite serves development and tests; PostgreSQL serves production.
 """
 
 from __future__ import annotations
@@ -405,7 +405,7 @@ class ExecutionStore:
     def dispatches_in_last_hour(self) -> int:
         """Count `dispatching` records stored in the past hour by the
         database's clock, so a client's clock cannot shift the limit (G11).
-        Time arithmetic is per backend; this is SQLite's."""
+        The dialect supplies each backend's time arithmetic."""
 
         try:
             row = self._execute(

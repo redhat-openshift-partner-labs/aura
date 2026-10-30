@@ -434,7 +434,7 @@ Requires D8, and D10 and D12 under D8 (b). Live runs need task 0.3's staging sto
 | 0 | 0.3 Stage 4 prerequisites | Pending | |
 | 1 | 1.1–1.11 Hardening | Done; the operator confirmed its plan edits on 2026-10-29, see [Stage 1 Record](#stage-1-record) | `7e2fca9`, `9beb53d`, `4889513`, `b989aff`, `d88ab1c`, `3689b4c`, `ab480a9`, `71d82cc`, `8dc07a5`, `c74d7d3`; review fixes `1de5003`, `2171460`, `3c3e054` |
 | 2 | 2.1–2.5 and 3.2 Identity and approvals | Done; the operator confirmed its plan edits on 2026-10-30, see [Stage 2 Record](#stage-2-record) | `b8e223b`, `29ecb84`, `186062d`, `cba8acd`, `b4a8f26`, `925a00d`, `bd92e5b`, `22e6c10`, `d19846f`; review fixes `7802ed1` and the commit that records this |
-| 3 | 3.1–3.7 Guard and dry run | Pending | |
+| 3 | 3.1–3.7 Guard and dry run | Done; its plan edits await the operator's confirmation, see [Stage 3 Record](#stage-3-record) | `566c7df`, `d6d12f7`, `0a84abd`, `2f6e685`, `1b05cf8`, `d0155cd`; review fixes `a7c159c`, `111cf36`, `58762da`, `8b13d07`, and the commit that records this |
 | 4 | 4.1–4.4 Tekton adapter | Pending | |
 | 5 | 5.1–5.4 Git execution | Pending | |
 | 6 | 6.1–6.5 Acceptance gate | Pending | |
@@ -500,3 +500,61 @@ Backlog, from the stage review, for the stage that owns each item:
 - If a `command_refused` append has an unknown outcome, the terminal record is `failed` while the chain may end in `command_refused` (task 3.5 failure matrix).
 - `test_stored_digests.py` accepts a self-digested contract that no store holds since `29ecb84` (next schema change).
 - The hub-read cache in `proposal status` and the `principals != [principal]` check have no test that fails without them (task 3.3).
+
+## Stage 3 Record
+
+Implemented 2026-10-30. The stage review ran the full suite at each commit, with `AURA_TEST_POSTGRES_URL` set, and seeded mutations in a copy of the tree. It found 17 violations and 9 doc inaccuracies; the operator decided V1, V11, V14, and V15 on 2026-10-30.
+
+| Finding | Fix |
+| --- | --- |
+| V1: `execute` stored no evidence, CWA records, or regenerated proposal | `8b13d07`: migration 0003 and G8's stored records (operator decision) |
+| V2: `proposal status` ignored execution records | `a7c159c` |
+| V3: loading a PipelineRun observation raised `AttributeError` | `a7c159c` |
+| V4: a PostgreSQL dispatch that lost a concurrent transaction ended `failed` | `a7c159c`: a G6 refusal |
+| V5: PostgreSQL ran a subset of the store contract tests | `58762da` |
+| V6: failure-matrix rows for a failed adapter call and an unknown dispatch outcome were missing | `a7c159c` |
+| V7: the I10 structural test missed aliased calls and reads | `111cf36` |
+| V8: the EventListener guard test case checked nothing | `a7c159c`: adapters declare `target`, and G10 refuses the EventListener |
+| V9: G5 accepted an approval stamped after the guard's clock | `a7c159c` |
+| V10: a store read error in `execute` raised a traceback | `a7c159c` |
+| V11: a failed adapter call ended the command `succeeded` | `a7c159c`: `failed` (operator decision) |
+| V12: a run that lost the idempotency race after dispatching dropped its result and recovery step | `a7c159c` |
+| V13: store read failures in the guard ended `refused` | `a7c159c` |
+| V14: the `recording` adapter could run on the production store | `a7c159c`: SQLite only (operator decision) |
+| V15: the guard loaded the publication before G2 | `a7c159c`: G2 first (operator decision) |
+| V16: the login check was a constraint outside the migrations, and the grants file could not be run again | `58762da`: a `CURRENT_USER` default and column-level `INSERT` |
+| V17 and the doc inaccuracies | The commit that records this |
+
+Rule exceptions and notes:
+
+- `2f6e685` changed `tests/test_proposal_approve.py` and `tests/test_proposal_status_state.py` from `main(hub_policy=...)` to `hub=HubAccess(...)` without saying so in its message (R4).
+- `566c7df`'s message says load verifies observations; it raised `AttributeError` until `a7c159c`. `d0155cd`'s message says PostgreSQL runs the store contract tests; it ran a subset until `58762da`.
+- Task 3.5's race of two `execute` commands is covered by the store's locked check-and-insert races on both backends and by `execute` tests that remove the guard's G6 and G11 so the transaction's recheck refuses; no test runs two `execute` processes at once.
+- `act` reached the PostgreSQL service container at `d0155cd`; [Validation](../validation.md) records the run.
+
+Plan edits made during Stage 3, awaiting the operator's confirmation (P3-1):
+
+1. [Guard](#guard) order: G2 runs first, then G3 loads the publication, then G1 and G4–G12, so an unsigned caller learns nothing about a proposal.
+2. A record that fails verification on load is a refusal under the rule that reads it (G3, G5, or G6); a store that cannot be read fails the command.
+3. G10 refuses `recording` on any store but SQLite, and refuses an adapter whose `target` names the EventListener; task 3.1's adapter contract gains a `target` property.
+4. An adapter that reports a failure ends the command `failed`, with the `failed` result record stored.
+5. `execute` stores its result record, and G8's regeneration records, as soon as each exists, each after its event; Stage 2 plan edit 1, which stores an artifact with the terminal record, does not apply to `execute`. G8's records are stored for a dry run and for a refusal at G8 or later.
+6. G8's regeneration runs under the `execute` command's ID and operator, so the evidence, CWA, and regenerated proposal IDs are the run's own.
+7. A dispatch that loses the locked transaction to a concurrent one ends `refused` under G6, because PostgreSQL's serialization failure does not name the rule.
+
+Backlog, from the stage review, for the stage that owns each item:
+
+- No timeout wraps the adapter's write method, and `adapter_timeout_seconds` is unused; the hourly limit has no configuration setting (task 4.1).
+- The CLI's G12 preflight passes every adapter (tasks 4.1 and 5.1).
+- G6's hub `oc` read runs again inside the locked transaction and spends a second budget call (task 4.1).
+- The recheck and the result record use the guard's start time, so an approval that expires during regeneration still counts at dispatch (task 4.1).
+- The adapter result's `request_id`, `execution_id`, and adapter are not compared with the request, and its `error` and `external_result` are stored without redaction (I6; task 4.1).
+- `ExecutionRecord` does not tie its phase to its adapter, and `execution_state` raises `ValueError` when one proposal has two distinct terminal phases across execution IDs (task 4.2).
+- An executor whose clock is more than five minutes ahead of the database stores a `dispatching` record that later fails to load, blocking the proposal and its cluster (task 4.2).
+- G6's idempotency-key check cannot see an in-flight run with the same key; the terminal insert resolves it (task 4.1).
+- G8 does not compare `generator` or `generator_version` with the approved proposal, and no G3 test covers a publication with valid digests and an invalid contract (next guard change).
+- Removing G5's action-digest filter or its rejection check is refused by G6 under another rule ID, and no CLI test runs `execute` for a rerun proposal (next guard change).
+- `store.deployment_id()` lets driver errors through as internal errors, and the schema range accepts versions 1 and 2 although `execute` needs version 3 tables (next store change).
+- `_scaffold_values` raises `KeyError` for a missing `--region`, which becomes an internal error (Stage 5).
+- `SET ROLE aura_operator` makes `CURRENT_USER` the shared role, so operators who use it share one idempotency namespace, and `grants.sql` does not revoke `CREATE` on schema `public`, which PostgreSQL before 15 grants by default (task 4.4).
+- The review found these earlier backlog items still open, now owned by Stage 4: the provenance trace checks and the untested hub-read cache (Stage 1 and Stage 2, task 3.3), `published` matching only `proposal_id`, the SQLite initialization race, a locked database reported as having no schema version, a stored `OSError` text without an errno, and the unknown outcome of a `command_refused` append.

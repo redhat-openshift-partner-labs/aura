@@ -191,6 +191,18 @@ The CLI locks `--command-dir`, checks the requested idempotency key, executes th
 
 Context, model, proposal, and refusal events reference the previous event ID, forming an audit chain for one command. `command_failed` references the last event that was actually stored, so a failed write never forks the chain.
 
+## Phase 3 Store Wiring
+
+`proposal submit`, `proposal approve`, `proposal reject`, and `execute` run through `aura.execution.commands.run_store_command` and keep every record in the [execution store](architecture.md#execution-store). Each checks its idempotency key for the configured login, stores `command_received`, runs its step, and stores the terminal command record. A refusal or failure stores `command_refused` or `command_failed` before the terminal record.
+
+| Command | Writes after `command_received`, in order |
+| --- | --- |
+| `proposal submit` | `proposal_published`; then the publication with the terminal record, in one transaction |
+| `proposal approve`, `proposal reject` | `approval_recorded`; then the signed approval with the terminal record, in one transaction |
+| `execute` | G8: `evidence_collected`, the evidence snapshot, `context_assembled`, the CWA snapshot, the CWA trace, `proposal_created`, the regenerated proposal. Dispatch: `execution_started`, then the signed `dispatching` record in a locked transaction that rechecks G5, G6, and G11. After the adapter call: `execution_finished`, the signed result record, then the terminal record |
+
+`execute` stores each of its records at once, so a run that stores no terminal record keeps its regeneration and execution records. `--dry-run` stops after the guard, after the G8 writes. A failure after the `dispatching` record appends the `aura execution status` recovery step to the message.
+
 ## Extension Points
 
 | Future need | Existing seam |
