@@ -6,7 +6,7 @@ Implemented, validated, and published at `01f0f38`, including closure hardening.
 
 ## Objective
 
-Deliver the first useful Aura capability: explain current partner-labs state without side effects.
+Deliver the first Aura capability: explain current partner-labs state without side effects.
 
 Phase 1 does not generate patches, start pipelines, or modify any repository.
 
@@ -99,7 +99,7 @@ No execution command is allowed in Phase 1.
 ## Acceptance Criteria
 
 - [x] Aura lists cluster definitions without writing to Git.
-- [x] Aura reads Git cluster definitions from committed `HEAD`, not the working tree.
+- [x] Aura reads Git cluster definitions from committed `HEAD` and never from the working tree.
 - [x] Aura lists OpenShift resources without write permissions.
 - [x] Aura correlates Git, OpenShift, and Tekton data by cluster name.
 - [x] Aura stores the frozen evidence snapshot.
@@ -110,7 +110,7 @@ No execution command is allowed in Phase 1.
 - [x] Aura suppresses completed idempotency keys before evidence collection.
 - [x] Aura reports OpenShift CLI failures concisely without partial JSON.
 - [x] Aura reports incomplete and invalid Git definitions per definition without aborting collection.
-- [x] Aura correlates incomplete and invalid definitions by cluster name instead of reporting them as missing.
+- [x] Aura correlates incomplete and invalid definitions by cluster name and does not report them as missing.
 - [x] Aura never reports an incomplete PipelineRun as succeeded.
 - [x] Aura authorizes only the roles an operator supplies.
 - [x] Aura stores a terminal `failed` record when a record write fails.

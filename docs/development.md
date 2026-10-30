@@ -15,14 +15,14 @@ On 2026-10-23, an independent review of 16 unpublished commits found seven defec
 | Spec-to-test gap | The spec said "empty file"; the contract accepted any file at that path because only the generator was tested |
 | Untested invariant | `command_failed` linked to the wrong predecessor, forking the audit chain |
 
-The root cause was process, not test-first ordering:
+The root cause was process; test-first ordering did not cause the defects:
 
 1. The same author wrote the tests and the code from one mental model, so the tests shared its blind spots.
-2. Tests covered intended behavior and refusals, not failure paths, invariants, or hostile input.
-3. Plans, checklists, and task trackers recorded what to build, not how to show it is correct.
-4. The structural quality gate measures code shape, not behavior.
+2. Tests covered intended behavior and refusals; they omitted failure paths, invariants, and hostile input.
+3. Plans, checklists, and task trackers recorded what to build; they omitted how to show it is correct.
+4. The structural quality gate measures code shape and does not measure behavior.
 
-Writing a test first fixes the order of work. It does not make the test cover the right cases. The steps below do.
+Writing a test first fixes the order of work. The steps below make the test cover the right cases.
 
 ## Feature Lifecycle
 
@@ -54,7 +54,7 @@ Before any test or code, list the cases in five classes. The plan goes in the ta
 | Class | What to list | Source |
 | --- | --- | --- |
 | Behavior | Successful results and documented refusals | Spec examples and acceptance criteria |
-| Contract negatives | One negative test per spec rule that says *only*, *exactly*, *empty*, *must*, *must not*, or *never*. It targets the contract or validator directly, not only the generator | Spec rules |
+| Contract negatives | One negative test per spec rule that says *only*, *exactly*, *empty*, *must*, *must not*, or *never*. It targets the contract or validator directly; a test of the generator alone does not count | Spec rules |
 | Failure modes | Every external read and every record write in the command, each forced to fail; see the [failure-mode matrix](#failure-mode-matrix) | The command's write order in `docs/wiring.md` |
 | Invariants | Which [project invariants](#project-invariants) the change touches | This document |
 | Input edges | The [input edge checklist](#input-edge-checklist) items that apply | This document |
@@ -63,7 +63,7 @@ Every rule in the spec maps to at least one test. If a rule cannot be tested, sa
 
 ### 3. Write Failing Tests
 
-Write the tests from the plan. Run them and read each failure: a test must fail because the behavior is missing, not because of an import error or a broken fixture. A test that passes before the implementation exists is testing nothing new; fix it or remove it.
+Write the tests from the plan. Run them and read each failure: a test must fail because the behavior is missing; a failure from an import error or a broken fixture does not count. A test that passes before the implementation exists is testing nothing new; fix it or remove it.
 
 Test conventions are in [`AGENTS.md`](../AGENTS.md#test-guidance). In particular:
 
@@ -97,7 +97,7 @@ The quality gate compares committed trees, so run it on a candidate commit and a
 ripwire . --quality-delta=adb2c2b..HEAD
 ```
 
-A change is not finished while the gate reports gating findings. The gate is a structural proxy: passing it says nothing about correctness, and clearing its findings is never a substitute for the test plan. Acknowledge a finding in `.ripwire_quality_acks` only when it is a confirmed false positive, with a specific reason, using `--ack-only=gating` or a precise substring. Commit acknowledgements separately.
+A change is not finished while the gate reports gating findings. The gate is a structural proxy: passing it says nothing about correctness, and the test plan is required even when its findings are cleared. Acknowledge a finding in `.ripwire_quality_acks` only when it is a confirmed false positive, with a specific reason, using `--ack-only=gating` or a precise substring. Commit acknowledgements separately.
 
 ### 6. Update Docs
 
@@ -109,7 +109,7 @@ Use Conventional Commits with `git commit -s`. Each commit must pass step 5 on i
 
 ### 8. Independent Review
 
-Each feature gets an independent review before it is reported done, not after a batch of features.
+Each feature gets an independent review before it is reported done; each review covers one feature.
 
 - The reviewer is a person or a separate agent that did not write the change. Give it the diff range, the spec, and the contract docs. Do not give it the author's conclusions or reasoning.
 - Ask for correctness, spec conformance, failure paths, regressions to existing commands, security, and doc accuracy, with a concrete failure scenario for each finding.
@@ -140,7 +140,7 @@ The job must succeed. Known differences from GitHub's hosted runners:
 - On Apple silicon the container is `linux/arm64`; GitHub runs `linux/x86_64`.
 - The image approximates the hosted runner, and `setup-python` and `setup-uv` still download from the network.
 
-A passing `act` run makes a passing GitHub run likely, not certain. GitHub CI on the published commit remains the authority, and the operator confirms it after publishing.
+A passing `act` run makes a passing GitHub run likely but does not guarantee it. GitHub CI on the published commit remains the authority, and the operator confirms it after publishing.
 
 ### 10. Operator Live Validation
 
@@ -159,7 +159,7 @@ Every command must preserve these. A change that touches an invariant must have 
 | I5 | Aura writes nothing to Git, Kubernetes, Portal, or RabbitMQ in Phases 1 and 2, and never modifies a protected repository. |
 | I6 | Stored records contain no secret values. |
 | I7 | Expected failures (argument, authorization, Git, `oc`, store, and filesystem errors) exit `2` with a concise message and no traceback. A traceback is a bug. |
-| I8 | Fail closed: a missing, unreadable, or malformed input is an error, never an empty or default result. |
+| I8 | Fail closed: a missing, unreadable, or malformed input is an error; Aura returns no empty or default result. |
 | I9 | IDs and digests are deterministic for the same inputs, and every digest is verified on load. |
 
 ## Failure-Mode Matrix
@@ -217,7 +217,7 @@ To cover a new command, or a new outcome of an existing command, add a `Scenario
 
 ## Task Tracking
 
-Plans, checklists, and task trackers record scope and progress. They do not show correctness: a completed checkbox means the work was done, not verified. A task is done only when it meets the Definition of Done in [`AGENTS.md`](../AGENTS.md#definition-of-done). When an implementation task is broken into subtasks, include:
+Plans, checklists, and task trackers record scope and progress. They do not show correctness: a completed checkbox means the work was done and does not mean it was verified. A task is done only when it meets the Definition of Done in [`AGENTS.md`](../AGENTS.md#definition-of-done). When an implementation task is broken into subtasks, include:
 
 1. Test plan, covering all five classes.
 2. Failing tests.

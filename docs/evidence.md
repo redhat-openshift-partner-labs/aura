@@ -106,9 +106,9 @@ Deprovision status values:
 | `namespace` and `pipeline_name` | Pipeline `metadata` |
 | `params` | Each well-formed `spec.params` entry as `name`, `type` (`string` when absent), and `has_default`. Default values are never stored, because validation needs only whether a default exists and a default can hold secret material under any name. A `null` default counts as no default, as in Tekton. |
 | `required_params` | Names of parameters without a default, in declared order |
-| `malformed_params` | Entries that are not mappings, lack a non-empty name, have a type other than `string`, `array`, or `object`, or repeat an earlier name, plus one when `spec` or `spec.params` has the wrong shape. Such entries are counted, never silently dropped. |
+| `malformed_params` | Entries that are not mappings, lack a non-empty name, have a type other than `string`, `array`, or `object`, or repeat an earlier name, plus one when `spec` or `spec.params` has the wrong shape. Such entries are counted; none is dropped silently. |
 
-A requested Pipeline that is absent, or a Pipeline without a name, raises `PipelineDefinitionError` rather than producing an empty snapshot. Object parameter `properties` are not recorded; every `fleet` Pipeline uses string parameters.
+A requested Pipeline that is absent, or a Pipeline without a name, raises `PipelineDefinitionError`; Aura produces no empty snapshot. Object parameter `properties` are not recorded; every `fleet` Pipeline uses string parameters.
 
 ## Cluster State Correlation Fields
 
@@ -200,7 +200,7 @@ Cluster-state diagnosis rules:
 - Tekton `cluster-name` is the primary workflow correlation key.
 - Conflicting Git definitions, incomplete definitions, invalid definitions, and a missing OpenShift `Provisioned` condition cause refusal.
 - A non-provisioned cluster receives a summary that says it is not provisioned, a fact citing its `Provisioned` condition, and a read-only inspection recommendation.
-- A failed PipelineRun may be linked to non-provisioning as an inference, not as a fact.
+- A failed PipelineRun may be linked to non-provisioning only as an inference.
 - When `deprovision_status` is `pending`, `archive-pending`, or `stranded`, missing OpenShift resources, an incomplete or invalid definition, and a missing PipelineRun do not cause refusal, because none of them affects the deprovision explanation. Tekton prunes old PipelineRuns, so a deprovision answer without a run says `no PipelineRun is retained for it` and has confidence `0.6`. Conflicting definitions and an absent `--pipeline-run` selection still cause refusal. Each sentinel is cited as a fact, and the summary describes the deprovision state:
 
 | Deprovision status | Summary | Inference |
@@ -211,7 +211,7 @@ Cluster-state diagnosis rules:
 
 A `leftover` or `orphaned` sentinel does not relax refusal.
 - The summary names the PipelineRun it describes. When several runs are selected, a `Failed` run takes precedence, then a run that has not completed, then the first run.
-- A PipelineRun whose `Succeeded` condition is neither `True` nor `False` is reported as not completed, never as succeeded, with an inference that the cluster state may still change.
+- A PipelineRun whose `Succeeded` condition is neither `True` nor `False` is reported only as not completed, with an inference that the cluster state may still change.
 
 | PipelineRun status | Summary outcome | Confidence |
 | --- | --- | --- |
@@ -361,7 +361,7 @@ Refusal reasons, reported together with the shared live-cluster reasons (no defi
 | Fields a rerun cannot copy | `PipelineRun <name> has fields a rerun cannot copy: [...]` |
 | Workspace source a rerun cannot rebuild (`csi`, `projected`, unknown) | `PipelineRun <name> workspace <ws> uses source <source>, which a rerun cannot copy` |
 
-A generated manifest that the contract still rejects, such as a declared parameter whose value contains a secret-named key, fails the command with `generated proposal is invalid:` rather than refusing it.
+A generated manifest that the contract still rejects, such as a declared parameter whose value contains a secret-named key, fails the command with `generated proposal is invalid:`; the command is not refused.
 
 The `metadata.yaml` check compares `htpasswd-provider-name`, and `openshift-ai-version` only when the source run's `tier` parameter is `ai`, the condition under which `apply-ai-workloads` reads it. The risks name the keys compared. When the source run did not set a key, the rerun's value is assumed to be the `fleet` `9464f0b` Pipeline default, because Pipeline definition evidence stores no default values.
 
@@ -426,7 +426,7 @@ After the output checks, `GitDefinitionCheck` applies the patch to the base comm
 | No definition, several definitions, or an incomplete or invalid one | `applying the patch to <base> yields <kind> for <id>, not a complete cluster_definition`, or the matching variant |
 | A definition outside `provision/<id>` | `applying the patch to <base> yields a definition at <path>, not provision/<id>` |
 
-The render rules mirror `fleet-clusters` `scripts/check_new_overlays.py`; Aura re-implements them rather than running that script. The PR check's `kustomize build` of the whole overlay is not repeated: the scaffold builds `hive/` and `crossplane/` and exits non-zero on a failed build or surviving placeholder names.
+The render rules mirror `fleet-clusters` `scripts/check_new_overlays.py`; Aura re-implements them and does not run that script. The PR check's `kustomize build` of the whole overlay is not repeated: the scaffold builds `hive/` and `crossplane/` and exits non-zero on a failed build or surviving placeholder names.
 
 ### Proposal Staleness Fields
 

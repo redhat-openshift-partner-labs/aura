@@ -4,7 +4,7 @@ Phases 0, 1, and 2 are closed: the operator signed them off on 2026-10-26, accep
 
 ## Phase 1
 
-Phase 1 functional scope and closure hardening are implemented and validated. Phase 1 is published: `main` was pushed to the public remote at `01f0f38`, and CI run `39474106779` passed. The `metadata.yaml` and `platform` backfills were resolved in `fleet-clusters` on 2026-10-25; the stranded deprovision sentinels remain open in [Open Questions](plans/08-open-questions.md#fleet-clusters-data), and Aura reports them rather than working around them.
+Phase 1 functional scope and closure hardening are implemented and validated. Phase 1 is published: `main` was pushed to the public remote at `01f0f38`, and CI run `39474106779` passed. The `metadata.yaml` and `platform` backfills were resolved in `fleet-clusters` on 2026-10-25; the stranded deprovision sentinels remain open in [Open Questions](plans/08-open-questions.md#fleet-clusters-data), and Aura reports them and does not work around them.
 
 Validation summary, recorded at Aura commit `6dc0eb3`:
 

@@ -43,7 +43,7 @@ Required files for a complete definition:
 - `hive/patches/managedcluster.yaml`
 - `crossplane/kustomization.yaml`
 
-Git output is decoded from bytes, so file text keeps its line endings. A definition missing a required file is emitted as `cluster_definition_incomplete`; when only `metadata.yaml` is missing, its other files are still validated. A definition whose YAML is malformed, has the wrong document shape, lacks a required patch path, or has a secret-named `metadata.yaml` key is emitted as `cluster_definition_invalid`; other definitions are still collected. Both kinds use the directory name as `cluster_name`. Invalid-YAML errors report only the file and line, never file content.
+Git output is decoded from bytes, so file text keeps its line endings. A definition missing a required file is emitted as `cluster_definition_incomplete`; when only `metadata.yaml` is missing, its other files are still validated. A definition whose YAML is malformed, has the wrong document shape, lacks a required patch path, or has a secret-named `metadata.yaml` key is emitted as `cluster_definition_invalid`; other definitions are still collected. Both kinds use the directory name as `cluster_name`. Invalid-YAML errors report only the file and line and omit file content.
 
 Top-level files under `deprovision/`, other than `README.md`, are emitted as `deprovision_sentinel` items. The sentinel `deprovision/<id>-archive` names cluster `<id>` with `archive_suffix: true`; a bare `deprovision/<id>` has `archive_suffix: false`.
 
@@ -155,7 +155,7 @@ The CLI stores the CWA snapshot, the CWA trace, the `context_assembled` and `pro
 
 `GitProposalStaleness` resolves `HEAD`, runs `git merge-base --is-ancestor BASE HEAD`, and then `git diff --name-only BASE HEAD` limited to the target cluster's paths. All three commands are read-only.
 
-`ProposalStalenessCollector` resolves `HEAD` once and checks every requested proposal, or every `*.json` record in `--proposal-dir` in ID order, against that revision. Loading a record re-verifies its `proposal_digest`. A missing or unreadable store, a misnamed record, an unreadable record, or a tampered record raises `ProposalRecordUnreadable` and fails the command instead of being skipped. Repeated IDs are checked once.
+`ProposalStalenessCollector` resolves `HEAD` once and checks every requested proposal, or every `*.json` record in `--proposal-dir` in ID order, against that revision. Loading a record re-verifies its `proposal_digest`. A missing or unreadable store, a misnamed record, an unreadable record, or a tampered record raises `ProposalRecordUnreadable` and fails the command; such a record is never skipped. Repeated IDs are checked once.
 
 `inventory list`, `workflow inspect`, and `proposal status` are entries in `_EVIDENCE_ROUTES`. Each entry names its service, extra command input, collector selector, and source errors; the service spec supplies the authorization and command-type errors.
 
@@ -171,7 +171,7 @@ The CLI stores the CWA snapshot, the CWA trace, the `context_assembled` and `pro
 | `--diagnosis-dir DIR` | `JsonDiagnosisStore` | `DIR/CWA_SNAPSHOT_ID.json` |
 | `--proposal-dir DIR` | `JsonProposalStore` | `DIR/PROPOSAL_ID.json` |
 
-Stores create restricted parent directories, write and `fsync` private temporary files, and atomically link them into final names. Existing IDs or terminal command keys are treated as errors rather than overwrites, and failed writes leave no partial final records. If the directory sync fails after the record is linked, the store removes the record before raising, so a raised write is never stored. Every store loads through `parse_record`, which rejects a record whose own digest (`record_digest`, `request_digest`, `snapshot_digest`, `event_digest`, `response_digest`, or `proposal_digest`) is blank or missing, because validation would otherwise recompute it, and then verifies the digest. The command store also rejects a record whose idempotency key differs from the key its file name encodes.
+Stores create restricted parent directories, write and `fsync` private temporary files, and atomically link them into final names. Existing IDs or terminal command keys are treated as errors and are never overwritten, and failed writes leave no partial final records. If the directory sync fails after the record is linked, the store removes the record before raising, so a raised write is never stored. Every store loads through `parse_record`, which rejects a record whose own digest (`record_digest`, `request_digest`, `snapshot_digest`, `event_digest`, `response_digest`, or `proposal_digest`) is blank or missing, because validation would otherwise recompute it, and then verifies the digest. The command store also rejects a record whose idempotency key differs from the key its file name encodes.
 
 The CLI locks `--command-dir`, checks the requested idempotency key, executes the command, and writes the terminal record while holding the lock. A terminal key with the same request digest exits with code `2` before collection. A terminal key with a different request digest is rejected. Failed and refused commands are terminal; a new attempt requires a new key.
 

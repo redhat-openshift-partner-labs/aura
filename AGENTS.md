@@ -107,12 +107,12 @@ Leave these untracked local artifacts alone unless the user explicitly asks othe
 ## Test Guidance
 
 - Collector tests use fake clients and local temporary Git trees.
-- Correlation tests that depend on Git item shapes use the real `GitInventoryCollector` over a temporary Git tree, not hand-built items.
+- Correlation tests that depend on Git item shapes use the real `GitInventoryCollector` over a temporary Git tree; they do not use hand-built items.
 - CLI tests cover argument validation and JSON output.
 - Contract tests use Pydantic validation.
 - Store tests assert exclusive-create behavior.
 - Fixture tests must not contain secrets.
-- Every spec rule that says only, exactly, empty, must, must not, or never has a negative test against the contract or validator, not only the generator.
+- Every spec rule that says only, exactly, empty, must, must not, or never has a negative test against the contract or validator; a test of the generator alone does not count.
 - Every command has failure tests for each record write and external read in its failure-mode matrix, asserting the terminal record, absent artifacts, and the `command_failed` link. Add a `Scenario` to `tests/test_failure_matrix.py` for each new command or outcome, with its documented write order; the shared harness then tests every row.
 - Tests force failures deterministically, for example by pre-creating a record at its deterministic ID, and restore any permissions they change.
 - Tests never rely on file modes to make a path unreadable, because root ignores them; use `deny_access` from `tests/failure_injection.py`.
@@ -139,4 +139,4 @@ Leave these untracked local artifacts alone unless the user explicitly asks othe
 - The feature has had an independent review, and every confirmed finding is fixed test-first.
 - The CI workflow passes locally under `act` on the committed tree.
 
-A completed task or checklist item does not mean the work is done; this list does.
+Work is done only when every item in this list holds, regardless of completed tasks or checklist items.

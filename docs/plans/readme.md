@@ -6,7 +6,7 @@ Phase 1 is implemented, validated, and published. The [Phase 2](05-phase-2-propo
 
 ## Objective
 
-Build Aura as a clean, operator-facing control plane for OpenShift Partner Labs without modifying the four protected repositories:
+Build Aura as an operator-facing control plane for OpenShift Partner Labs without modifying the four protected repositories:
 
 - `fleet`
 - `fleet-cluster-scaffold`
@@ -19,7 +19,7 @@ Aura will help a human operator understand current state, diagnose problems, pre
 
 | Decision | Position |
 | --- | --- |
-| Primary architecture | Sidecar control plane, not a replacement workflow engine |
+| Primary architecture | Sidecar control plane; Aura does not replace the workflow engine |
 | Existing queue system | Leave in place; do not require it for Aura |
 | Cluster workflow engine | Continue using Tekton through `fleet` |
 | Source of truth | Git for desired state, OpenShift for actual state, Aura only for commands and audit |

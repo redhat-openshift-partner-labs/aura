@@ -30,7 +30,7 @@ ripwire . --quality-delta=adb2c2b..HEAD
 
 Expected current result: zero gating findings. The committed range is the quality baseline through the current changes.
 
-Confirmed false positives are acknowledged in `.ripwire_quality_acks`, never by editing the baseline. Acknowledge only the specific findings, with a reason:
+Confirmed false positives are acknowledged in `.ripwire_quality_acks`; never edit the baseline to acknowledge one. Acknowledge only the specific findings, with a reason:
 
 ```bash
 ripwire . --quality-delta=adb2c2b..HEAD \

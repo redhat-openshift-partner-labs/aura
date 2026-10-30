@@ -12,7 +12,7 @@ Aura is a read-only sidecar control plane. Existing systems remain authoritative
 | Operator request data | Portal, when eventually integrated |
 | Aura commands, evidence, CWA traces, and audit records | Aura |
 
-Aura does not become the source of truth. It freezes observations, correlates them, and explains them.
+Aura freezes observations, correlates them, and explains them.
 
 ## Flow
 

@@ -24,7 +24,7 @@ Never modify:
 - `fleet-clusters`
 - `portal`
 
-The runtime reads `fleet-clusters`. `propose scaffold` also reads a local `fleet-cluster-scaffold` checkout and executes its code: it runs an export written byte for byte from `git ls-tree` and `git cat-file`, so export attributes such as `export-subst` and `export-ignore` do not apply, of the checkout's committed `HEAD`, never its working tree, with the current Python interpreter in `-I -B` mode, in a temporary directory, with no standard input and an environment of only `PATH`, `HOME` (that directory), and `LANG`, so no kubeconfig, cloud credential, or other operator variable reaches it, and with a five-minute timeout. An export refuses symlinks that point outside it. Treat the scaffold checkout as trusted code: Aura records its commit but cannot sandbox it beyond that. The definition check writes only to a `--shared --no-checkout` clone in a temporary directory. `fleet` and `portal` remain outside the runtime.
+The runtime reads `fleet-clusters`. `propose scaffold` also reads a local `fleet-cluster-scaffold` checkout and executes its code: it runs an export written byte for byte from `git ls-tree` and `git cat-file`, so export attributes such as `export-subst` and `export-ignore` do not apply, of the checkout's committed `HEAD` (the working tree is excluded), with the current Python interpreter in `-I -B` mode, in a temporary directory, with no standard input and an environment of only `PATH`, `HOME` (that directory), and `LANG`, so no kubeconfig, cloud credential, or other operator variable reaches it, and with a five-minute timeout. An export refuses symlinks that point outside it. Treat the scaffold checkout as trusted code: Aura records its commit but cannot sandbox it beyond that. The definition check writes only to a `--shared --no-checkout` clone in a temporary directory. `fleet` and `portal` remain outside the runtime.
 
 Every Git command Aura runs, in collectors and in the scaffold runner and check, drops inherited `GIT_` variables such as `GIT_DIR` and `GIT_INDEX_FILE`, disables hooks and fsmonitor with `-c core.hooksPath=/dev/null -c core.fsmonitor=false`, turns off optional locks so `git status` never rewrites an index, and gets no standard input. An operator environment or global Git configuration therefore cannot redirect Aura to another repository or run code through Git.
 
@@ -158,13 +158,13 @@ The Secret is read only on the first start, when the data directory is empty; ch
 
 Matching ignores case and non-alphanumeric separators, so `pullSecret`, `pull-secret`, and `PULL_SECRET` all match `pull_secret`. The normalized name must match exactly, so references such as `pullSecretRef` are kept. Matching is recursive through mappings and lists. Removed field paths are recorded without their values.
 
-PipelineRun parameters carry values under generic `name` and `value` keys, so field-name matching cannot protect them. `redact_parameters` redacts any parameter whose normalized name contains `apikey`, `credential`, `kubeconfig`, `passwd`, `password`, `privatekey`, `secret`, or `token`. These fleet parameters are kept because they hold a display name, a Secret name, or a file path, not secret material:
+PipelineRun parameters carry values under generic `name` and `value` keys, so field-name matching cannot protect them. `redact_parameters` redacts any parameter whose normalized name contains `apikey`, `credential`, `kubeconfig`, `passwd`, `password`, `privatekey`, `secret`, or `token`. These fleet parameters are kept because they hold a display name, a Secret name, or a file path; none holds secret material:
 
 - `htpasswd-provider-name`, the identity provider display name
 - `keycloak-admin-secret`, a Secret name
 - `spoke-kubeconfig`, a file path
 
-Add a parameter to that allowlist only after confirming its value can never be secret material. Workspace bindings record Secret and ConfigMap names, never their contents.
+Add a parameter to that allowlist only after confirming its value can never be secret material. Workspace bindings record Secret and ConfigMap names and omit their contents.
 
 Redaction is a defense in depth. Collectors should still avoid reading secret values in the first place.
 
@@ -190,10 +190,10 @@ All current stores use exclusive, atomic publication:
 - Existing diagnoses are not overwritten.
 - Existing proposals are not overwritten. A stored proposal fails to load when its content no longer matches its digest or when its `proposal_digest` is missing or blank, because validation would otherwise recompute it.
 
-The evidence, CWA, audit, diagnosis, and proposal stores also fail to load a record whose own ID differs from its file name, so a record copied or renamed under another valid ID is rejected rather than reported under the wrong ID. The command store is separate: it treats a record whose idempotency key differs from its file name as not found.
+The evidence, CWA, audit, diagnosis, and proposal stores also fail to load a record whose own ID differs from its file name, so a record copied or renamed under another valid ID is rejected; Aura never reports it under the wrong ID. The command store is separate: it treats a record whose idempotency key differs from its file name as not found.
 
 Snapshots and responses include SHA-256 digests over canonical JSON.
-`aura.provenance` loads a proposal or a diagnosis with every record it references, its CWA trace, CWA snapshot, evidence snapshot, and the trace's audit event, and refuses any reference whose ID or digest differs from the stored target. Every store revalidates a record before writing it, so a copy whose digests no longer match its fields is refused rather than stored unreadable. Stored records are parsed only in `json_store`. `tests/test_architecture.py` fails for a JSON, YAML, or pydantic JSON parse, through any import alias, anywhere else that is not on its allow list, and for a store that overrides how records load. The allow list holds `oc` output, `fleet-clusters` YAML, and `cli._names_another_command`, which reads only the `command_id` of an audit record that failed to load.
+`aura.provenance` loads a proposal or a diagnosis with every record it references, its CWA trace, CWA snapshot, evidence snapshot, and the trace's audit event, and refuses any reference whose ID or digest differs from the stored target. Every store revalidates a record before writing it, so a copy whose digests no longer match its fields is refused; Aura stores no unreadable copy. Stored records are parsed only in `json_store`. `tests/test_architecture.py` fails for a JSON, YAML, or pydantic JSON parse, through any import alias, anywhere else that is not on its allow list, and for a store that overrides how records load. The allow list holds `oc` output, `fleet-clusters` YAML, and `cli._names_another_command`, which reads only the `command_id` of an audit record that failed to load.
 Records are serialized to a private temporary file, flushed with `fsync`, and linked into their final name only after the complete write. A failed write leaves no partial final record. When a record write fails with an operating-system error, the command is stored as `failed` if the command store is writable, and the CLI exits `2`.
 
 ## Operational cautions

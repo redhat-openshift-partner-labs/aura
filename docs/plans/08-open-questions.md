@@ -58,7 +58,7 @@ At the same commit, 11 of the 12 complete definitions have a `metadata.yaml` wit
 | `provision/` | 7 definitions |
 | `archive/` | 4 definitions, one of which also has an active definition under `provision/` |
 
-Aura keeps the desired `cloud_provider` as `null` rather than inferring it. When every other compared field matches OpenShift, combined inventory reports `drift_indicator: incomplete-metadata` instead of `detected`.
+Aura keeps the desired `cloud_provider` as `null` and does not infer it. When every other compared field matches OpenShift, combined inventory reports `drift_indicator: incomplete-metadata` and does not report `detected`.
 
 Editing an existing `metadata.yaml` modifies a file and triggers nothing, so `[skip-provision]` is not required for that change alone.
 

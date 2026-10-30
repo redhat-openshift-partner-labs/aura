@@ -57,7 +57,7 @@ These must land before proposal types that depend on them:
 | ID | Change | Needed by | Status |
 | --- | --- | --- | --- |
 | P0 | Git collector reads `deprovision/` sentinels, records whether each has the `-archive` suffix, and inventory and diagnosis distinguish pending, archive-pending, stranded, leftover, and orphaned deprovisions | Deprovision sentinel, inventory accuracy | Done |
-| P1 | Tekton collector records redacted `spec.params` and workspace bindings, not only `cluster-name` | Post-provision rerun | Done |
+| P1 | Tekton collector records redacted `spec.params` and workspace bindings in addition to `cluster-name` | Post-provision rerun | Done |
 | P2 | Read-only RBAC adds `list` on `pipelines.tekton.dev` in `openshift-pipelines`, and a collector reads Pipeline parameter definitions | Post-provision rerun | Done; `deploy/` applied and validated on 2026-10-24 |
 | P3 | Append-only proposal store and `Proposal` contract | All proposal types | Done |
 | P4 | `propose` CLI commands, authorized for `proposer` and `admin` | All proposal types | Done |
@@ -117,7 +117,7 @@ Decisions, 2026-10-25:
 | Infra prefix | Refuse when any name in `provision/`, `archive/`, or `deprovision/` (stripping `-archive`), or any OpenShift ClusterDeployment or ManagedCluster, shares the infra prefix. Crossplane IAM labels are not read: that needs a new `list` grant, and `fleet` checks them before provisioning |
 | Scaffold flags | The operator may pass `--topology`, `--environment`, `--base-domain`, `--control-plane-type`, `--worker-type`, `--control-plane-replicas`, `--worker-replicas`, `--image-set`, `--zones`, `--install-attempts-limit`, and `--htpasswd-provider-name`. Aura alone sets `--name`, `--region`, `--tier`, `--base-path`, and `--cluster-templates-dir` from its own inputs. `--force`, `--skip-validation`, and `--legacy-mint-credentials` are never passed |
 | `metadata.yaml` | Scaffold output is accepted unmodified |
-| PR check | Aura re-implements its rules, with a parity test for the infra prefix, instead of executing `fleet-clusters` code |
+| PR check | Aura re-implements its rules, with a parity test for the infra prefix, and does not execute `fleet-clusters` code |
 | Run record | Scaffold proposals carry a `scaffold_run` record: the `kustomize` version, the scaffold arguments, the exit code, standard output and error, and the generated file list |
 | Pinning | `--scaffold <path>` names a local checkout; Aura records its `HEAD` as `scaffold_commit`, refuses a dirty tracked tree, and runs an export of that commit written from `git ls-tree` and `git cat-file`, which export attributes cannot alter |
 
@@ -233,16 +233,16 @@ Because an absent key means its default, writing a key whose value equals what t
 | `pipeline_run` | PipelineRun manifest, for rerun proposals |
 | `proposal_digest` | SHA-256 over canonical JSON of all fields above |
 
-A proposal is stale when `fleet-clusters` `HEAD` moves past `base_commit` and touches the target cluster's paths. Phase 2 reports this Git staleness for every type, reruns included. Live state is not compared in Phase 2: decided 2026-10-25, the Phase 3 execution guard re-collects evidence immediately before executing and refuses when the regenerated proposal's action differs from the approved one (its [action subset](06-phase-3-approved-execution.md#action-subset), not the full digest), because a live check at status time would itself be out of date by execution time.
+A proposal is stale when `fleet-clusters` `HEAD` moves past `base_commit` and touches the target cluster's paths. Phase 2 reports this Git staleness for every type, reruns included. Live state is not compared in Phase 2: decided 2026-10-25, the Phase 3 execution guard re-collects evidence immediately before executing and refuses when the regenerated proposal's action differs from the approved one (its [action subset](06-phase-3-approved-execution.md#action-subset); the guard does not compare the full digest), because a live check at status time would itself be out of date by execution time.
 
 ## Scaffold Boundary
 
-- Run `fleet-cluster-scaffold` from an export of a clean local checkout, written from its Git objects, at a recorded commit, not its package version, so nothing is written into the checkout.
+- Run `fleet-cluster-scaffold` from an export of a clean local checkout, written from its Git objects, at a recorded commit, so nothing is written into the checkout; its package version is not used.
 - Run in a new temporary directory containing only an export of `fleet-clusters` at the base commit.
 - Pass no credentials and no kubeconfig; the scaffold needs neither.
 - Capture stdout, stderr, exit code, and the generated file list.
 - Reject any generated path outside `provision/<id>/`, any symlink, and any file the redaction policy would alter.
-- Require `kustomize` on the operator host; refuse when it is missing rather than passing `--skip-validation`.
+- Require `kustomize` on the operator host; refuse when it is missing and never pass `--skip-validation`.
 - Never modify `fleet-cluster-scaffold`.
 
 ## Acceptance Criteria
@@ -266,7 +266,7 @@ Failure-mode criteria, added on 2026-10-23 under the [development workflow](../d
 - Each contract rule that says only, exactly, or empty is enforced by the `Proposal` contract itself and has a negative test against it; for example, a deprovision patch that adds a non-empty or non-regular sentinel is rejected.
 - A proposal file is written only after its CWA trace and `proposal_created` audit event; a failure at any earlier write leaves no proposal file.
 - Every `propose` and `proposal` command that fails after the idempotency check stores a `failed` terminal record, and `command_failed` links to the last audit event stored.
-- `proposal status` fails, rather than reporting no proposals, when the proposal store is missing or unreadable or a record is misnamed, unreadable, or tampered.
+- `proposal status` fails, and does not report an empty proposal list, when the proposal store is missing or unreadable or a record is misnamed, unreadable, or tampered.
 - Each proposal type has failure tests for every row of its failure-mode matrix.
 
 The deprovision and cluster-edit types and `proposal status` meet these criteria; the shared failure-injection harness covers every row of their matrices, including refusal.
@@ -287,8 +287,8 @@ Approval of this plan requires these changes to [Phase 3](06-phase-3-approved-ex
 - The Git adapter is the execution path for scaffold, deprovision, and edit proposals. Under D8 (a), decided 2026-10-27, it writes the approved patch and its required message as a `git am` mailbox, and the operator applies, pushes, and merges it; for `cluster_edit` and `deprovision`, the [required merge method](06-phase-3-approved-execution.md#git-adapter) keeps the proposal's commit as the push head commit.
 - The Tekton adapter is limited to post-provision reruns, created through the Kubernetes API.
 - The guard refuses stale proposals and proposals whose `proposal_digest` changed.
-- The guard re-collects evidence immediately before executing, regenerates the proposal, and refuses when the regenerated action differs from the approved one. This is where live-state staleness is enforced. The comparison covers a defined action subset, not the full `proposal_digest`, because the digest also covers fields that always change on regeneration, such as `proposal_id`, `command_id`, `created_at`, the evidence and CWA references, and a rerun's `base_commit`. The subset is at least the proposal type, cluster, trigger effect, and the patch or the PipelineRun manifest without Aura's annotations; Phase 3 defines it exactly in its [Action Subset](06-phase-3-approved-execution.md#action-subset).
-- The guard checks a stored proposal's digest against the `proposal_created` audit event or the CWA trace's `response_digest`, not only against itself.
+- The guard re-collects evidence immediately before executing, regenerates the proposal, and refuses when the regenerated action differs from the approved one. This is where live-state staleness is enforced. The comparison does not use the full `proposal_digest`; it covers a defined action subset, because the digest also covers fields that always change on regeneration, such as `proposal_id`, `command_id`, `created_at`, the evidence and CWA references, and a rerun's `base_commit`. The subset is at least the proposal type, cluster, trigger effect, and the patch or the PipelineRun manifest without Aura's annotations; Phase 3 defines it exactly in its [Action Subset](06-phase-3-approved-execution.md#action-subset).
+- The guard checks a stored proposal's digest against the `proposal_created` audit event or the CWA trace's `response_digest` in addition to itself.
 
 ## Open Questions
 

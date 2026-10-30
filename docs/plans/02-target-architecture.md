@@ -185,9 +185,9 @@ Minimum Aura tables:
 | `executions` | Adapter execution and result |
 | `audit_events` | Immutable action history |
 
-The database stores command and audit state, not authoritative cluster state.
+The database stores command and audit state; it stores no authoritative cluster state.
 
-Status 2026-10-27: Phase 3 adds the first tables in its [Execution Store](06-phase-3-approved-execution.md#execution-store), using SQLite for development and PostgreSQL in production (D13): published proposals, approvals, executions, PipelineRun observations, and the command records, audit events, and evidence snapshots of Phase 3 commands. Operators' CLIs connect to it directly; there is no Command API service. Operator identity comes from the hub-held allowed-signers list (D7), not an `operators` table. Phase 0–2 records stay in JSON stores until a later phase moves them.
+Status 2026-10-27: Phase 3 adds the first tables in its [Execution Store](06-phase-3-approved-execution.md#execution-store), using SQLite for development and PostgreSQL in production (D13): published proposals, approvals, executions, PipelineRun observations, and the command records, audit events, and evidence snapshots of Phase 3 commands. Operators' CLIs connect to it directly; there is no Command API service. Operator identity comes from the hub-held allowed-signers list (D7); no `operators` table supplies it. Phase 0–2 records stay in JSON stores until a later phase moves them.
 
 ## Repository Strategy
 

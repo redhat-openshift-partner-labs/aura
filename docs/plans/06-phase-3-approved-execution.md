@@ -8,7 +8,7 @@ Revised 2026-10-27; replaces the draft aligned on 2026-10-20. The [Operator Deci
 
 Execute one human-approved Phase 2 proposal at a time through a guarded adapter, and record every step.
 
-Phase 3 is not autonomous operation. Every execution requires an explicit approval of one unchanged proposal.
+Every execution requires an explicit approval of one unchanged proposal.
 
 ## Rules
 
@@ -68,7 +68,7 @@ Deferred actions:
 
 A proposal's `status` is inside its `proposal_digest`, so proposal records stay immutable and a proposal's lifecycle state is derived from the append-only records that name it.
 
-Phase 3 commands read and write only the [Execution Store](#execution-store), whose connection comes from Aura's configuration file, never from a CLI flag. `proposal submit` publishes a Phase 2 proposal there, so approvers and executors on other machines read the same records.
+Phase 3 commands read and write only the [Execution Store](#execution-store), whose connection comes from Aura's configuration file; no CLI flag sets it. `proposal submit` publishes a Phase 2 proposal there, so approvers and executors on other machines read the same records.
 
 | Record | Written by | Fields |
 | --- | --- | --- |
@@ -78,7 +78,7 @@ Phase 3 commands read and write only the [Execution Store](#execution-store), wh
 | `PipelineRunObservation` | `execution status` | `observation_id`, `execution_id`, `command_id`, PipelineRun name, UID, and namespace, the `Succeeded` condition's status and reason, start and completion times, `observed_at`, `audit_event_digest`, `principal`, `signature`, `observation_digest` |
 | `ResolutionConfirmation` | `execution confirm` | `confirmation_id`, `execution_id`, `command_id`, `statement`, `audit_event_digest`, `principal`, `signature`, `created_at`, `confirmation_digest` |
 
-All records of one execution share its `execution_id`; each has its own `record_id`. The store allows one `dispatching` record per `proposal_id`, so a second dispatch of the same proposal fails at the write, whatever its idempotency key or the machine it runs on, and one terminal record per `execution_id`. A proposal is dispatched at most once. Every record's digest is verified on load, every signed record's signature is verified against the allowed-signers list at the row's `stored_at`, and each record is anchored to its audit event (I3, I9). Hub administrators retire a key by setting its `valid-before` option in the list, never by removing it, so records it signed earlier keep verifying. Every Phase 3 command reads the list, and the `aura-execution-store` ConfigMap, in one `oc` call.
+All records of one execution share its `execution_id`; each has its own `record_id`. The store allows one `dispatching` record per `proposal_id`, so a second dispatch of the same proposal fails at the write, whatever its idempotency key or the machine it runs on, and one terminal record per `execution_id`. A proposal is dispatched at most once. Every record's digest is verified on load, every signed record's signature is verified against the allowed-signers list at the row's `stored_at`, and each record is anchored to its audit event (I3, I9). Hub administrators retire a key by setting its `valid-before` option in the list and do not remove it, so records it signed earlier keep verifying. Every Phase 3 command reads the list, and the `aura-execution-store` ConfigMap, in one `oc` call.
 
 Signed payloads are the canonical JSON of the record's fields except `signature` and the record's own digest, so each signature also covers `audit_event_digest`, the digest of the record's audit event. Approvals and confirmations use SSH signature namespace `aura-approve`; execution records and observations use `aura-execute`, so a signature of one kind never verifies as the other. A `manual` resolution counts only when its `confirmation_id` names a confirmation of the same execution by a principal other than the resolution's. A `PublishedProposal` is unsigned, as Phase 2 proposals are: approvers sign its digests, and G8 compares its action with a fresh regeneration. The guard refuses a signed record whose `created_at` is more than five minutes after the guard's clock, and an approval whose `expires_at` is more than 24 hours after its `created_at`.
 
@@ -105,7 +105,7 @@ Trust boundary:
   - A holder of a listed key can sign false records; the trust in that key already allows this.
 - The CLI runs on the operator's machine, so an operator who edits the configuration or runs a modified CLI can bypass the shared store. G10 refuses any store other than the one the hub names, for every adapter except the test-only `recording` adapter, which stops this by accident. The guard also checks the external systems (G6), and approvals expire after 24 hours.
 - The executor holds `aura-executor`, which can create PipelineRuns without Aura. The guard separates duties among operators who use Aura; it does not contain a hostile executor. Containing one needs Aura to run as a service that holds the adapter credentials, which this plan does not include.
-- Duties are separated by the signatures and the hub-held signer list, not by database grants or local file permissions.
+- Duties are separated by the signatures and the hub-held signer list; database grants and local file permissions do not separate them.
 - Every Phase 3 command's audit chain, and the published proposal it acts on, are in the shared store, so Gate 7 reproduces an execution from the store alone.
 
 ```mermaid
@@ -159,11 +159,11 @@ Rules:
 
 - Phase 3 commands read and write only this store. `proposal submit` alone also reads the Phase 0–2 JSON stores, through the same directory flags the Phase 2 commands take, to load the proposal it publishes. Those stores stay unchanged.
 - Idempotency keys are unique per database login, which PostgreSQL sets with a `CURRENT_USER` default and the SQLite backend takes from the configuration. A run that loses a race for its key at the terminal insert stores `command_failed` naming the winning run and stores no terminal record ([I1 change](#invariant-changes)).
-- Every row stores its record's canonical JSON as text, never as `jsonb`, which reorders keys, and copies, as columns, of the fields that constraints and queries use. Load verifies the digest (I9), the signature where the record is signed, and that each column equals its JSON field, and refuses a row that fails any check (I8).
+- Every row stores its record's canonical JSON as text and never uses `jsonb`, which reorders keys, and copies, as columns, of the fields that constraints and queries use. Load verifies the digest (I9), the signature where the record is signed, and that each column equals its JSON field, and refuses a row that fails any check (I8).
 - No row is updated or deleted, so Aura's role needs `INSERT` and `SELECT` only, and only `SELECT` on `schema_versions` and `deployment`.
 - Each write is idempotent by record ID. When a write's outcome is unknown, such as a connection lost before the commit is acknowledged, Aura reads the row back by its ID: an identical row counts as stored, an absent row as not stored, and an unreachable store ends the command `failed` with the record ID in the message. A `dispatching` record in that last case counts as stored, so the execution is `awaiting_operator` ([I4 change](#invariant-changes)).
 - `execute` dispatches in one transaction: it re-reads the approvals, rejections, and executions that G5, G6, and G11 check, then inserts the `dispatching` record. PostgreSQL runs the transaction at `SERIALIZABLE` isolation and SQLite under `BEGIN IMMEDIATE` with a busy timeout, so of two concurrent dispatches for one cluster, one fails. The losing command ends `refused` under the rule its recheck failed, and is not retried. Every other statement uses SQL that both backends support, including the partial unique indexes, except the time arithmetic, which each backend supplies.
-- Each row has `stored_at`, set by the database's `CURRENT_TIMESTAMP` at insert. G11's hourly limit counts by `stored_at`, not by a client's `created_at`.
+- Each row has `stored_at`, set by the database's `CURRENT_TIMESTAMP` at insert. G11's hourly limit counts by `stored_at` and ignores a client's `created_at`.
 - Migrations are versioned files in the repository that only add tables, columns, and indexes. The administrator applies them in production, because Aura's role cannot run DDL; tests apply them to SQLite. Aura accepts a stored version, the highest in `schema_versions`, inside the range it supports, so operators on adjacent releases keep working, and refuses one outside it. Within a range, contracts gain only optional fields; a release that adds a required field starts a new range that excludes older clients.
 - The hub ConfigMap `aura-execution-store` in namespace `aura` names the production store's deployment ID and the PipelineRun retention period. G10 compares the ID with the store's `deployment` row.
 - `execution status` signed with `aura-execute` stores one observation per PipelineRun read, and a result record when the highest-ranked phase changes. The last observation stays readable after OpenShift Pipelines prunes the run.
@@ -185,7 +185,7 @@ Rules:
 
 ## Action Subset
 
-E4 compares an action, not the whole proposal. `action_digest` is the SHA-256 of the canonical JSON of these fields:
+E4 compares an action, which is a subset of the proposal. `action_digest` is the SHA-256 of the canonical JSON of these fields:
 
 | Field | Rule |
 | --- | --- |
@@ -338,7 +338,7 @@ The closure plan's [Backlog](10-phase-0-2-closure.md#backlog) rows targeted at P
 | 1.8 | Record the patch-check outcome in the evidence and the CWA trace. Schema change, listed here | G8 prerequisite |
 | 1.9 | A retried failed `oc` read does not spend a second budget call | Security requirement 8 |
 | 1.10 | Size limits for scaffold streams and files | I8 |
-| 1.11 | An `oc` list without `metadata.resourceVersion` is an error, not `unknown` | I8 |
+| 1.11 | An `oc` list without `metadata.resourceVersion` is an error and is never reported as `unknown` | I8 |
 
 ## Stage 2: Identity and Approvals
 
@@ -364,7 +364,7 @@ Requires Stage 2. No external writes; closes E2–E4.
 | 3.4 | G8 regeneration for each proposal type, using the Phase 2 generators and collectors | Per type: unchanged evidence regenerates an equal `action_digest`, and a changed Git or live input is refused; E2 and E4 closed in the [closure plan](10-phase-0-2-closure.md#phase-3-entry-conditions) |
 | 3.5 | `execute`, with the recording adapter injected by tests and `--dry-run` stopping before step 2; failure-matrix rows for every write in [Guard](#guard), including two commands racing through separate store connections for the same proposal, and for two proposals of the same cluster; adopt the I3 change for executions | E3 closed; shared harness proves the invariants for `execute` |
 | 3.6 | Structural test: adapter implementations live in `src/aura/execution/`, only the guard calls their write methods, only they read adapter credentials, and only the execution store module reads the database credential; adopt I10 | The test fails for a call or read from any other module |
-| 3.7 | PostgreSQL backend, adding the driver to the dependencies and `uv.lock`. The store contract tests are part of the full suite and fail, never skip, without a test database URL; CI and `act` provide one through a PostgreSQL service container, and [Development](../development.md) gives the local command. A repository SQL file grants Aura's role exactly the rights in [Credentials](#credentials) | The contract tests pass on both backends; connected as a login in Aura's role, `UPDATE`, `DELETE`, `TRUNCATE`, and DDL fail |
+| 3.7 | PostgreSQL backend, adding the driver to the dependencies and `uv.lock`. The store contract tests are part of the full suite and fail without a test database URL and never skip; CI and `act` provide one through a PostgreSQL service container, and [Development](../development.md) gives the local command. A repository SQL file grants Aura's role exactly the rights in [Credentials](#credentials) | The contract tests pass on both backends; connected as a login in Aura's role, `UPDATE`, `DELETE`, `TRUNCATE`, and DDL fail |
 
 ## Stage 4: Tekton Adapter
 
