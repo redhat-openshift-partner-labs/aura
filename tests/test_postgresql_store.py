@@ -440,3 +440,18 @@ def test_stored_at_is_utc_whatever_the_database_time_zone(database, tmp_path) ->
     (stored_at,) = database["admin"].execute("SELECT stored_at FROM audit_events").fetchone()
     assert abs(stored_at - datetime.now(UTC).replace(tzinfo=None)) < timedelta(minutes=1)
     assert store.dispatches_in_last_hour() == 0
+
+
+def test_the_operator_role_can_insert_into_every_table(database) -> None:
+    from aura.execution.store import TABLES
+
+    missing = [
+        name for name in TABLES
+        if not database["admin"].execute(
+            "SELECT has_any_column_privilege('aura_operator', %s, 'INSERT') "
+            "AND has_table_privilege('aura_operator', %s, 'SELECT')",
+            (name, name),
+        ).fetchone()[0]
+    ]
+
+    assert missing == []

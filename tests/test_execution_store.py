@@ -363,13 +363,18 @@ def every_table_record(tmp_path, monkeypatch) -> dict[str, object]:
     from test_approvals import approval, proposal_records
     from test_execution_records import execution, observation
     from aura.approvals import ApprovalRecord, PublishedProposal
+    from aura.cwa import CWASnapshot, CWATrace
     from aura.execution.records import ExecutionRecord, PipelineRunObservation
+    from aura.proposals import Proposal
 
+    bundle = proposal_records(tmp_path / "run", monkeypatch)
+    (cwa_snapshot,) = (tmp_path / "run" / "cwa" / "snapshots").glob("*.json")
     return {
         **dict(RECORDS),
-        "published_proposals": PublishedProposal.model_validate(
-            proposal_records(tmp_path / "run", monkeypatch)
-        ),
+        "cwa_snapshots": CWASnapshot.model_validate_json(cwa_snapshot.read_text(encoding="utf-8")),
+        "cwa_traces": CWATrace.model_validate(bundle["cwa_trace"]),
+        "regenerated_proposals": Proposal.model_validate(bundle["proposal"]),
+        "published_proposals": PublishedProposal.model_validate(bundle),
         "approvals": ApprovalRecord.model_validate(approval()),
         "executions": ExecutionRecord.model_validate(execution()),
         "pipeline_run_observations": PipelineRunObservation.model_validate(observation()),

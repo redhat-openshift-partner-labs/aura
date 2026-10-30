@@ -33,7 +33,7 @@ from aura.signing import APPROVE, EXECUTE, sign
 from aura.execution.derived import derive_state
 from aura.execution.store import ExecutionStore, StoreError
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from aura.audit_store import (
     AuditEventAlreadyStored,
@@ -2187,19 +2187,28 @@ def regenerate_proposal(
     *,
     clock: Callable[[], datetime],
     collector: EvidenceCollector | None = None,
+    chain: Chain | None = None,
 ) -> Proposal:
-    """Re-collect a proposal's evidence and run its generator again,
-    storing nothing (G8, task 3.4). A generator refusal is a guard
-    refusal; a collection failure fails the command."""
+    """Re-collect a proposal's evidence and run its generator again (G8,
+    task 3.4). With a chain, the regeneration runs under the chain's
+    command and stores the evidence snapshot, the CWA snapshot and trace,
+    and the regenerated proposal, each after its event; without one it
+    stores nothing. A generator refusal is a guard refusal; a collection
+    failure fails the command."""
 
     args = _regeneration_args(proposal, sources)
     service_type = (
         PipelineProposalService if args.proposal_type == _RERUN else ProposalService
     )
     command = CommandEnvelope(
-        command_id=uuid5(proposal.proposal_id, "regeneration"),
+        # Under a chain, the IDs derived from the command are the run's own.
+        command_id=(
+            uuid5(proposal.proposal_id, "regeneration")
+            if chain is None
+            else chain.command.command_id
+        ),
         command_type=service_type.spec.command_type,
-        operator_id="aura-guard",
+        operator_id="aura-guard" if chain is None else chain.command.operator_id,
         created_at=clock(),
         input=_proposal_command_input(args),
         idempotency_key=f"regenerate:{proposal.proposal_id}",
@@ -2209,23 +2218,78 @@ def regenerate_proposal(
     result = service_type(
         collector=_selected_proposal_collector(args, collector)
     ).run(command, roles)
-    event = _audit_event(
-        result.command,
-        event_id=uuid5(command.command_id, AuditEventType.EVIDENCE_COLLECTED.value),
-        event_type=AuditEventType.EVIDENCE_COLLECTED,
-        occurred_at=clock(),
-        data={
-            "snapshot_id": str(result.snapshot.snapshot_id),
-            "snapshot_digest": result.snapshot.snapshot_digest,
+    record = _RegenerationRecorder(chain, result.command, clock)
+    snapshot = result.snapshot
+    event = record.event(
+        AuditEventType.EVIDENCE_COLLECTED,
+        snapshot.snapshot_id,
+        {
+            "snapshot_id": str(snapshot.snapshot_id),
+            "snapshot_digest": snapshot.snapshot_digest,
         },
+        ("evidence_snapshots", snapshot),
     )
     assembly = CWAAssembler().assemble(
         _assembly_request(result, roles, event, "proposal", clock)
     )
-    try:
-        return _generated(_proposal_generator(args), assembly, clock())
-    except ProposalRefused as refusal:
-        raise Refusal(f"proposal refused: {refusal}") from refusal
+    record.event(
+        AuditEventType.CONTEXT_ASSEMBLED,
+        assembly.snapshot.snapshot_id,
+        {
+            "cwa_snapshot_id": str(assembly.snapshot.snapshot_id),
+            "cwa_snapshot_digest": assembly.snapshot.snapshot_digest,
+            "trace_id": str(assembly.trace.trace_id),
+            "evidence_snapshot_id": str(snapshot.snapshot_id),
+            "evidence_snapshot_digest": snapshot.snapshot_digest,
+        },
+        ("cwa_snapshots", assembly.snapshot),
+    )
+    regenerated, refusal, trace = _propose_and_trace(
+        assembly, _proposal_generator(args), clock
+    )
+    record.store("cwa_traces", trace)
+    if regenerated is None:
+        raise Refusal(str(refusal))
+    record.event(
+        AuditEventType.PROPOSAL_CREATED,
+        regenerated.proposal_id,
+        regenerated.model_dump(mode="json", include=_AUDITED_PROPOSAL),
+        ("regenerated_proposals", regenerated),
+    )
+    return regenerated
+
+
+@dataclass(frozen=True)
+class _RegenerationRecorder:
+    """Builds a regeneration's events and, with a chain, stores each
+    event and then its record (I3)."""
+
+    chain: Chain | None
+    command: CommandEnvelope
+    clock: Callable[[], datetime]
+
+    def event(
+        self,
+        event_type: AuditEventType,
+        subject_id: UUID,
+        data: dict[str, object],
+        record: tuple[str, BaseModel],
+    ) -> AuditEvent:
+        if self.chain is None:
+            return _audit_event(
+                self.command,
+                event_id=uuid5(self.command.command_id, f"{event_type.value}:{subject_id}"),
+                event_type=event_type,
+                occurred_at=self.clock(),
+                data=data,
+            )
+        event = self.chain.append(event_type, data, subject_id)
+        self.store(*record)
+        return event
+
+    def store(self, table: str, record: BaseModel) -> None:
+        if self.chain is not None:
+            self.chain.store.insert(table, record)
 
 
 def _regeneration_args(
@@ -2432,7 +2496,7 @@ def _guard_context_factory(
             ),
             git_stale=lambda proposal: staleness.check(proposal, staleness.head()).stale,
             regenerate=lambda proposal: regenerate_proposal(
-                proposal, sources, clock=clock, collector=collector
+                proposal, sources, clock=clock, collector=collector, chain=chain
             ),
             hub_effect=lambda proposal_id: hub_effect(args.openshift_kubeconfig, proposal_id),
             preflight=lambda name: None,

@@ -9,6 +9,9 @@ GRANT USAGE ON SCHEMA public TO aura_operator;
 GRANT SELECT, INSERT ON
     audit_events,
     evidence_snapshots,
+    cwa_snapshots,
+    cwa_traces,
+    regenerated_proposals,
     published_proposals,
     approvals,
     executions,

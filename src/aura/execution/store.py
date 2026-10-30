@@ -24,15 +24,17 @@ from aura.approvals import ApprovalRecord, PublishedProposal
 from aura.canonical import canonical_json
 from aura.config import PostgreSQLStore, SQLiteStore
 from aura.contracts import AuditEvent, CommandEnvelope, EvidenceSnapshot
+from aura.cwa import CWASnapshot, CWATrace
 from aura.json_store import parse_record
 from aura.execution.records import ExecutionRecord, PipelineRunObservation
+from aura.proposals import Proposal
 from aura.signing import APPROVE, EXECUTE, SignatureError, require_not_future, verify
 
 
 R = TypeVar("R", bound=BaseModel)
 # Migrations only add tables, columns, and indexes, so a client accepts
 # every stored version in this range (D13).
-SUPPORTED_SCHEMA_VERSIONS = range(1, 3)
+SUPPORTED_SCHEMA_VERSIONS = range(1, 4)
 BUSY_TIMEOUT_SECONDS = 30
 
 
@@ -158,6 +160,27 @@ TABLES = {
             ("snapshot_id",),
             ("command_id",),
             "snapshot_digest",
+        ),
+        Table(
+            "cwa_snapshots",
+            CWASnapshot,
+            ("snapshot_id",),
+            ("command_id",),
+            "snapshot_digest",
+        ),
+        Table(
+            "cwa_traces",
+            CWATrace,
+            ("trace_id",),
+            ("command_id",),
+            "trace_digest",
+        ),
+        Table(
+            "regenerated_proposals",
+            Proposal,
+            ("proposal_id",),
+            ("cwa_trace_id",),
+            "proposal_digest",
         ),
         Table(
             "published_proposals",

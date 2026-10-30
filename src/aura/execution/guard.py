@@ -59,7 +59,8 @@ class GuardContext:
     enabled_adapters: frozenset[AdapterName]
     adapters: dict[AdapterName, ExecutionAdapter]
     git_stale: Callable[[Proposal], bool]
-    # Re-collects evidence and regenerates the proposal (G8, task 3.4).
+    # Re-collects evidence and regenerates the proposal, storing the
+    # evidence, CWA records, and regenerated proposal (G8, task 3.4).
     regenerate: Callable[[Proposal], Proposal]
     # Whether the hub already holds a PipelineRun for the proposal (G6).
     hub_effect: Callable[[UUID], bool]

@@ -6,7 +6,7 @@ import io
 import json
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid5
 
 import pytest
 
@@ -20,13 +20,31 @@ from test_proposal_submit import open_store, phase2, proposal_id  # noqa: F401
 
 
 EXECUTE_ID = UUID(int=900)
+# G8's regeneration records, each after its event.
+REGENERATION = [
+    "audit_events:evidence_collected",
+    "evidence_snapshots",
+    "audit_events:context_assembled",
+    "cwa_snapshots",
+    "cwa_traces",
+    "audit_events:proposal_created",
+    "regenerated_proposals",
+]
 WRITES = [
     "audit_events:command_received",
+    *REGENERATION,
     "audit_events:execution_started",
     "executions",
     "audit_events:execution_finished",
     "executions",
     "commands",
+]
+DISPATCH = WRITES.index("executions")
+RESULT = len(WRITES) - 2
+REGENERATION_EVENTS = [
+    AuditEventType.EVIDENCE_COLLECTED,
+    AuditEventType.CONTEXT_ASSEMBLED,
+    AuditEventType.PROPOSAL_CREATED,
 ]
 
 
@@ -40,6 +58,19 @@ def executor_config(world, *, adapters: str = '["recording"]') -> None:
         encoding="utf-8",
     )
     return config
+
+
+class PerCommandSnapshots:
+    """Derives each snapshot ID from the command, as the production
+    collectors do, so two runs store distinct snapshots."""
+
+    def __init__(self, collector) -> None:
+        self._collector = collector
+
+    def collect(self, *, command_id: UUID, snapshot_id: UUID | None = None, **options):
+        return self._collector.collect(
+            command_id=command_id, snapshot_id=uuid5(command_id, "evidence"), **options
+        )
 
 
 def execute(world, monkeypatch, *flags: str, key: str = "execute-1", command_id: UUID = EXECUTE_ID):
@@ -56,7 +87,7 @@ def execute(world, monkeypatch, *flags: str, key: str = "execute-1", command_id:
                 "--idempotency-key", key,
                 *flags,
             ],
-            collector=cluster_state_collector(root / "fleet-clusters"),
+            collector=PerCommandSnapshots(cluster_state_collector(root / "fleet-clusters")),
             command_id_factory=lambda: command_id,
             clock=lambda: NOW,
             hub=HubAccess(policy=lambda path: world["hub"], effect=lambda path, pid: False),
@@ -77,7 +108,9 @@ def test_a_dry_run_runs_the_guard_and_dispatches_nothing(world, monkeypatch) -> 
     assert request["proposal_id"] == proposal_id(world["root"])
     store = reader(world)
     assert store.select("executions") == []
-    assert [e.event_type for e in chain(store, EXECUTE_ID)] == [AuditEventType.COMMAND_RECEIVED]
+    assert [e.event_type for e in chain(store, EXECUTE_ID)] == [
+        AuditEventType.COMMAND_RECEIVED, *REGENERATION_EVENTS,
+    ]
 
 
 def test_an_approved_proposal_is_dispatched_once(world, monkeypatch) -> None:
@@ -164,14 +197,14 @@ def test_each_store_write_failure_fails_closed(world, monkeypatch, fail_at) -> N
 
     assert (code, stdout) == (2, "")
     store = reader(world)
-    dispatched = fail_at > 2
+    dispatched = fail_at > DISPATCH
     assert "awaiting_operator" in stderr if dispatched else "awaiting_operator" not in stderr
     dispatches = [r for r in store.select("executions") if r.phase is ExecutionPhase.DISPATCHING]
     assert len(dispatches) == (1 if dispatched else 0)
     results = [r for r in store.select("executions") if r.phase is not ExecutionPhase.DISPATCHING]
     # The result record is stored as soon as it exists.
-    assert len(results) == (1 if fail_at == 5 else 0)
-    if fail_at == 5:
+    assert len(results) == (1 if fail_at > RESULT else 0)
+    if fail_at > RESULT:
         # Only the terminal record failed.
         assert store.select("commands") == []
         return
@@ -243,3 +276,58 @@ def test_a_second_proposal_of_the_same_cluster_is_refused_at_dispatch(world, mon
 
     assert code == 2
     assert "G11" in stderr
+
+
+def test_the_dispatch_rests_on_stored_regeneration_records(world, monkeypatch) -> None:
+    """The stored evidence, CWA snapshot and trace, and regenerated
+    proposal show why G8 cleared the dispatch (Gate 7)."""
+
+    from aura.execution.action import action_digest
+
+    assert execute(world, monkeypatch)[0] == 0
+
+    store = reader(world)
+    (published,) = store.select("published_proposals")
+    (regenerated,) = store.select("regenerated_proposals")
+    (trace,) = store.select("cwa_traces")
+    (cwa,) = store.select("cwa_snapshots")
+    (evidence,) = store.select("evidence_snapshots")
+    assert action_digest(regenerated) == action_digest(published.proposal)
+    assert regenerated.proposal_id != published.proposal_id
+    assert regenerated.cwa_trace_id == trace.trace_id
+    assert trace.response_digest == regenerated.proposal_digest
+    assert (trace.cwa_snapshot_id, trace.cwa_snapshot_digest) == (cwa.snapshot_id, cwa.snapshot_digest)
+    assert (cwa.evidence_snapshot_id, cwa.evidence_snapshot_digest) == (
+        evidence.snapshot_id, evidence.snapshot_digest,
+    )
+    assert {evidence.command_id, cwa.command_id, trace.command_id} == {EXECUTE_ID}
+    events = {e.event_type: e for e in chain(store, EXECUTE_ID)}
+    assert events[AuditEventType.EVIDENCE_COLLECTED].event_id == trace.audit_event_id
+    assert events[AuditEventType.CONTEXT_ASSEMBLED].data["cwa_snapshot_id"] == str(cwa.snapshot_id)
+    assert events[AuditEventType.PROPOSAL_CREATED].data["proposal_digest"] == regenerated.proposal_digest
+
+
+def test_a_regeneration_refusal_stores_its_evidence_and_trace(world, monkeypatch) -> None:
+    import aura.cli as cli
+    from aura.services.proposal import ProposalRefused
+
+    class Refusing:
+        provider_name = "test"
+        generator = "refusing"
+
+        def generate(self, snapshot, **options):
+            raise ProposalRefused(["the cluster changed"])
+
+    monkeypatch.setattr(cli, "_proposal_generator", lambda args: Refusing())
+
+    code, _, stderr = execute(world, monkeypatch)
+
+    assert code == 2
+    assert "G8: regeneration refused: proposal refused: the cluster changed" in stderr
+    store = reader(world)
+    assert len(store.select("evidence_snapshots")) == 1
+    assert len(store.select("cwa_snapshots")) == 1
+    (trace,) = store.select("cwa_traces")
+    assert trace.response_digest is None
+    assert store.select("regenerated_proposals") == []
+    assert store.select("executions") == []
