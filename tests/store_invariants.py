@@ -24,9 +24,8 @@ from aura.execution.store import ExecutionStore, StoreWriteFailed
 ARTIFACT_EVENTS = {
     AuditEventType.PROPOSAL_PUBLISHED: ("published_proposals", "publication_id"),
     AuditEventType.APPROVAL_RECORDED: ("approvals", "approval_id"),
-    # A result record; a dispatching record stands even when the command
-    # fails, so `execution_started` is not listed.
-    AuditEventType.EXECUTION_FINISHED: ("executions", "record_id"),
+    # Execution records are outcomes that stand whatever the command's
+    # terminal state, so they are not listed.
 }
 
 

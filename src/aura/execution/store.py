@@ -127,6 +127,8 @@ class Table:
     # named for the record's command and key, must be stored with the
     # record's `audit_event_digest`.
     anchored_by: tuple[str, ...] = ()
+    # The field that holds when a signed record was made.
+    stamped: str = "created_at"
 
 
 TABLES = {
@@ -187,6 +189,7 @@ TABLES = {
             "observation_digest",
             signed=EXECUTE,
             anchored_by=("execution_observed",),
+            stamped="observed_at",
         ),
     )
 }
@@ -468,7 +471,7 @@ class ExecutionStore:
         try:
             # A record stamped after the database stored it would count
             # past its expiry, so it is refused (D11).
-            require_not_future(record.created_at, now=stored)
+            require_not_future(getattr(record, table.stamped), now=stored)
             verify(
                 record.signed_payload(),
                 record.signature,

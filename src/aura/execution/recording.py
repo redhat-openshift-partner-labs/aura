@@ -13,6 +13,7 @@ class RecordingAdapter:
     requests: list[AdapterRequest] = field(default_factory=list)
     name: AdapterName = AdapterName.RECORDING
     version: str = "0.1.0"
+    target: str = "none"
 
     def write(self, request: AdapterRequest) -> AdapterResult:
         self.requests.append(request)

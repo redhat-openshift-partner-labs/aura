@@ -27,9 +27,9 @@ from aura.execution.derived import (
     required_approvers,
 )
 from aura.execution.records import ExecutionRecord
-from aura.execution.store import ExecutionStore, StoreError
+from aura.execution.store import ExecutionStore, RecordInvalid
 from aura.proposals import GIT_PROPOSAL_TYPES, Proposal
-from aura.signing import EXECUTE, SignatureError, verify
+from aura.signing import EXECUTE, SignatureError, require_not_future, verify
 
 
 DEFAULT_HOURLY_LIMIT = 5
@@ -79,11 +79,12 @@ class Cleared:
 
 
 def check(context: GuardContext, proposal_id: UUID) -> Cleared:
-    # G1 reads the proposal's type, so the publication loads first; a
-    # publication that does not load is a G3 refusal.
+    # G2 runs first, so an unsigned caller learns nothing about the
+    # proposal; G1 reads the proposal's type, so the publication loads
+    # (G3) before it.
+    g2_signed_by_an_executor(context)
     published = g3_published_proposal(context, proposal_id)
     g1_command_type(context, published)
-    g2_signed_by_an_executor(context)
     g4_succeeded_command(published)
     action = action_digest(published.proposal)
     approvals = g5_approvals(context, published.proposal, action)
@@ -100,7 +101,9 @@ def check(context: GuardContext, proposal_id: UUID) -> Cleared:
 def _published_or_refuse(context: GuardContext, proposal_id: UUID) -> PublishedProposal:
     try:
         published = context.store.select("published_proposals", proposal_id=proposal_id)
-    except StoreError as error:
+    except RecordInvalid as error:
+        # A record that fails verification is refused; a store that cannot
+        # be read fails the command (failure-mode matrix).
         raise GuardRefusal("G3", f"published proposal is invalid: {error}") from error
     if not published:
         raise GuardRefusal("G3", f"proposal {proposal_id} is not published")
@@ -152,10 +155,15 @@ def g4_succeeded_command(published: PublishedProposal) -> None:
 def g5_approvals(context: GuardContext, proposal: Proposal, action: str) -> list[ApprovalRecord]:
     try:
         records = context.store.select("approvals", proposal_id=proposal.proposal_id)
-    except StoreError as error:
-        raise GuardRefusal("G5", f"approvals are unreadable: {error}") from error
+    except RecordInvalid as error:
+        raise GuardRefusal("G5", f"an approval is invalid: {error}") from error
     if any(record.decision is ApprovalDecision.REJECTED for record in records):
         raise GuardRefusal("G5", "the proposal is rejected")
+    for record in records:
+        try:
+            require_not_future(record.created_at, now=context.now)
+        except SignatureError as error:
+            raise GuardRefusal("G5", f"approval {record.approval_id}: {error}") from error
     counting = [
         record
         for record in records
@@ -179,8 +187,8 @@ def g5_approvals(context: GuardContext, proposal: Proposal, action: str) -> list
 def _executions(context: GuardContext, **equal: object) -> list[ExecutionRecord]:
     try:
         return context.store.select("executions", **equal)
-    except StoreError as error:
-        raise GuardRefusal("G6", f"executions are unreadable: {error}") from error
+    except RecordInvalid as error:
+        raise GuardRefusal("G6", f"an execution record is invalid: {error}") from error
 
 
 def g6_one_execution(
@@ -239,6 +247,14 @@ def g10_adapter(context: GuardContext, proposal: Proposal) -> ExecutionAdapter:
     adapter = context.adapters.get(name)
     if adapter is None:
         raise GuardRefusal("G10", f"adapter {name.value} is not available")
+    if "eventlistener" in getattr(adapter, "target", "").lower():
+        raise GuardRefusal("G10", f"adapter {name.value} targets the EventListener")
+    if name is AdapterName.RECORDING and context.backend != "sqlite":
+        # It writes nothing outside Aura, so on a shared store it would
+        # consume the proposal with no effect.
+        raise GuardRefusal(
+            "G10", "the recording adapter is for development and tests, on SQLite only"
+        )
     if name is not AdapterName.RECORDING and (
         context.backend != "postgresql"
         or context.deployment_id != str(context.policy.deployment_id)

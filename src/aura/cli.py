@@ -1290,6 +1290,11 @@ def _proposal_deriver(
                 if published
                 else []
             )
+            executions = (
+                store().select("executions", proposal_id=proposal.proposal_id)
+                if published
+                else []
+            )
         except StoreError as error:
             raise ProposalRecordUnreadable(
                 f"cannot read the derived state: {error}"
@@ -1300,6 +1305,7 @@ def _proposal_deriver(
             git_stale=stale,
             published=published,
             now=args.clock(),
+            executions=executions,
         )
         return published, state.value
 
@@ -2362,7 +2368,11 @@ def run_execute(
     if isinstance(store, str):
         print(f"aura: {store}", file=sys.stderr)
         return 2
-    published = store.select("published_proposals", proposal_id=args.proposal_id)
+    try:
+        published = store.select("published_proposals", proposal_id=args.proposal_id)
+    except StoreError as error:
+        print(f"aura: {error}", file=sys.stderr)
+        return 2
     pipeline = bool(published) and published[0].proposal.proposal_type is ProposalType.POST_PROVISION_RERUN
     args.operator = config.signing.principal
     command = _make_command(

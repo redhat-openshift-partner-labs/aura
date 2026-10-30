@@ -168,10 +168,78 @@ def test_each_store_write_failure_fails_closed(world, monkeypatch, fail_at) -> N
     assert "awaiting_operator" in stderr if dispatched else "awaiting_operator" not in stderr
     dispatches = [r for r in store.select("executions") if r.phase is ExecutionPhase.DISPATCHING]
     assert len(dispatches) == (1 if dispatched else 0)
-    assert [r for r in store.select("executions") if r.phase is not ExecutionPhase.DISPATCHING] == []
-    if WRITES[fail_at] in {"executions", "commands"} and fail_at >= 4:
-        # The result and the terminal record fail together.
+    results = [r for r in store.select("executions") if r.phase is not ExecutionPhase.DISPATCHING]
+    # The result record is stored as soon as it exists.
+    assert len(results) == (1 if fail_at == 5 else 0)
+    if fail_at == 5:
+        # Only the terminal record failed.
         assert store.select("commands") == []
         return
     (record,) = store.select("commands")
     assert record.status is CommandState.FAILED
+
+
+def test_a_failed_adapter_call_fails_the_command_and_records_the_failure(world, monkeypatch) -> None:
+    from aura.adapters import AdapterResult
+    from aura.execution.recording import RecordingAdapter
+
+    def refused_write(self, request):
+        return AdapterResult(
+            request_id=request.request_id, execution_id=request.execution_id,
+            adapter=request.adapter, success=False, error="create refused",
+        )
+
+    monkeypatch.setattr(RecordingAdapter, "write", refused_write)
+
+    code, stdout, stderr = execute(world, monkeypatch)
+
+    assert (code, stdout) == (2, "")
+    assert "create refused" in stderr
+    store = reader(world)
+    phases = sorted(r.phase.value for r in store.select("executions"))
+    assert phases == ["dispatching", "failed"]
+    (record,) = store.select("commands")
+    assert record.status is CommandState.FAILED
+
+
+def test_an_unknown_dispatch_outcome_awaits_the_operator(world, monkeypatch) -> None:
+    from aura.execution.store import ExecutionStore, StoreOutcomeUnknown
+
+    def unknown(self, table, record, check):
+        raise StoreOutcomeUnknown("executions write outcome unknown")
+
+    monkeypatch.setattr(ExecutionStore, "exclusive", unknown)
+
+    code, _, stderr = execute(world, monkeypatch)
+
+    assert code == 2
+    assert "awaiting_operator: run `aura execution status`" in stderr
+
+
+def test_a_tampered_publication_is_reported_without_a_traceback(world, monkeypatch) -> None:
+    import sqlite3
+
+    connection = sqlite3.connect(world["database"], isolation_level=None)
+    connection.execute("UPDATE published_proposals SET digest = ?", ("0" * 64,))
+    connection.close()
+
+    code, stdout, stderr = execute(world, monkeypatch)
+
+    assert (code, stdout) == (2, "")
+    assert stderr.startswith("aura: ")
+
+
+def test_a_second_proposal_of_the_same_cluster_is_refused_at_dispatch(world, monkeypatch) -> None:
+    """The guard's G11 runs first; with it removed, the transaction's
+    recheck still refuses a second open execution for the cluster."""
+
+    import aura.execution.guard as guard
+    from test_guard import store_dispatch
+
+    store_dispatch(world, proposal=UUID(int=4242))
+    monkeypatch.setattr(guard, "g11_cluster_and_rate", lambda *args: None)
+
+    code, _, stderr = execute(world, monkeypatch)
+
+    assert code == 2
+    assert "G11" in stderr

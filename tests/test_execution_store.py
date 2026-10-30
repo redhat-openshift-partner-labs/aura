@@ -689,3 +689,34 @@ def test_dispatches_in_the_past_hour_count_by_the_database_clock(tmp_path, execu
     assert store.dispatches_in_last_hour() == 1
     raw(tmp_path).execute("UPDATE executions SET stored_at = datetime('now', '-61 minutes')")
     assert store.dispatches_in_last_hour() == 0
+
+
+def test_a_signed_observation_loads(tmp_path, executor_key) -> None:
+    from aura.contracts import AuditEventType
+    from aura.execution.records import PipelineRunObservation
+    from aura.signing import EXECUTE, sign
+    from test_approvals import SIGNATURE
+    from test_execution_records import observation
+
+    fields = observation()
+    event = AuditEvent.model_validate(
+        {
+            "event_id": str(uuid5(UUID(fields["command_id"]), f"execution_observed:{fields['observation_id']}")),
+            "command_id": fields["command_id"],
+            "event_type": AuditEventType.EXECUTION_OBSERVED,
+            "occurred_at": fields["observed_at"],
+            "actor": fields["principal"],
+            "data": {"observation_id": fields["observation_id"]},
+        }
+    )
+    fields["audit_event_digest"] = event.event_digest
+    draft = PipelineRunObservation.model_validate({**fields, "signature": SIGNATURE})
+    signature = sign(draft.signed_payload(), key=executor_key, namespace=EXECUTE)
+    record = PipelineRunObservation.model_validate({**fields, "signature": signature})
+    store = open_store(tmp_path)
+    store.insert("audit_events", event)
+    store.insert("pipeline_run_observations", record)
+
+    reader = open_store(tmp_path).with_signers(executor_signers(executor_key))
+
+    assert reader.select("pipeline_run_observations") == [record]

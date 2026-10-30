@@ -136,3 +136,20 @@ def test_a_hub_read_failure_fails_the_command(tmp_path, monkeypatch, phase2) -> 
 
     assert (code, stdout) == (2, "")
     assert "aura-allowed-signers not found" in stderr
+
+
+def test_the_state_follows_an_execution(tmp_path, monkeypatch, phase2, keys) -> None:
+    from test_execute import execute as run_execute, executor_config  # noqa: F401
+    from test_guard import store_dispatch
+
+    database = use_store(tmp_path, monkeypatch, login="proposer-a")
+    assert submit(phase2)[0] == 0
+    world = {"database": database, "root": phase2, "keys": {"executor": key(tmp_path, "executor")},
+             "hub": policy(signers(*keys)), "tmp": tmp_path}
+    world["hub"] = policy(signers(*keys) + listed("executor@example.com", world["keys"]["executor"], "aura-execute"))
+    store_dispatch(world, proposal=UUID(proposal_id(phase2)))
+
+    code, stdout, stderr = status(phase2, hub=world["hub"])
+
+    assert code == 0, stderr
+    assert item(stdout)["derived_state"] == "awaiting_operator"

@@ -211,7 +211,7 @@ def _lost_race(chain: Chain, command: CommandEnvelope, conflict: RecordConflict)
             )
         except StoreError as error:
             print(f"aura: {error}", file=sys.stderr)
-    print(f"aura: {reason}", file=sys.stderr)
+    print(f"aura: {reason}{chain.recovery}", file=sys.stderr)
     return 2
 
 

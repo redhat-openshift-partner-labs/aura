@@ -338,3 +338,46 @@ def test_g12_a_failed_preflight_is_refused(world) -> None:
     assert "cannot create PipelineRuns" in refused(
         "G12", world, preflight=lambda adapter: "cannot create PipelineRuns"
     )
+
+
+def test_g2_runs_before_the_publication_is_read(world) -> None:
+    """An unsigned caller learns nothing about whether a proposal exists."""
+
+    approver_key = world["keys"]["first"]
+    with pytest.raises(GuardRefusal) as refusal:
+        check(
+            context(world, sign=lambda payload: sign(payload, key=approver_key, namespace=EXECUTE)),
+            UUID(int=1),
+        )
+
+    assert refusal.value.rule == "G2"
+
+
+def test_g5_an_approval_stamped_after_the_guard_clock_is_refused(world) -> None:
+    # The approvals were stamped 12:00; a guard clock before 11:55 sees them
+    # as more than five minutes in the future.
+    refused("G5", world, now=datetime(2026, 10, 30, 11, 54, tzinfo=UTC))
+
+
+def test_a_store_read_failure_fails_and_is_not_a_refusal(world) -> None:
+    from aura.execution.store import StoreReadFailed
+
+    class Unreadable(Publishing):
+        def select(self, table, **equal):
+            if table == "executions":
+                raise StoreReadFailed("executions read failed: no such table")
+            return super().select(table, **equal)
+
+    store = context(world).store
+    published = store.select("published_proposals")[0]
+
+    with pytest.raises(StoreReadFailed):
+        check(context(world, store=Unreadable(store, published)), pid(world))
+
+
+def test_g10_recording_is_refused_on_postgresql(world) -> None:
+    assert "development" in refused("G10", world, backend="postgresql")
+
+
+def test_g10_an_adapter_that_targets_the_eventlistener_is_refused(world) -> None:
+    refused("G10", world, adapters={AdapterName.RECORDING: RecordingAdapter(target="eventlistener")})

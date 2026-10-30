@@ -74,6 +74,11 @@ class ExecutionAdapter(Protocol):
     @property
     def version(self) -> str: ...
 
+    # What the adapter writes to, such as the Kubernetes API or a Git fork;
+    # the guard refuses one that targets the fleet EventListener (G10).
+    @property
+    def target(self) -> str: ...
+
     def write(self, request: AdapterRequest) -> AdapterResult: ...
 
 

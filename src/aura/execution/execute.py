@@ -20,13 +20,14 @@ from aura.execution.commands import Chain, CommandFailure
 from aura.execution.guard import (
     Cleared,
     GuardContext,
+    GuardRefusal,
     check,
     g5_approvals,
     g6_one_execution,
     g11_cluster_and_rate,
 )
 from aura.execution.records import ExecutionPhase, ExecutionRecord
-from aura.execution.store import StoreError, StoreOutcomeUnknown
+from aura.execution.store import RecordConflict, StoreError, StoreOutcomeUnknown
 from aura.signing import EXECUTE, SignatureError, verify
 
 _RECOVERY = (
@@ -76,6 +77,10 @@ def execute_step(
                 f"({type(error).__name__})"
             ) from error
         record = _record(chain, context, cleared, request, result)
+        if not result.success:
+            raise CommandFailure(
+                f"adapter {request.adapter.value} failed: {result.error}"
+            )
         return record.model_dump_json(indent=2)
 
     return step
@@ -119,6 +124,9 @@ def _dispatch(
 
     try:
         chain.store.exclusive("executions", dispatching, recheck)
+    except RecordConflict as error:
+        # Another dispatch of the proposal or its cluster committed first.
+        raise GuardRefusal("G6", f"a concurrent dispatch committed first: {error}") from error
     except StoreOutcomeUnknown as error:
         chain.recovery = _RECOVERY
         raise AwaitingOperator(str(error)) from error
@@ -158,8 +166,9 @@ def _record(
         failure_reason=None if result.success else result.error,
     )
     chain.store_event(event)
-    # Stored with the terminal command record (I3).
-    chain.store_artifact("executions", record)
+    # An outcome, not an actionable artifact: stored at once, so it stands
+    # whatever happens to the terminal record.
+    chain.store.insert("executions", record)
     return record
 
 
