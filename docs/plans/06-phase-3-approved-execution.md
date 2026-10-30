@@ -25,7 +25,7 @@ The closure plan's [rules](10-phase-0-2-closure.md#rules) R2–R6 apply, reading
 
 ## Operator Decisions
 
-Recorded on 2026-10-27: the operator accepted every recommendation, so each row's Recommendation is its decision. D13 was added the same day, when the operator stated that Aura will have a database. On 2026-10-29 the operator confirmed the plan edits listed in the [Stage 1 Record](#stage-1-record). A stage that depends on a prerequisite a decision names, such as the staging hub, a credential, or a database, does not start until the operator provides it. IDs continue from the closure plan's D1–D6.
+Recorded on 2026-10-27: the operator accepted every recommendation, so each row's Recommendation is its decision. D13 was added the same day, when the operator stated that Aura will have a database. On 2026-10-29 the operator confirmed the plan edits listed in the [Stage 1 Record](#stage-1-record). On 2026-10-30 the operator moved task 3.2 into Stage 2, ahead of task 2.4, because an approval signs the proposal's `action_digest`. A stage that depends on a prerequisite a decision names, such as the staging hub, a credential, or a database, does not start until the operator provides it. IDs continue from the closure plan's D1–D6.
 
 | ID | Question | Options | Recommendation | Blocks |
 | --- | --- | --- | --- | --- |
@@ -342,7 +342,7 @@ The closure plan's [Backlog](10-phase-0-2-closure.md#backlog) rows targeted at P
 
 ## Stage 2: Identity and Approvals
 
-Requires D7, D11, and D13. No external writes.
+Requires D7, D11, and D13. No external writes. Task 3.2 runs in this stage, after task 2.3 and before task 2.4, because `proposal approve` signs `action_digest`.
 
 | Task | Work | Done when |
 | --- | --- | --- |
@@ -354,7 +354,7 @@ Requires D7, D11, and D13. No external writes.
 
 ## Stage 3: Guard and Dry Run
 
-Requires Stage 2. No external writes; closes E2–E4.
+Requires Stage 2. No external writes; closes E2–E4. Task 3.2 is done in Stage 2.
 
 | Task | Work | Done when |
 | --- | --- | --- |
@@ -433,7 +433,7 @@ Requires D8, and D10 and D12 under D8 (b). Live runs need task 0.3's staging sto
 | 0 | 0.2 Apply decisions and approval | Done | `a6e7554`, `fe3fc8b`, `a61a08c` |
 | 0 | 0.3 Stage 4 prerequisites | Pending | |
 | 1 | 1.1–1.11 Hardening | Done; the operator confirmed its plan edits on 2026-10-29, see [Stage 1 Record](#stage-1-record) | `7e2fca9`, `9beb53d`, `4889513`, `b989aff`, `d88ab1c`, `3689b4c`, `ab480a9`, `71d82cc`, `8dc07a5`, `c74d7d3`; review fixes `1de5003`, `2171460`, `3c3e054` |
-| 2 | 2.1–2.5 Identity and approvals | Pending | |
+| 2 | 2.1–2.5 and 3.2 Identity and approvals | In progress | `b8e223b`, `29ecb84`, `186062d`, `cba8acd` |
 | 3 | 3.1–3.7 Guard and dry run | Pending | |
 | 4 | 4.1–4.4 Tekton adapter | Pending | |
 | 5 | 5.1–5.4 Git execution | Pending | |
