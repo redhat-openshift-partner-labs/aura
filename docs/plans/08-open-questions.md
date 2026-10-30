@@ -145,6 +145,8 @@ Needed decisions:
 
 Default: separate read-only and execution ServiceAccounts.
 
+Status: questions 1–4 are decided. Aura runs in namespace `aura`; ServiceAccount `aura-readonly` reads inventory with the rights in `deploy/` (Phase 0); ServiceAccount `aura-executor` starts Tekton runs (D10 in the [Phase 3 plan](06-phase-3-approved-execution.md#operator-decisions)). Question 5 is open: Aura fetches no logs.
+
 ## Legacy System
 
 ### Should Aura eventually consume the legacy queue or worker state?

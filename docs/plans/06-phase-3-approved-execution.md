@@ -2,7 +2,7 @@
 
 ## Status
 
-Revised 2026-10-27; replaces the draft aligned on 2026-10-20. The [Operator Decisions](#operator-decisions) D7–D13 were recorded on 2026-10-27, and the operator approved the plan as of `a61a08c` the same day; Stage 1 is next. Phases 0–2 were signed off on 2026-10-26. Stage 3 closes the [Phase 3 Entry Conditions](10-phase-0-2-closure.md#phase-3-entry-conditions) E2–E4 before any adapter writes to an external system. E1 stays bound to connecting an external model, which this plan does not do.
+Revised 2026-10-27; replaces the draft aligned on 2026-10-20. The [Operator Decisions](#operator-decisions) D7–D13 were recorded on 2026-10-27, and the operator approved the plan as of `a61a08c` the same day. Stages 1–3 are done; [Progress](#progress) lists each stage's state. Phases 0–2 were signed off on 2026-10-26. Stage 3 closes the [Phase 3 Entry Conditions](10-phase-0-2-closure.md#phase-3-entry-conditions) E2–E4 before any adapter writes to an external system. E1 stays bound to connecting an external model, which this plan does not do.
 
 ## Objective
 
@@ -368,7 +368,7 @@ Requires Stage 2. No external writes; closes E2–E4. Task 3.2 is done in Stage 
 
 ## Stage 4: Tekton Adapter
 
-Requires D9 and D10. Tests inject the store check in G10 with the local signer list; the CLI has no option for either.
+D9 and D10 are decided. Tasks 4.1–4.3 run against fakes; task 4.4 needs task 0.3's staging hub, `aura-executor`, and staging store. Tests inject the store check in G10 with the local signer list; the CLI has no option for either.
 
 | Task | Work | Done when |
 | --- | --- | --- |
@@ -379,7 +379,7 @@ Requires D9 and D10. Tests inject the store check in G10 with the local signer l
 
 ## Stage 5: Git Execution
 
-Requires D8, and D10 and D12 under D8 (b). Live runs need task 0.3's staging store.
+D8 is decided as (a), the hand-off, so tasks 5.1 and 5.3 run under (a). Tasks 5.2 and 5.4, D10's bot token, and D12 apply only if the operator adopts (b) later. Task 5.3 needs task 0.3's staging store.
 
 | Task | Work | Done when |
 | --- | --- | --- |
