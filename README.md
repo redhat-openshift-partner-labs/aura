@@ -2,14 +2,15 @@
 
 # Aura
 
-**A read-only control plane that tells OpenShift Partner Labs operators what is true, why, and what to do next.**
+Aura is a command-line control plane for OpenShift Partner Labs operators: it reads `fleet-clusters` Git, the OpenShift hub, and Tekton, explains each cluster's state, and stores reviewable change proposals.
 
 [![CI](https://github.com/redhat-openshift-partner-labs/aura/actions/workflows/ci.yml/badge.svg)](https://github.com/redhat-openshift-partner-labs/aura/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)
 ![Access: read-only](https://img.shields.io/badge/access-read--only-2ea44f)
 ![Phase 1 shipped](https://img.shields.io/badge/phase%201-shipped-2ea44f)
-![Phase 2 in progress](https://img.shields.io/badge/phase%202-in%20progress-dbab09)
+![Phase 2 closed](https://img.shields.io/badge/phase%202-closed-2ea44f)
+![Phase 3 in progress](https://img.shields.io/badge/phase%203-in%20progress-dbab09)
 
 [Quickstart](#quickstart) ·
 [Install](#install-for-live-clusters) ·
@@ -26,9 +27,9 @@
 
 ## Why Aura?
 
-A Partner Labs cluster lives in three places at once: its **desired state** in `fleet-clusters` Git, its **actual state** on the OpenShift hub, and its **workflow history** in Tekton. When those disagree, someone has to open three tools, line up the clues by hand, and hope nothing changed while they looked.
+A Partner Labs cluster has its **desired state** in `fleet-clusters` Git, its **actual state** on the OpenShift hub, and its **workflow history** in Tekton. When they disagree, an operator has to compare the three sources by hand while any of them may change.
 
-Aura does that legwork for you. It reads all three sources, freezes what it saw into a digest-stamped [evidence snapshot](docs/evidence.md#evidence-snapshot), correlates everything by cluster name, and explains the result as typed JSON. Think of it as a **flight recorder with a detective attached**: it never touches the controls, but it remembers exactly what every instrument said and can tell you why the plane drifted.
+Aura reads all three sources, freezes what it read into a digest-stamped [evidence snapshot](docs/evidence.md#evidence-snapshot), correlates everything by cluster name, and reports the result as typed JSON.
 
 Aura is a **sidecar**. Git, OpenShift, Tekton, ACM/Hive, RabbitMQ, and Portal stay authoritative; Aura [never writes to any of them](docs/architecture.md#read-only-boundary).
 
@@ -36,7 +37,7 @@ Aura is a **sidecar**. Git, OpenShift, Tekton, ACM/Hive, RabbitMQ, and Portal st
 | --- | --- |
 | 🔭 **See** | [Cluster inventory](docs/cli.md#inventory-list) and [workflow views](docs/cli.md#workflow-inspect) that flag real [drift](docs/evidence.md#cluster-inventory-fields), incomplete definitions, and stranded deprovisions |
 | 🧭 **Explain** | A deterministic [diagnosis](docs/cli.md#diagnose-state) of one cluster, citing the evidence behind every claim, or an explicit [refusal](docs/architecture.md#refusal) when evidence is missing |
-| 📝 **Propose** | Reviewable [proposals](docs/evidence.md#proposal) for deprovisions, `metadata.yaml` backfills, and post-provision reruns, stored for a human and never applied |
+| 📝 **Propose** | Reviewable [proposals](docs/evidence.md#proposal) for new-cluster scaffolds, deprovisions, `metadata.yaml` backfills, and post-provision reruns, stored for a human and never applied |
 | 🧾 **Prove** | Append-only records and a linear [audit chain](docs/wiring.md#audit-chain) that link every answer back to the exact evidence it came from |
 
 ---
@@ -63,7 +64,7 @@ Each stage persists [append-only JSON records](docs/wiring.md#record-wiring): at
 
 ## Quickstart
 
-Five minutes, no cluster required. You need [Python 3.12+](https://www.python.org/downloads/), [`uv`](https://docs.astral.sh/uv/), and `git`. Steps 1 and 2 work for anyone. Steps 3 and 4 also need a local checkout of `redhat-openshift-partner-labs/fleet-clusters` next to this repository; that repository is private, so without access, stop after step 2.
+No cluster is required. You need [Python 3.12+](https://www.python.org/downloads/), [`uv`](https://docs.astral.sh/uv/), and `git`. Steps 1 and 2 work for anyone. Steps 3 and 4 also need a local checkout of `redhat-openshift-partner-labs/fleet-clusters` next to this repository; that repository is private, so without access, stop after step 2.
 
 **1. Clone and install**
 
@@ -94,7 +95,7 @@ uv run --no-sync aura inventory list \
 
 You get JSON on standard output: one evidence item per cluster definition and deprovision sentinel. See [Git inventory](docs/cli.md#git-inventory) for the item kinds.
 
-**4. Run the exact same command again.** It exits `2` with `aura: idempotency key already succeeded` and reads nothing. That is [idempotency](#idempotency-explained) doing its job. Use `quickstart-002` to run it again for real.
+**4. Run the exact same command again.** It exits `2` with `aura: idempotency key already succeeded` and reads nothing; see [Idempotency](#idempotency-explained). Use `quickstart-002` to run it again.
 
 > [!TIP]
 > `./local/` is ignored by Git, which makes it a safe home for your records. Commands in [`docs/`](docs) prefix `uv` with `UV_CACHE_DIR=/private/tmp/aura-uv-cache` to use a scratch cache; it is optional when you run Aura yourself.
@@ -103,7 +104,7 @@ You get JSON on standard output: one evidence item per cluster definition and de
 
 ## Install for live clusters
 
-Reading OpenShift and Tekton needs a little more setup. You only do this once per hub.
+Reading OpenShift and Tekton needs this setup, once per hub.
 
 ### Prerequisites
 
@@ -211,8 +212,8 @@ Every command takes `--operator`, `--idempotency-key`, and `--command-dir`, and 
 | Code | Meaning |
 | --- | --- |
 | `0` | Success, including a proposal that is merely stale |
-| `2` | Argument error, unauthorized role, refusal, failed write, duplicate record, or reused idempotency key |
-| Other non-zero | Unhandled collector or process failure; expected failures exit `2`, so treat this as a bug ([invariant I7](docs/development.md#project-invariants)) |
+| `2` | Argument error, unauthorized role, refusal, failed write, duplicate record, reused idempotency key, or an error a command does not handle, reported as `internal error` or `filesystem error` |
+| Other non-zero | An error raised before the idempotency check that Aura does not handle; this is a bug ([invariant I7](docs/development.md#project-invariants)) |
 
 A refusal still stores its evidence, CWA, and audit records, so you can see exactly what was missing. See [Output and Exit Codes](docs/cli.md#output-and-exit-codes).
 
@@ -220,7 +221,7 @@ A refusal still stores its evidence, CWA, and audit records, so you can see exac
 
 ## Idempotency, explained
 
-An idempotency key works like a **check number**: each one can be cashed once. If you present the same check twice, the bank tells you it was already cashed instead of paying again. Aura does the same with commands, so a retry, a double-pasted command, or two terminals racing never collect evidence twice.
+An idempotency key identifies one request. Aura stores one terminal record per key, so a retry, a repeated command, or two concurrent runs with the same key collect evidence at most once.
 
 <p align="center">
   <img src="docs/assets/aura-idempotency.svg" alt="Idempotency gate: a command with key K locks --command-dir. With no record for K it runs once and stores one terminal record: succeeded, failed, or refused. A record for the same request exits 2 before any read. A record for a different request exits 2 because the key belongs to that request." width="100%">
@@ -240,19 +241,17 @@ An idempotency key works like a **check number**: each one can be cashed once. I
 
 ## Safety model
 
-Aura is built so the safe thing is the only thing it can do.
-
-- **Read-only by construction.** Collectors only list resources and read committed Git. Writes to Git, Kubernetes, pipelines, Portal, and RabbitMQ are out of scope for Phases 1 and 2 ([invariant I5](docs/development.md#project-invariants)).
-- **Least privilege.** The [`deploy/`](deploy) manifests grant `list` only, and [`tests/test_deploy_manifests.py`](tests/test_deploy_manifests.py) fails the suite if a collector reads a resource they do not grant.
-- **No secrets at rest.** Secret-named fields are [redacted](docs/security.md#secret-redaction) across case and separator spellings before anything is stored.
-- **Refuse instead of guess.** Missing, incomplete, invalid, or conflicting evidence produces a structured [refusal](docs/architecture.md#refusal), not a confident wrong answer.
+- **Read-only.** Collectors only list resources and read committed Git. Aura writes nothing to Git, Kubernetes, pipelines, Portal, or RabbitMQ ([invariant I5](docs/development.md#project-invariants)). Phase 3 plans guarded execution of approved proposals; no adapter that writes exists yet.
+- **Least privilege.** The [`deploy/`](deploy) manifests grant `list` only, and [`tests/test_deploy_manifests.py`](tests/test_deploy_manifests.py) fails the suite if a collector reads a resource they do not grant. The staging PostgreSQL for Phase 3 is a separate kustomization in [`deploy/postgresql/`](deploy/postgresql); see [Staging Database](docs/security.md#staging-database).
+- **No secrets at rest.** Secret-named fields are [redacted](docs/security.md#secret-redaction) across case and separator spellings before anything is stored, and an unhandled error stores only its type.
+- **Refusal on missing evidence.** Missing, incomplete, invalid, or conflicting evidence produces a structured [refusal](docs/architecture.md#refusal).
 - **Proposals are drafts.** Aura stores proposals and never applies, commits, or pushes them. A human reviews and merges.
 - **No external model.** Diagnosis is deterministic and local; cluster evidence never leaves your machine. See [Model Boundary](docs/security.md#model-boundary).
 
 > [!WARNING]
 > Never modify the protected repositories `fleet`, `fleet-cluster-scaffold`, `fleet-clusters`, or `portal` from this project. Aura reads `fleet-clusters` and OpenShift only.
 
-**Out of scope, by design:** applying patches, creating commits or pull requests, running pipelines, deprovisioning, writing Portal data, replacing RabbitMQ, autonomous execution, and running as a long-lived service or web UI.
+**Not implemented:** applying patches, creating commits or pull requests, running pipelines, and deprovisioning, which Phase 3 adds only after explicit approval. **Out of scope:** writing Portal data, replacing RabbitMQ, autonomous execution, and running as a long-lived service or web UI.
 
 ---
 
@@ -261,8 +260,8 @@ Aura is built so the safe thing is the only thing it can do.
 | Phase | Scope | State |
 | --- | --- | --- |
 | [Phase 1](docs/plans/04-phase-1-read-only-assistant.md) | Read-only inventory, workflow inspection, and diagnosis | ✅ Shipped and validated |
-| [Phase 2](docs/plans/05-phase-2-proposals.md) | Deterministic proposals, never applied | 🚧 Deprovision, cluster-edit, and rerun proposals done; scaffold proposals next |
-| [Phase 3](docs/plans/06-phase-3-approved-execution.md) | Guarded execution after explicit human approval | 📝 Approved, Stage 1 next |
+| [Phase 2](docs/plans/05-phase-2-proposals.md) | Deterministic proposals, never applied | ✅ Closed: scaffold, deprovision, cluster-edit, and rerun proposals validated; signed off 2026-10-26 |
+| [Phase 3](docs/plans/06-phase-3-approved-execution.md) | Guarded execution after explicit human approval | 🚧 Stage 1 hardening done; Stage 2, identity and approvals, next |
 
 Current numbers, validation runs, and remaining gaps live in [Implementation Status](docs/status.md).
 
@@ -270,11 +269,11 @@ Current numbers, validation runs, and remaining gaps live in [Implementation Sta
 
 ## Contributing
 
-You are welcome here. Whether you fix a typo, sharpen an error message, or add a collector, contributions make Aura better for every operator. **You do not need cluster access to contribute:** the test suite runs entirely on fakes and temporary Git trees.
+You do not need cluster access to contribute: the test suite runs on fakes and temporary Git trees.
 
 ### The workflow
 
-Aura holds a high bar because operators trust its answers. The [Development Workflow](docs/development.md) explains why each step exists; in short:
+The [Development Workflow](docs/development.md) explains why each step exists; in short:
 
 1. **Read the spec** in [`docs/plans/`](docs/plans) and the contract docs. If behavior is unspecified, ask.
 2. **Write a test plan first**, covering behavior, contract negatives, [failure modes](docs/development.md#failure-mode-matrix), [invariants](docs/development.md#project-invariants), and [input edges](docs/development.md#input-edge-checklist).
@@ -319,7 +318,7 @@ The full list of seams is in [Extension Points](docs/wiring.md#extension-points)
 | | Document | Read it when you want to… |
 | --- | --- | --- |
 | **Use** | [CLI Reference](docs/cli.md) | Look up a flag, default, or exit code |
-| | [Security and Access](docs/security.md) | Set up RBAC, the kubeconfig, and redaction |
+| | [Security and Access](docs/security.md) | Set up RBAC, the kubeconfig, redaction, and the staging database |
 | | [Validation](docs/validation.md) | Run fixture or live validation and compare results |
 | **Understand** | [Architecture](docs/architecture.md) | See the boundaries, layers, and failure model |
 | | [Wiring](docs/wiring.md) | Trace a command through services, collectors, and stores |
@@ -343,9 +342,13 @@ aura/
 │   ├── cwa.py            # CWA snapshot and trace contracts
 │   ├── diagnosis.py      # diagnosis response and record contracts
 │   ├── proposals.py      # proposal contract
+│   ├── provenance.py     # loads a proposal or diagnosis with the records it references
+│   ├── process.py        # the only module that starts external programs
+│   ├── json_store.py     # the only module that parses stored records
 │   └── *_store.py        # append-only JSON stores
 ├── tests/                # contract, collector, service, CLI, and fixture tests
 ├── deploy/               # list-only OpenShift RBAC, applied with oc apply -k deploy
+│   └── postgresql/       # staging PostgreSQL for Phase 3, applied separately
 ├── docs/                 # user, design, and contributor documentation
 │   └── assets/           # README diagrams (SVG)
 └── LICENSE               # Apache License 2.0
@@ -359,6 +362,6 @@ Aura is licensed under the [Apache License 2.0](LICENSE). By contributing, you a
 
 <div align="center">
 
-**Questions, ideas, or a bug?** [Open an issue](https://github.com/redhat-openshift-partner-labs/aura/issues). Every report makes Aura's answers more trustworthy.
+To report a bug or ask a question, [open an issue](https://github.com/redhat-openshift-partner-labs/aura/issues).
 
 </div>

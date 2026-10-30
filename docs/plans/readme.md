@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 1 is implemented, validated, and published. The [Phase 2](05-phase-2-proposals.md) plan is approved; all four proposal types are implemented and validated against the live hub, and [Phase 2 Acceptance](09-phase-2-acceptance.md) grades every criterion met or met with caveat. Phases 0–2 are closed: the operator signed them off on 2026-10-26 under the [Phases 0–2 Closure](10-phase-0-2-closure.md#closure-grades) plan, accepting every caveat. [Phase 3](06-phase-3-approved-execution.md) was revised on 2026-10-27 into staged tasks; its operator decisions D7–D13 are recorded, the operator approved it on 2026-10-27, and it is bound by the [Phase 3 Entry Conditions](10-phase-0-2-closure.md#phase-3-entry-conditions).
+Phase 1 is implemented, validated, and published. The [Phase 2](05-phase-2-proposals.md) plan is approved; all four proposal types are implemented and validated against the live hub, and [Phase 2 Acceptance](09-phase-2-acceptance.md) grades every criterion met or met with caveat. Phases 0–2 are closed: the operator signed them off on 2026-10-26 under the [Phases 0–2 Closure](10-phase-0-2-closure.md#closure-grades) plan, accepting every caveat. [Phase 3](06-phase-3-approved-execution.md) was revised on 2026-10-27 into staged tasks; its operator decisions D7–D13 are recorded, the operator approved it on 2026-10-27, Stage 1 hardening is done, and it is bound by the [Phase 3 Entry Conditions](10-phase-0-2-closure.md#phase-3-entry-conditions).
 
 ## Objective
 

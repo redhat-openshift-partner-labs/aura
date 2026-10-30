@@ -90,23 +90,49 @@ The current `diagnose state` model is deterministic and local:
 
 The model protocol remains provider-independent. A future provider must consume a CWA snapshot and return the strict `DiagnosisResponse` JSON contract.
 
+## Phase 3
+
+The operator approved the [Phase 3](plans/06-phase-3-approved-execution.md) plan on 2026-10-27 with decisions D7–D13, and confirmed its Stage 1 plan edits on 2026-10-29. Stage 1 hardening is done; its [Stage 1 Record](plans/06-phase-3-approved-execution.md#stage-1-record) lists each task's commits and test evidence. Stage 1 changed this behavior:
+
+- An unhandled error stores only its type in `command_failed`; an unhandled `OSError` with an errno is a filesystem error.
+- A refusal path that fails after `command_refused` stores a `refused` record, and another command's malformed audit record no longer blocks `command_failed`.
+- Stores revalidate each record before writing it, CWA traces carry `trace_digest`, and `aura.provenance` verifies cross-record IDs and digests.
+- Stored Git proposals and their CWA traces record the patch-check outcome.
+- A failed `oc` read is not retried within a command, and an `oc` list without `metadata.resourceVersion` is an error.
+- Scaffold output is limited to 1 MiB per stream, 1 MiB per generated file, and 8 MiB of generated files in total.
+
+`deploy/postgresql/` deploys the staging PostgreSQL for the Phase 3 execution store. No Phase 3 command exists yet.
+
 ## Not Implemented
 
 - External model provider integration.
 - Natural-language chat interface.
-- Scaffold proposals.
-- Applying patches, creating commits, or opening pull requests.
-- Pipeline or Git execution.
+- Applying patches, creating commits, or opening pull requests (Phase 3 Stage 5).
+- Pipeline or Git execution (Phase 3 Stages 4 and 5).
 - Portal integration.
 - RabbitMQ integration or replacement.
 - Long-running daemon, scheduler, or web UI.
-- Database-backed stores; current stores are append-only JSON files.
+- Database-backed stores; current stores are append-only JSON files. Phase 3 Stage 2 adds the execution store.
 - Meaningful OpenShift and Tekton source versions: `oc get -o json` returns a `List` with an empty `resourceVersion`, so those `source_version` values are empty, for example `pipelines=`.
 
 ## Recent Implementation Commits
 
 | Commit | Change |
 | --- | --- |
+| `3c3e054` | Resolved import aliases in the process and parsing chokepoint rules |
+| `2171460` | Hashed scaffold files in chunks and reported scaffold start failures |
+| `1de5003` | Stored only the type of an errno-less unhandled `OSError` |
+| `c74d7d3` | Recorded the Git patch-check outcome on proposals and CWA traces |
+| `8dc07a5` | Limited scaffold stream and file sizes |
+| `71d82cc` | Kept failed `oc` reads and required list resource versions |
+| `ab480a9` | Rejected `os` calls that start programs outside `process.py` |
+| `3689b4c` | Discovered contracts and stores in the digest tests |
+| `d88ab1c` | Verified cross-record digests and added CWA trace digests |
+| `b989aff` | Revalidated records on save and pinned the record loader |
+| `4889513` | Reported unhandled OS errors and missing working directories precisely |
+| `9beb53d` | Kept audit chains intact on unhandled-error paths |
+| `7e2fca9` | Stored only the error type for unhandled errors |
+| `88b4668` | Added staging PostgreSQL manifests |
 | `01df26b` | Skipped the rerun metadata check without one definition |
 | `75d149b` | Failed cleanly when a generated proposal breaks the contract |
 | `17d7fa3` | Refused rerun overlap and foreign source runs |
