@@ -329,9 +329,11 @@ def test_publications_and_approvals_round_trip(tmp_path, monkeypatch) -> None:
     assert store.get(
         "published_proposals", publication_id=published.publication_id
     ) == published
-    assert store.select(
-        "approvals", proposal_id=published.proposal_id, decision="approved"
-    ) == [record]
+    # The approval's test signature is not verifiable; count its row.
+    assert raw(tmp_path).execute(
+        "SELECT approval_id FROM approvals WHERE proposal_id = ? AND decision = ?",
+        (str(published.proposal_id), "approved"),
+    ).fetchall() == [(str(record.approval_id),)]
     cluster = raw(tmp_path).execute(
         "SELECT cluster_name FROM published_proposals"
     ).fetchone()
@@ -385,3 +387,81 @@ def test_every_table_refuses_a_record_without_its_stored_digest(
 
         with pytest.raises(RecordInvalid, match=f"no stored {digest}"):
             store.select(name)
+
+
+def signed_approval(private, **changes):
+    from aura.approvals import ApprovalRecord
+    from aura.signing import APPROVE, sign
+    from test_approvals import SIGNATURE, approval
+
+    draft = ApprovalRecord.model_validate(approval(**changes))
+    signature = sign(draft.signed_payload(), key=private, namespace=APPROVE)
+    return ApprovalRecord.model_validate(
+        approval(**changes, signature=signature)
+    ), SIGNATURE
+
+
+@pytest.fixture
+def approver_key(tmp_path):
+    from test_signing import key
+
+    return key(tmp_path, "approver")
+
+
+def signers_for(private) -> str:
+    from aura.signing import APPROVE
+    from test_signing import listed
+
+    return listed("approver@example.com", private, APPROVE)
+
+
+def test_a_signed_record_verifies_on_load(tmp_path, approver_key) -> None:
+    record, _ = signed_approval(approver_key)
+    store = open_store(tmp_path)
+    store.insert("approvals", record)
+
+    reader = open_store(tmp_path).with_signers(signers_for(approver_key))
+
+    assert reader.select("approvals") == [record]
+
+
+def test_a_signed_table_is_unreadable_without_the_signer_list(tmp_path, approver_key) -> None:
+    record, _ = signed_approval(approver_key)
+    store = open_store(tmp_path)
+    store.insert("approvals", record)
+
+    with pytest.raises(RecordInvalid, match="allowed-signers list"):
+        open_store(tmp_path).select("approvals")
+
+
+def test_a_bad_signature_is_refused_on_load(tmp_path, approver_key) -> None:
+    from aura.approvals import ApprovalRecord
+    from test_approvals import SIGNATURE, approval
+    from test_signing import key
+
+    forged = ApprovalRecord.model_validate(approval(signature=SIGNATURE))
+    other, _ = signed_approval(key(tmp_path, "other"), approval_id=str(UUID(int=31)))
+    store = open_store(tmp_path)
+    store.insert("approvals", forged)
+    store.insert("approvals", other)
+    reader = open_store(tmp_path).with_signers(signers_for(approver_key))
+
+    with pytest.raises(RecordInvalid, match="signature"):
+        reader.get("approvals", approval_id=forged.approval_id)
+    with pytest.raises(RecordInvalid, match="signature"):
+        reader.get("approvals", approval_id=other.approval_id)
+
+
+def test_a_key_retired_after_storing_still_verifies(tmp_path, approver_key) -> None:
+    from aura.signing import APPROVE
+    from test_signing import listed
+
+    record, _ = signed_approval(approver_key)
+    open_store(tmp_path).insert("approvals", record)
+    retired = listed("approver@example.com", approver_key, APPROVE, **{"valid-before": "20990101"})
+    raw(tmp_path).execute("UPDATE approvals SET stored_at = '2026-10-30 12:00:00'")
+    expired = listed("approver@example.com", approver_key, APPROVE, **{"valid-before": "20261029"})
+
+    assert open_store(tmp_path).with_signers(retired).select("approvals") == [record]
+    with pytest.raises(RecordInvalid, match="signature"):
+        open_store(tmp_path).with_signers(expired).select("approvals")

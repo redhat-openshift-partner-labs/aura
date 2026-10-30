@@ -106,7 +106,7 @@ def test_an_approval_is_signed_and_stored(approver, monkeypatch) -> None:
 
     assert code == 0, stderr
     assert writes.labels == APPROVED
-    store = open_store(database, login="approver-b")
+    store = open_store(database, login="approver-b").with_signers(allowed)
     (record,) = store.select("approvals")
     (publication,) = store.select("published_proposals")
     assert record.decision is ApprovalDecision.APPROVED
@@ -135,13 +135,13 @@ def test_an_approval_is_signed_and_stored(approver, monkeypatch) -> None:
 
 def test_a_rejection_has_no_expiry(approver) -> None:
     database, root, private = approver
+    allowed = listed("approver@example.com", private, APPROVE)
 
-    code, _, stderr = decide(
-        root, "reject", hub=policy(listed("approver@example.com", private, APPROVE))
-    )
+    code, _, stderr = decide(root, "reject", hub=policy(allowed))
 
     assert code == 0, stderr
-    (record,) = open_store(database, login="approver-b").select("approvals")
+    store = open_store(database, login="approver-b").with_signers(allowed)
+    (record,) = store.select("approvals")
     assert record.decision is ApprovalDecision.REJECTED
     assert record.expires_at is None
 

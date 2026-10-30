@@ -11,6 +11,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from importlib import resources
 from typing import Any, Protocol, TypeVar
 from uuid import uuid4
@@ -22,6 +23,7 @@ from aura.canonical import canonical_json
 from aura.config import SQLiteStore
 from aura.contracts import AuditEvent, CommandEnvelope, EvidenceSnapshot
 from aura.json_store import parse_record
+from aura.signing import APPROVE, SignatureError, verify
 
 
 R = TypeVar("R", bound=BaseModel)
@@ -74,6 +76,8 @@ class Table:
     columns: tuple[str, ...]
     digest: str
     scoped_by_login: bool = False
+    # The signature namespace of a signed record, verified on every load.
+    signed: str | None = None
 
 
 TABLES = {
@@ -114,6 +118,7 @@ TABLES = {
             ("approval_id",),
             ("proposal_id", "decision", "principal"),
             "approval_digest",
+            signed=APPROVE,
         ),
     )
 }
@@ -125,7 +130,14 @@ class ExecutionStore:
     def __init__(self, connection: Connection, *, login: str) -> None:
         self._connection = connection
         self._login = login
+        self._signers: str | None = None
         self._check_schema()
+
+    def with_signers(self, signers: str) -> "ExecutionStore":
+        """Use the hub's allowed-signers list to verify signed records."""
+
+        self._signers = signers
+        return self
 
     @classmethod
     def open_sqlite(cls, config: SQLiteStore) -> "ExecutionStore":
@@ -207,6 +219,7 @@ class ExecutionStore:
         names = [
             "record",
             "digest",
+            "stored_at",
             *self._key_columns(table),
             *map(_column, table.columns),
         ]
@@ -232,7 +245,32 @@ class ExecutionStore:
                     f"{table.name} row column {_column(path)} does not match "
                     "its record"
                 )
+        if table.signed is not None:
+            self._verify(table, record, row["stored_at"])
         return record
+
+    def _verify(self, table: Table, record: Any, stored_at: object) -> None:
+        """Verify a signed record at the time the database stored it, so a
+        key retired later still verifies it (D7)."""
+
+        if self._signers is None:
+            raise RecordInvalid(
+                f"{table.name} rows are signed; reading them needs the "
+                "allowed-signers list"
+            )
+        try:
+            verify(
+                record.signed_payload(),
+                record.signature,
+                principal=record.principal,
+                namespace=table.signed,
+                signers=self._signers,
+                at=_stored_time(stored_at),
+            )
+        except SignatureError as error:
+            raise RecordInvalid(
+                f"{table.name} row signature is refused: {error}"
+            ) from error
 
     def _row(self, table: Table, record: BaseModel) -> dict[str, Any]:
         if not isinstance(record, table.model):
@@ -333,6 +371,14 @@ class ExecutionStore:
                 f"{SUPPORTED_SCHEMA_VERSIONS.start}-"
                 f"{SUPPORTED_SCHEMA_VERSIONS.stop - 1}"
             )
+
+
+def _stored_time(value: object) -> datetime:
+    """Parse `stored_at`: SQLite's CURRENT_TIMESTAMP is UTC text."""
+
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    return datetime.strptime(str(value), "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
 
 
 def _column(path: str) -> str:
