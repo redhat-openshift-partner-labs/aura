@@ -155,7 +155,7 @@ Every command must preserve these. A change that touches an invariant must have 
 | I1 | A command that passes argument validation and the idempotency check stores exactly one terminal record: `succeeded`, `failed`, or `refused`. The only exception is a command store that cannot be written. |
 | I2 | A command's audit events form a linear chain. Every `previous_event_id` names a stored event of the same command, no two events share a predecessor, and `command_failed` or `command_refused` names the last event actually stored. |
 | I3 | Actionable artifacts are written last. A stored proposal always has its CWA trace and `proposal_created` event, with matching IDs and digests. Phase 3 approval records follow the same rule. |
-| I4 | Stores are append-only and leave no partial or empty final record. A write that raises leaves no final record, including when the directory sync fails after the record is linked. |
+| I4 | Stores are append-only and leave no partial or empty final record. A write that raises leaves no final record, including when the directory sync fails after the record is linked. In the execution store, a write whose outcome is unknown is resolved by reading the row back by its key; when the store cannot be read, the write fails with an error that names the key. |
 | I5 | Aura writes nothing to Git, Kubernetes, Portal, or RabbitMQ in Phases 1 and 2, and never modifies a protected repository. |
 | I6 | Stored records contain no secret values. |
 | I7 | Expected failures (argument, authorization, Git, `oc`, store, and filesystem errors) exit `2` with a concise message and no traceback. A traceback is a bug. |

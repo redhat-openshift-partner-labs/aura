@@ -121,6 +121,31 @@ The command exits with code `2`. Evidence, CWA snapshot, CWA trace, and audit re
 
 `propose deprovision` turns the same cluster-state evidence into a deterministic, digest-verified `Proposal` that adds `deprovision/<id>-archive`. Aura stores the proposal and never applies it, commits it, or pushes it. Unmet preconditions refuse the command with every reason, and the evidence, CWA, and audit records are preserved.
 
+## Execution Store
+
+Phase 3 commands keep their records in the execution store in `aura.execution.store` ([D13](plans/06-phase-3-approved-execution.md#execution-store)). Its connection comes only from Aura's configuration file, `aura.config`: TOML at `$XDG_CONFIG_HOME/aura/config.toml`, default `~/.config/aura/config.toml`, or the file the `AURA_CONFIG` environment variable names. A missing, unreadable, or invalid file, or a blank `AURA_CONFIG` or `XDG_CONFIG_HOME`, is an error.
+
+```toml
+[store]
+backend = "sqlite"
+path = "/absolute/path/aura.db"
+login = "<operator>"
+
+[execution]
+adapters = []
+adapter_timeout_seconds = 300
+
+[git]
+author_name = "<name>"
+author_email = "<email>"
+```
+
+A `postgresql` store takes `host`, `port` (default `5432`), `database`, `user`, and an absolute `password_file` instead of `path` and `login`. `adapters` lists enabled adapters from `git_handoff`, `git_pr`, `tekton`, and `recording`; `[execution]` and `[git]` are optional.
+
+The store only inserts rows. Each row holds its record's canonical JSON as text, its digest, copies of the fields that constraints and queries use, and `stored_at` from the database. Load verifies the record's own digest and that the digest column and every copied column equal the record's fields. An identical insert under a stored key succeeds; a different record under it is a conflict. When a write's outcome is unknown, the store reads the row back by its key: an identical row counts as stored, an absent row is a failed write, and an unreadable store raises an error that names the key. A locked check-and-insert transaction lets two writers that check the same condition commit at most once. Idempotency keys are unique per login, and each login reads only its own commands.
+
+The schema is versioned by migration files in `aura/execution/migrations/` that only add tables, columns, and indexes. A client refuses a store whose highest version is outside the range it supports. A new SQLite file applies the migrations and records a deployment ID when it is created, for development; in production the database administrator applies them. Phase 3 Stage 2 adds the commands that use the store.
+
 ## Failure Model
 
 | Failure | Current behavior |

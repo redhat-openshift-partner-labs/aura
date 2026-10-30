@@ -196,6 +196,10 @@ Snapshots and responses include SHA-256 digests over canonical JSON.
 `aura.provenance` loads a proposal or a diagnosis with every record it references, its CWA trace, CWA snapshot, evidence snapshot, and the trace's audit event, and refuses any reference whose ID or digest differs from the stored target. Every store revalidates a record before writing it, so a copy whose digests no longer match its fields is refused; Aura stores no unreadable copy. Stored records are parsed only in `json_store`. `tests/test_architecture.py` fails for a JSON, YAML, or pydantic JSON parse, through any import alias, anywhere else that is not on its allow list, and for a store that overrides how records load. The allow list holds `oc` output, `fleet-clusters` YAML, and `cli._names_another_command`, which reads only the `command_id` of an audit record that failed to load.
 Records are serialized to a private temporary file, flushed with `fsync`, and linked into their final name only after the complete write. A failed write leaves no partial final record. When a record write fails with an operating-system error, the command is stored as `failed` if the command store is writable, and the CLI exits `2`.
 
+## Execution Store Integrity
+
+The [execution store](architecture.md#execution-store) never updates or deletes a row; `tests/test_execution_store.py` traces every statement a session runs and fails on `UPDATE` or `DELETE`. A row whose record, digest, or copied columns were edited is refused on load. The PostgreSQL role that enforces insert-only access is added in Phase 3 task 3.7.
+
 ## Operational cautions
 
 - Use one idempotency key per operator request. Succeeded, failed, and refused keys are terminal and are suppressed through `--command-dir`; a new attempt requires a new key.
