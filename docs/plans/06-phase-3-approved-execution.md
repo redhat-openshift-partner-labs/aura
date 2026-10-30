@@ -25,7 +25,7 @@ The closure plan's [rules](10-phase-0-2-closure.md#rules) R2–R6 apply, reading
 
 ## Operator Decisions
 
-Recorded on 2026-10-27: the operator accepted every recommendation, so each row's Recommendation is its decision. D13 was added the same day, when the operator stated that Aura will have a database. A stage that depends on a prerequisite a decision names, such as the staging hub, a credential, or a database, does not start until the operator provides it. IDs continue from the closure plan's D1–D6.
+Recorded on 2026-10-27: the operator accepted every recommendation, so each row's Recommendation is its decision. D13 was added the same day, when the operator stated that Aura will have a database. On 2026-10-29 the operator confirmed the plan edits listed in the [Stage 1 Record](#stage-1-record). A stage that depends on a prerequisite a decision names, such as the staging hub, a credential, or a database, does not start until the operator provides it. IDs continue from the closure plan's D1–D6.
 
 | ID | Question | Options | Recommendation | Blocks |
 | --- | --- | --- | --- | --- |
@@ -432,7 +432,7 @@ Requires D8, and D10 and D12 under D8 (b). Live runs need task 0.3's staging sto
 | 0 | 0.1 Decisions | Done | |
 | 0 | 0.2 Apply decisions and approval | Done | `a6e7554`, `fe3fc8b`, `a61a08c` |
 | 0 | 0.3 Stage 4 prerequisites | Pending | |
-| 1 | 1.1–1.11 Hardening | Done; plan edits await the operator's confirmation, see [Stage 1 Record](#stage-1-record) | `7e2fca9`, `9beb53d`, `4889513`, `b989aff`, `d88ab1c`, `3689b4c`, `ab480a9`, `71d82cc`, `8dc07a5`, `c74d7d3`; review fixes `1de5003`, `2171460`, `3c3e054` |
+| 1 | 1.1–1.11 Hardening | Done; the operator confirmed its plan edits on 2026-10-29, see [Stage 1 Record](#stage-1-record) | `7e2fca9`, `9beb53d`, `4889513`, `b989aff`, `d88ab1c`, `3689b4c`, `ab480a9`, `71d82cc`, `8dc07a5`, `c74d7d3`; review fixes `1de5003`, `2171460`, `3c3e054` |
 | 2 | 2.1–2.5 Identity and approvals | Pending | |
 | 3 | 3.1–3.7 Guard and dry run | Pending | |
 | 4 | 4.1–4.4 Tekton adapter | Pending | |
@@ -453,7 +453,7 @@ P3.16 evidence, from the stage review, which ran each fix commit's tests against
 
 The review found an `OSError` text leak, a size check that ran after files were read, a hidden scaffold start error, chokepoint rules that missed aliased calls, and stale docs; `1de5003`, `2171460`, and `3c3e054` fix them test-first. Two commits changed existing tests without saying so in their messages: `b989aff` rebuilt `make_command` in `tests/test_command_store.py` with `model_validate`, because save now refuses a stale digest, and `71d82cc` made `CountingRunner` in `tests/test_oc_call_budget.py` return `metadata.resourceVersion`.
 
-Plan edits made during Stage 1 that the operator has not yet confirmed (P3-1):
+Plan edits made during Stage 1, confirmed by the operator on 2026-10-29 (P3-1):
 
 1. Task 1.6: an existing trace without `trace_digest` fails to load wherever it is read, because no command reads traces today; the plan had said such traces still load for read-only commands.
 2. Task 0.3: the staging PostgreSQL is deployable from `deploy/postgresql/`, added at the operator's request.
