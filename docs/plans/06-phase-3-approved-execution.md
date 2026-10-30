@@ -196,7 +196,7 @@ E4 compares an action, which is a subset of the proposal. `action_digest` is the
 | `scaffold_commit` | As stored; scaffold only |
 | `pipeline_run` | Reruns only; without `metadata.name`, `metadata.generateName`, and annotations whose keys start with `aura.openshiftpartnerlabs.com/` |
 
-Excluded, because they change on every regeneration: `proposal_id`, `command_id`, `created_at`, `base_commit`, `evidence_snapshot_id`, `evidence_snapshot_digest`, `cwa_snapshot_id`, `cwa_trace_id`, `scaffold_run`, `patch_check`, which G8 recomputes, `generator`, `generator_version`, and the descriptive fields `summary`, `expected_effect`, `risks`, `reversibility`, and `rollback`. The approver signs the stored proposal's digests, so the descriptive fields they read are the approved ones. Adapters use the approved proposal's commit message and patch, so the trailer names the approved `proposal_id`.
+Excluded, because they change on every regeneration: `proposal_id`, `command_id`, `created_at`, `base_commit`, `evidence_snapshot_id`, `evidence_snapshot_digest`, `cwa_snapshot_id`, `cwa_trace_id`, `scaffold_run`, `patch_check`, which G8 recomputes, `generator`, `generator_version`, and the descriptive fields `summary`, `expected_effect`, `risks`, `reversibility`, and `rollback`. The approver signs the stored proposal's digests, so the descriptive fields they read are the approved ones. Adapters use the approved proposal's commit message and patch, so the trailer names the approved `proposal_id`. `aura.execution.action` implements the subset; an `annotations` map that held only Aura's annotations is removed, and `status` and `proposal_digest` are outside it. A test fails when a `Proposal` field is in neither list.
 
 ## Guard
 
