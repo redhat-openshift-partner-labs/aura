@@ -14,7 +14,7 @@ Expected current result:
 1502 passed
 ```
 
-Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `43f89fc` after Phase 3 Stage 1, passed with 1249 tests on Python 3.13.17 in `linux/arm64`.
+Run the CI workflow locally with `act` before reporting work ready to publish; see [Run the CI Workflow Locally](development.md#9-run-the-ci-workflow-locally). The latest run, at `b7e03b7` after Phase 3 Stage 2, passed with 1502 tests on Python 3.13.17 in `linux/arm64`, including the signing tests that run `ssh-keygen` in the runner image.
 
 Run diff hygiene:
 
