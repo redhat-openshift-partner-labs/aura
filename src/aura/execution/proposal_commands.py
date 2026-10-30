@@ -10,16 +10,25 @@ from uuid import UUID, uuid5
 
 from pydantic import ValidationError
 
-from aura.approvals import PublishedProposal, publication_id_for
+from aura.approvals import (
+    APPROVAL_LIFETIME,
+    ApprovalDecision,
+    ApprovalRecord,
+    PublishedProposal,
+    publication_id_for,
+)
 from aura.audit_store import AuditEventNotFound, JsonAuditEventStore
 from aura.command_store import (
     CommandNotFound,
     CommandRecordUnreadable,
     find_command,
 )
+from aura.collectors.hub_policy import HubPolicy
 from aura.contracts import AuditEventType
+from aura.execution.action import action_digest
 from aura.execution.commands import Chain, Refusal
 from aura.provenance import ProvenanceError, load_proposal_provenance
+from aura.signing import APPROVE, SignatureError, verify
 
 
 @dataclass(frozen=True)
@@ -106,4 +115,97 @@ def _published(
         raise Refusal(f"proposal cannot be published: {error}") from error
 
 
-__all__ = ["SubmitSources", "submit_step"]
+
+
+@dataclass(frozen=True)
+class Approver:
+    """Who signs, and how the hub signer list and signatures are reached."""
+
+    principal: str
+    sign: Callable[[bytes], str]
+    read_policy: Callable[[], HubPolicy]
+
+
+def approval_step(
+    decision: ApprovalDecision,
+    proposal_id: UUID,
+    approver: Approver,
+    clock: Callable[[], datetime],
+) -> Callable[[Chain], str]:
+    def step(chain: Chain) -> str:
+        published = chain.store.select("published_proposals", proposal_id=proposal_id)
+        if not published:
+            raise Refusal(f"proposal {proposal_id} is not published")
+        policy = approver.read_policy()
+        proposal = published[0].proposal
+        created_at = clock()
+        approval_id = uuid5(chain.command.command_id, "approval")
+        fields: dict[str, object] = {
+            "approval_id": approval_id,
+            "command_id": chain.command.command_id,
+            "proposal_id": proposal_id,
+            "proposal_digest": proposal.proposal_digest,
+            "action_digest": action_digest(proposal),
+            "decision": decision,
+            "principal": approver.principal,
+            "created_at": created_at,
+            "expires_at": (
+                created_at + APPROVAL_LIFETIME
+                if decision is ApprovalDecision.APPROVED
+                else None
+            ),
+        }
+        event = chain.event(
+            AuditEventType.APPROVAL_RECORDED,
+            {
+                key: str(value) if value is not None else None
+                for key, value in fields.items()
+                if key != "command_id"
+            },
+            subject_id=approval_id,
+        )
+        record = _signed(
+            {**fields, "audit_event_digest": event.event_digest},
+            approver,
+            policy,
+            created_at,
+        )
+        chain.store_event(event)
+        chain.store_artifact("approvals", record)
+        return record.model_dump_json(indent=2)
+
+    return step
+
+
+_UNSIGNED = (
+    "-----BEGIN SSH SIGNATURE-----\nAAAA\n-----END SSH SIGNATURE-----\n"
+)
+
+
+def _signed(
+    fields: dict[str, object],
+    approver: Approver,
+    policy: HubPolicy,
+    at: datetime,
+) -> ApprovalRecord:
+    """Sign the record's payload and verify it as the guard would, so a
+    signature the hub list refuses is never stored."""
+
+    draft = ApprovalRecord.model_validate({**fields, "signature": _UNSIGNED})
+    payload = draft.signed_payload()
+    try:
+        signature = approver.sign(payload)
+        verify(
+            payload,
+            signature,
+            principal=approver.principal,
+            namespace=APPROVE,
+            signers=policy.allowed_signers,
+            at=at,
+        )
+    except SignatureError as error:
+        raise Refusal(f"approval signature refused: {error}") from error
+    return ApprovalRecord.model_validate({**fields, "signature": signature})
+
+
+__all__ = ["Approver", "SubmitSources", "approval_step", "submit_step"]

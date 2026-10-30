@@ -16,7 +16,15 @@ import sqlite3
 
 from aura.config import ConfigError, SQLiteStore, load_config
 from aura.execution.commands import run_store_command
-from aura.execution.proposal_commands import SubmitSources, submit_step
+from aura.approvals import ApprovalDecision
+from aura.collectors.hub_policy import HubPolicy, read_hub_policy
+from aura.execution.proposal_commands import (
+    Approver,
+    SubmitSources,
+    approval_step,
+    submit_step,
+)
+from aura.signing import APPROVE, sign
 from aura.execution.store import ExecutionStore, StoreError
 
 from pydantic import ValidationError
@@ -457,7 +465,18 @@ def build_parser() -> argparse.ArgumentParser:
     status_parser = proposal_command_parser.add_parser("status")
     _add_proposal_status_arguments(status_parser)
     _add_proposal_submit_arguments(proposal_command_parser.add_parser("submit"))
+    for decision in ("approve", "reject"):
+        _add_proposal_decision_arguments(proposal_command_parser.add_parser(decision))
     return parser
+
+
+def _add_proposal_decision_arguments(parser: argparse.ArgumentParser) -> None:
+    """Phase 3: identity comes from the signing key in Aura's configuration
+    file, verified against the hub signer list, so no --operator or --role."""
+
+    parser.add_argument("--proposal-id", type=UUID, required=True)
+    parser.add_argument("--openshift-kubeconfig", type=Path, required=True)
+    parser.add_argument("--idempotency-key", required=True)
 
 
 def _add_proposal_submit_arguments(parser: argparse.ArgumentParser) -> None:
@@ -547,7 +566,9 @@ def _record_directory_argument_error(
 
 
 def _argument_error(args: argparse.Namespace) -> str | None:
-    if not args.operator.strip():
+    # Approve and reject take identity from the signing key, not --operator.
+    operator = getattr(args, "operator", None)
+    if operator is not None and not operator.strip():
         return "--operator must not be blank"
     if not args.idempotency_key.strip():
         return "--idempotency-key must not be blank"
@@ -2083,6 +2104,56 @@ def run_proposal_submit(
     )
 
 
+_DECISIONS = {
+    "approve": (CommandType.PROPOSAL_APPROVE, ApprovalDecision.APPROVED),
+    "reject": (CommandType.PROPOSAL_REJECT, ApprovalDecision.REJECTED),
+}
+
+
+def run_proposal_decision(
+    args: argparse.Namespace,
+    command_id_factory: Callable[[], UUID],
+    clock: Callable[[], datetime],
+    hub_policy: Callable[[Path], HubPolicy] | None,
+) -> int:
+    command_type, decision = _DECISIONS[args.proposal_command]
+    try:
+        signing = load_config().signing
+    except ConfigError as error:
+        print(f"aura: {error}", file=sys.stderr)
+        return 2
+    if signing is None:
+        print("aura: Aura's configuration file has no [signing] section", file=sys.stderr)
+        return 2
+    store = _open_execution_store()
+    if isinstance(store, str):
+        print(f"aura: {store}", file=sys.stderr)
+        return 2
+    args.operator = signing.principal
+    command = _make_command(
+        args,
+        command_type,
+        {"proposal_id": str(args.proposal_id), "decision": decision.value},
+        command_id_factory,
+        clock,
+    )
+    read = hub_policy or (lambda kubeconfig: read_hub_policy(kubeconfig_path=kubeconfig))
+    approver = Approver(
+        principal=signing.principal,
+        sign=lambda payload: sign(
+            payload, key=signing.key, namespace=APPROVE, agent=signing.agent
+        ),
+        read_policy=lambda: read(args.openshift_kubeconfig),
+    )
+    with oc_call_budget():
+        return run_store_command(
+            store,
+            command,
+            approval_step(decision, args.proposal_id, approver, clock),
+            clock,
+        )
+
+
 def _open_execution_store() -> ExecutionStore | str:
     """Open the store Aura's configuration names, or return why not."""
 
@@ -2104,9 +2175,12 @@ def _dispatch_command(
     collector: EvidenceCollector | None,
     command_id_factory: Callable[[], UUID],
     clock: Callable[[], datetime],
+    hub_policy: Callable[[Path], HubPolicy] | None = None,
 ) -> int:
     if args.command == "proposal" and args.proposal_command == "submit":
         return run_proposal_submit(args, command_id_factory, clock)
+    if args.command == "proposal" and args.proposal_command in _DECISIONS:
+        return run_proposal_decision(args, command_id_factory, clock, hub_policy)
     route = _EVIDENCE_ROUTES.get(args.command)
     if route is not None:
         return _run_simple_evidence_command(
@@ -2150,9 +2224,10 @@ def main(
     collector: EvidenceCollector | None = None,
     command_id_factory: Callable[[], UUID] = uuid4,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    hub_policy: Callable[[Path], HubPolicy] | None = None,
 ) -> int:
     args = build_parser().parse_args(argv)
-    args.role = args.role or [OperatorRole.VIEWER.value]
+    args.role = getattr(args, "role", None) or [OperatorRole.VIEWER.value]
     argument_error = _argument_error(args)
     if argument_error is not None:
         print(
@@ -2165,6 +2240,7 @@ def main(
         collector=collector,
         command_id_factory=command_id_factory,
         clock=clock,
+        hub_policy=hub_policy,
     )
 
 

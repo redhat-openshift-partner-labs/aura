@@ -337,6 +337,28 @@ The directories hold the Phase 2 proposal, its provenance, and its command recor
 
 Its idempotency key is unique per store login. A reused key exits `2` before any write. A failed store write stores `failed` and `command_failed` linked to the last event stored.
 
+## `proposal approve` and `proposal reject`
+
+Records a signed approval or rejection of a published proposal ([D7, D11](plans/06-phase-3-approved-execution.md#operator-decisions)). Neither command takes `--operator` or `--role`: identity is the principal in the `[signing]` section of Aura's configuration file, proven by an SSH signature that the hub's allowed-signers list must accept.
+
+```toml
+[signing]
+principal = "<principal in the allowed-signers list>"
+key = "/absolute/path/to/id_ed25519.pub"
+agent = true
+```
+
+With `agent = true`, `key` is the public key of a private key loaded in `ssh-agent`; with `agent = false`, it is a private key file.
+
+```bash
+uv run --no-sync aura proposal approve \
+  --proposal-id <proposal-id> \
+  --openshift-kubeconfig "$HOME/.kube/aura-readonly" \
+  --idempotency-key approve-001
+```
+
+`proposal reject` takes the same flags. The command reads the published proposal from the store, reads ConfigMap `aura-allowed-signers` from the hub in one `oc` call, computes the proposal's [action digest](plans/06-phase-3-approved-execution.md#action-subset), and builds an [`ApprovalRecord`](evidence.md#approval-record) whose `audit_event_digest` is the digest of its `approval_recorded` event. It signs the record with namespace `aura-approve` and verifies the signature against the hub list before writing anything but its refusal. An approval expires 24 hours after it is signed; a rejection has no expiry. It refuses a proposal that is not published and a signature the hub list does not accept, and fails when the hub cannot be read. On success it stores `command_received`, `approval_recorded`, the approval, and the terminal command record in that order, and prints the approval.
+
 ## Output and Exit Codes
 
 | Exit code | Meaning |

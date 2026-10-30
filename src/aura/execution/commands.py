@@ -17,6 +17,7 @@ from uuid import UUID, uuid5
 
 from pydantic import BaseModel
 
+from aura.collectors.oc_cli import OpenShiftCLIError
 from aura.contracts import (
     AuditEvent,
     AuditEventType,
@@ -46,8 +47,24 @@ class Chain:
         data: dict[str, object],
         subject_id: UUID | None = None,
     ) -> AuditEvent:
+        return self.store_event(self.event(event_type, data, subject_id))
+
+    def store_event(self, event: AuditEvent) -> AuditEvent:
+        self.store.insert("audit_events", event)
+        self.last = event
+        return event
+
+    def event(
+        self,
+        event_type: AuditEventType,
+        data: dict[str, object],
+        subject_id: UUID | None = None,
+    ) -> AuditEvent:
+        """Build the next event without storing it, so an artifact can
+        carry its digest before either is written."""
+
         name = event_type.value if subject_id is None else f"{event_type.value}:{subject_id}"
-        event = AuditEvent.model_validate(
+        return AuditEvent.model_validate(
             {
                 "event_id": uuid5(self.command.command_id, name),
                 "command_id": self.command.command_id,
@@ -58,9 +75,6 @@ class Chain:
                 "previous_event_id": None if self.last is None else self.last.event_id,
             }
         )
-        self.store.insert("audit_events", event)
-        self.last = event
-        return event
 
     def store_artifact(self, table: str, record: BaseModel) -> None:
         self.store.insert(table, record)
@@ -91,7 +105,7 @@ def run_store_command(
         output = step(chain)
     except Refusal as refusal:
         return _close(chain, CommandState.REFUSED, str(refusal))
-    except (StoreError, OSError, ValueError) as error:
+    except (StoreError, OpenShiftCLIError, OSError, ValueError) as error:
         return _close(chain, CommandState.FAILED, str(error))
     except Exception as error:
         # Exception text may carry secret values; store only its type (I6).

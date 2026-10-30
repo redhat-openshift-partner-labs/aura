@@ -152,9 +152,9 @@ Every command must preserve these. A change that touches an invariant must have 
 
 | ID | Invariant |
 | --- | --- |
-| I1 | A command that passes argument validation and the idempotency check stores exactly one terminal record: `succeeded`, `failed`, or `refused`. The only exception is a command store that cannot be written. |
+| I1 | A command that passes argument validation and the idempotency check stores exactly one terminal record: `succeeded`, `failed`, or `refused`. The only exceptions are a command store that cannot be written, and a Phase 3 command whose terminal insert loses a race for its idempotency key, which stores `command_failed` naming the winning command instead. |
 | I2 | A command's audit events form a linear chain. Every `previous_event_id` names a stored event of the same command, no two events share a predecessor, and `command_failed` or `command_refused` names the last event actually stored. |
-| I3 | Actionable artifacts are written last. A stored proposal always has its CWA trace and `proposal_created` event, with matching IDs and digests. Phase 3 approval records follow the same rule. |
+| I3 | Actionable artifacts are written last. A stored proposal always has its CWA trace and `proposal_created` event, with matching IDs and digests. Phase 3 publications and approvals follow the same rule: `proposal_published` precedes its `PublishedProposal`, and an `ApprovalRecord` follows its `approval_recorded` event, whose digest it carries, and precedes the terminal command record. |
 | I4 | Stores are append-only and leave no partial or empty final record. A write that raises leaves no final record, including when the directory sync fails after the record is linked. In the execution store, a write whose outcome is unknown is resolved by reading the row back by its key; when the store cannot be read, the write fails with an error that names the key. |
 | I5 | Aura writes nothing to Git, Kubernetes, Portal, or RabbitMQ in Phases 1 and 2, and never modifies a protected repository. |
 | I6 | Stored records contain no secret values. |
@@ -201,6 +201,8 @@ Rows that do not apply to a command are omitted from its matrix. A new command o
 - `command_chain`, which returns a command's audit events in chain order after asserting I2.
 
 Every matrix run calls the invariant check. Other CLI tests may call it too.
+
+Phase 3 commands write to the execution store, not through `save_private_json`. `tests/store_invariants.py` records every store insert, can fail one with `StoreWriteFailed`, and checks I1–I3 in the store; `tests/test_proposal_submit.py` and `tests/test_proposal_approve.py` fail each insert in turn.
 
 To cover a new command, or a new outcome of an existing command, add a `Scenario` with its builder and its documented write order. Rows for new write steps are then tested without further code.
 
