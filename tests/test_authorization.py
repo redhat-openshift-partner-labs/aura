@@ -130,6 +130,9 @@ ALLOWED_ROLES = {
         OperatorRole.PROPOSER,
         OperatorRole.ADMIN,
     },
+    CommandType.PROPOSAL_SUBMIT: {OperatorRole.PROPOSER, OperatorRole.ADMIN},
+    CommandType.PROPOSAL_APPROVE: {OperatorRole.APPROVER, OperatorRole.ADMIN},
+    CommandType.PROPOSAL_REJECT: {OperatorRole.APPROVER, OperatorRole.ADMIN},
     CommandType.EXECUTE_PATCH: {OperatorRole.EXECUTOR, OperatorRole.ADMIN},
     CommandType.EXECUTE_PIPELINE: {OperatorRole.EXECUTOR, OperatorRole.ADMIN},
 }

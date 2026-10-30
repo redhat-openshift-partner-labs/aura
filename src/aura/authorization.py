@@ -19,6 +19,49 @@ class OperatorRole(StrEnum):
     ADMIN = "admin"
 
 
+_ISSUE_PERMISSIONS: dict[CommandType, frozenset[OperatorRole]] = {
+    CommandType.INVENTORY_LIST: frozenset(
+        {OperatorRole.VIEWER, OperatorRole.ADMIN}
+    ),
+    CommandType.WORKFLOW_INSPECT: frozenset(
+        {OperatorRole.VIEWER, OperatorRole.ADMIN}
+    ),
+    CommandType.DIAGNOSE_STATE: frozenset(
+        {OperatorRole.VIEWER, OperatorRole.ADMIN}
+    ),
+    CommandType.PROPOSE_PATCH: frozenset(
+        {OperatorRole.PROPOSER, OperatorRole.ADMIN}
+    ),
+    CommandType.PROPOSE_PIPELINE: frozenset(
+        {OperatorRole.PROPOSER, OperatorRole.ADMIN}
+    ),
+    CommandType.PROPOSAL_STATUS: frozenset(
+        {
+            OperatorRole.VIEWER,
+            OperatorRole.PROPOSER,
+            OperatorRole.ADMIN,
+        }
+    ),
+    CommandType.PROPOSAL_SUBMIT: frozenset(
+        {OperatorRole.PROPOSER, OperatorRole.ADMIN}
+    ),
+    # Phase 3 takes approvers' identity from their signatures (D7);
+    # this entry is the Phase 0 role model only.
+    CommandType.PROPOSAL_APPROVE: frozenset(
+        {OperatorRole.APPROVER, OperatorRole.ADMIN}
+    ),
+    CommandType.PROPOSAL_REJECT: frozenset(
+        {OperatorRole.APPROVER, OperatorRole.ADMIN}
+    ),
+    CommandType.EXECUTE_PATCH: frozenset(
+        {OperatorRole.EXECUTOR, OperatorRole.ADMIN}
+    ),
+    CommandType.EXECUTE_PIPELINE: frozenset(
+        {OperatorRole.EXECUTOR, OperatorRole.ADMIN}
+    ),
+}
+
+
 @final
 class AuthorizationPolicy:
     """Determines which roles may issue or approve Aura commands."""
@@ -26,36 +69,7 @@ class AuthorizationPolicy:
     _issue_permissions: dict[CommandType, frozenset[OperatorRole]]
 
     def __init__(self) -> None:
-        self._issue_permissions = {
-            CommandType.INVENTORY_LIST: frozenset(
-                {OperatorRole.VIEWER, OperatorRole.ADMIN}
-            ),
-            CommandType.WORKFLOW_INSPECT: frozenset(
-                {OperatorRole.VIEWER, OperatorRole.ADMIN}
-            ),
-            CommandType.DIAGNOSE_STATE: frozenset(
-                {OperatorRole.VIEWER, OperatorRole.ADMIN}
-            ),
-            CommandType.PROPOSE_PATCH: frozenset(
-                {OperatorRole.PROPOSER, OperatorRole.ADMIN}
-            ),
-            CommandType.PROPOSE_PIPELINE: frozenset(
-                {OperatorRole.PROPOSER, OperatorRole.ADMIN}
-            ),
-            CommandType.PROPOSAL_STATUS: frozenset(
-                {
-                    OperatorRole.VIEWER,
-                    OperatorRole.PROPOSER,
-                    OperatorRole.ADMIN,
-                }
-            ),
-            CommandType.EXECUTE_PATCH: frozenset(
-                {OperatorRole.EXECUTOR, OperatorRole.ADMIN}
-            ),
-            CommandType.EXECUTE_PIPELINE: frozenset(
-                {OperatorRole.EXECUTOR, OperatorRole.ADMIN}
-            ),
-        }
+        self._issue_permissions = dict(_ISSUE_PERMISSIONS)
 
     def required_roles(self, command_type: CommandType) -> set[OperatorRole]:
         """Return roles that are allowed to issue a command type."""
