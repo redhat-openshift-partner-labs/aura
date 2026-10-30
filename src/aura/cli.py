@@ -12,6 +12,12 @@ from typing import TypeVar
 from uuid import UUID, uuid4, uuid5
 
 from pydantic_core import from_json
+import sqlite3
+
+from aura.config import ConfigError, SQLiteStore, load_config
+from aura.execution.commands import run_store_command
+from aura.execution.proposal_commands import SubmitSources, submit_step
+from aura.execution.store import ExecutionStore, StoreError
 
 from pydantic import ValidationError
 
@@ -20,7 +26,7 @@ from aura.audit_store import (
     AuditEventNotFound,
     JsonAuditEventStore,
 )
-from aura.authorization import OperatorRole
+from aura.authorization import AuthorizationPolicy, OperatorRole
 from aura.command_store import (
     CommandAlreadyStored,
     CommandNotTerminal,
@@ -188,13 +194,14 @@ def _add_operator_arguments(
     query: str,
     *,
     query_help: str = "Operator query used for CWA assembly",
+    command_dir_help: str = "Directory for completed idempotency-key records",
 ) -> None:
     parser.add_argument("--query", default=query, help=query_help)
     parser.add_argument(
         "--command-dir",
         type=Path,
         required=True,
-        help="Directory for completed idempotency-key records",
+        help=command_dir_help,
     )
     parser.add_argument("--operator", required=True)
     parser.add_argument("--idempotency-key", required=True)
@@ -449,7 +456,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     status_parser = proposal_command_parser.add_parser("status")
     _add_proposal_status_arguments(status_parser)
+    _add_proposal_submit_arguments(proposal_command_parser.add_parser("submit"))
     return parser
+
+
+def _add_proposal_submit_arguments(parser: argparse.ArgumentParser) -> None:
+    """Phase 3: the store comes from Aura's configuration file; the
+    directories hold the Phase 2 proposal and its provenance."""
+
+    parser.add_argument("--proposal-id", type=UUID, required=True)
+    for flag in (
+        "--proposal-dir", "--cwa-dir", "--snapshot-dir", "--audit-dir",
+    ):
+        parser.add_argument(flag, type=Path, required=True)
+    _add_operator_arguments(
+        parser,
+        "submit a proposal",
+        query_help="Operator query recorded with the command",
+        command_dir_help="Directory of the Phase 2 command records",
+    )
 
 
 def _inventory_argument_error(args: argparse.Namespace) -> str | None:
@@ -2026,6 +2051,53 @@ def _proposal_command_input(args: argparse.Namespace) -> dict[str, object]:
     return command_input
 
 
+def run_proposal_submit(
+    args: argparse.Namespace,
+    command_id_factory: Callable[[], UUID],
+    clock: Callable[[], datetime],
+) -> int:
+    roles = {OperatorRole(role) for role in args.role}
+    if not AuthorizationPolicy().can_issue(roles, CommandType.PROPOSAL_SUBMIT):
+        print("aura: operator roles cannot submit proposals", file=sys.stderr)
+        return 2
+    store = _open_execution_store()
+    if isinstance(store, str):
+        print(f"aura: {store}", file=sys.stderr)
+        return 2
+    command = _make_command(
+        args,
+        CommandType.PROPOSAL_SUBMIT,
+        {"proposal_id": str(args.proposal_id)},
+        command_id_factory,
+        clock,
+    )
+    sources = SubmitSources(
+        proposal_dir=args.proposal_dir,
+        cwa_dir=args.cwa_dir,
+        snapshot_dir=args.snapshot_dir,
+        audit_dir=args.audit_dir,
+        command_dir=args.command_dir,
+    )
+    return run_store_command(
+        store, command, submit_step(args.proposal_id, sources, clock), clock
+    )
+
+
+def _open_execution_store() -> ExecutionStore | str:
+    """Open the store Aura's configuration names, or return why not."""
+
+    try:
+        config = load_config()
+    except ConfigError as error:
+        return str(error)
+    if not isinstance(config.store, SQLiteStore):
+        return "the PostgreSQL execution store is added in Phase 3 task 3.7"
+    try:
+        return ExecutionStore.open_sqlite(config.store)
+    except (StoreError, OSError, sqlite3.Error) as error:
+        return f"cannot open the execution store: {error}"
+
+
 def _dispatch_command(
     args: argparse.Namespace,
     *,
@@ -2033,6 +2105,8 @@ def _dispatch_command(
     command_id_factory: Callable[[], UUID],
     clock: Callable[[], datetime],
 ) -> int:
+    if args.command == "proposal" and args.proposal_command == "submit":
+        return run_proposal_submit(args, command_id_factory, clock)
     route = _EVIDENCE_ROUTES.get(args.command)
     if route is not None:
         return _run_simple_evidence_command(

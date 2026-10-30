@@ -248,6 +248,7 @@ class AuditEventType(StrEnum):
     CONTEXT_ASSEMBLED = "context_assembled"
     MODEL_CALLED = "model_called"
     PROPOSAL_CREATED = "proposal_created"
+    PROPOSAL_PUBLISHED = "proposal_published"
     APPROVAL_RECORDED = "approval_recorded"
     EXECUTION_STARTED = "execution_started"
     EXECUTION_FINISHED = "execution_finished"

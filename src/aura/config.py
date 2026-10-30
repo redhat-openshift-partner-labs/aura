@@ -96,6 +96,23 @@ class GitIdentity(BaseModel):
     _name = field_validator("author_name")(_not_blank)
 
 
+class SigningSettings(BaseModel):
+    """The principal this operator signs as, and the key that signs.
+
+    With `agent`, `key` is the public key of a private key loaded in
+    ssh-agent (D7); otherwise it is a private key file.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    principal: str = Field(min_length=1)
+    key: Path
+    agent: bool = True
+
+    _principal = field_validator("principal")(_not_blank)
+    _key = field_validator("key")(_absolute)
+
+
 class AuraConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -104,6 +121,7 @@ class AuraConfig(BaseModel):
     ]
     execution: ExecutionSettings = Field(default_factory=ExecutionSettings)
     git: GitIdentity | None = None
+    signing: SigningSettings | None = None
 
 
 def config_path() -> Path:
@@ -144,6 +162,7 @@ __all__ = [
     "GitIdentity",
     "PostgreSQLStore",
     "SQLiteStore",
+    "SigningSettings",
     "config_path",
     "load_config",
 ]

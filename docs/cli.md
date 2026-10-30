@@ -316,6 +316,27 @@ The command prints an evidence snapshot with one `proposal_staleness` item per p
 
 The check is Git-only and covers every proposal type, reruns included: it does not detect live OpenShift or Tekton state that has changed since the proposal's evidence was collected. The Phase 3 execution guard re-collects that state before executing. Rerun proposals stored before `base_commit` became required for reruns no longer load, and one such record fails every `proposal status` run that does not name its proposals with `--proposal-id`. Aura never deletes or overwrites a record, so move the old record out of `--proposal-dir` and generate the proposal again.
 
+## `proposal submit`
+
+Publishes a stored Phase 2 proposal to the Phase 3 [execution store](architecture.md#execution-store), so approvers and executors on other machines read the same records. Requires `proposer` or `admin`. The store comes only from Aura's configuration file; only the SQLite store is available until Phase 3 task 3.7.
+
+```bash
+uv run --no-sync aura proposal submit \
+  --proposal-id <proposal-id> \
+  --proposal-dir ./local/proposals \
+  --cwa-dir ./local/cwa \
+  --snapshot-dir ./local/snapshots \
+  --audit-dir ./local/audit \
+  --command-dir ./local/commands \
+  --operator you@example.com \
+  --idempotency-key submit-001 \
+  --role proposer
+```
+
+The directories hold the Phase 2 proposal, its provenance, and its command record; `--command-dir` here names the Phase 2 command records, and the submit command's own record goes to the store. The command loads the proposal with its CWA trace, CWA snapshot, evidence snapshot, and audit events, verifying every ID and digest; finds its command record, which must be `succeeded`; and builds a [`PublishedProposal`](evidence.md#published-proposal). It refuses a missing or invalid proposal, a broken reference, a missing or unsucceeded command record, and a proposal already published. On success it stores `command_received`, `proposal_published`, the publication, and the terminal command record in that order, and prints the publication.
+
+Its idempotency key is unique per store login. A reused key exits `2` before any write. A failed store write stores `failed` and `command_failed` linked to the last event stored.
+
 ## Output and Exit Codes
 
 | Exit code | Meaning |
