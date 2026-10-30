@@ -476,6 +476,24 @@ An `ApprovalRecord` approves or rejects one proposal's action ([D7, D11](plans/0
 
 The signed payload is the canonical JSON of every field except `signature` and `approval_digest`.
 
+## Execution Record
+
+An `ExecutionRecord` is one step of an execution, signed with namespace `aura-execute`. All records of one execution share its `execution_id`, and each has its own `record_id`; the store allows one `dispatching` record per proposal and one terminal record per execution.
+
+| Phase | Rules |
+| --- | --- |
+| `dispatching` | Written before the adapter call; no `external_result`, `failure_reason`, or `resolution` |
+| `submitted`, `handed_off` | Name their effect in `external_result`: a pull request, a PipelineRun, or a mailbox path |
+| `running`, `succeeded`, `merged`, `closed` | Follow the PipelineRun or pull request; no `failure_reason` |
+| `failed` | Requires a non-blank `failure_reason` |
+| `not_dispatched` | Requires `resolution`: `timeout_margin`, or `manual` with a `confirmation_id` and a `failure_reason` that states how the operators confirmed no effect occurred |
+
+Terminal phases are `handed_off`, `succeeded`, `failed`, `merged`, `closed`, and `not_dispatched`. The adapter must fit the proposal type: `git_handoff` or `git_pr` for Git proposals, `tekton` for reruns, and the test-only `recording` for either. `approval_ids` is non-empty with no repeats. The signed payload is every field except `signature` and `execution_digest`, including `audit_event_digest`, the digest of the event that anchors the record.
+
+## PipelineRun Observation
+
+A `PipelineRunObservation` records one read of an Aura-created PipelineRun in `openshift-pipelines`, signed with namespace `aura-execute`: its name, UID, the `Succeeded` condition's status (`True`, `False`, or `Unknown`) and reason, and its start and completion times. `completion_time` is set exactly when the status is not `Unknown`, and never precedes `start_time`.
+
 ## Audit Events
 
 Audit events are immutable and reference the previous event where applicable:

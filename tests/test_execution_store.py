@@ -72,7 +72,7 @@ def test_a_new_sqlite_file_is_initialized_once(tmp_path) -> None:
     versions = raw(tmp_path).execute(
         "SELECT version FROM schema_versions"
     ).fetchall()
-    assert versions == [(max(SUPPORTED_SCHEMA_VERSIONS),)]
+    assert versions == [(version,) for version in SUPPORTED_SCHEMA_VERSIONS]
 
 
 def test_an_existing_database_without_the_schema_is_refused(tmp_path) -> None:
@@ -361,7 +361,9 @@ def test_a_nested_column_that_differs_from_its_record_is_refused(
 
 def every_table_record(tmp_path, monkeypatch) -> dict[str, object]:
     from test_approvals import approval, proposal_records
+    from test_execution_records import execution, observation
     from aura.approvals import ApprovalRecord, PublishedProposal
+    from aura.execution.records import ExecutionRecord, PipelineRunObservation
 
     return {
         **dict(RECORDS),
@@ -369,6 +371,8 @@ def every_table_record(tmp_path, monkeypatch) -> dict[str, object]:
             proposal_records(tmp_path / "run", monkeypatch)
         ),
         "approvals": ApprovalRecord.model_validate(approval()),
+        "executions": ExecutionRecord.model_validate(execution()),
+        "pipeline_run_observations": PipelineRunObservation.model_validate(observation()),
     }
 
 
@@ -568,3 +572,111 @@ def test_an_approval_without_its_audit_event_is_refused(tmp_path, approver_key) 
 
     with pytest.raises(RecordInvalid, match="approval_recorded"):
         open_store(tmp_path).with_signers(signers_for(approver_key)).select("approvals")
+
+
+def signed_execution(private, **changes):
+    """A signed ExecutionRecord and the event that anchors it."""
+
+    from aura.contracts import AuditEventType
+    from aura.execution.records import ExecutionPhase, ExecutionRecord
+    from aura.signing import EXECUTE, sign
+    from test_approvals import SIGNATURE
+    from test_execution_records import execution
+
+    fields = execution(**changes)
+    event_type = (
+        AuditEventType.EXECUTION_STARTED
+        if fields["phase"] == ExecutionPhase.DISPATCHING
+        else AuditEventType.EXECUTION_FINISHED
+    )
+    event = AuditEvent.model_validate(
+        {
+            "event_id": str(uuid5(UUID(fields["command_id"]), f"{event_type.value}:{fields['record_id']}")),
+            "command_id": fields["command_id"],
+            "event_type": event_type,
+            "occurred_at": fields["created_at"],
+            "actor": fields["principal"],
+            "data": {"record_id": fields["record_id"]},
+        }
+    )
+    fields["audit_event_digest"] = event.event_digest
+    draft = ExecutionRecord.model_validate({**fields, "signature": SIGNATURE})
+    signature = sign(draft.signed_payload(), key=private, namespace=EXECUTE)
+    return ExecutionRecord.model_validate({**fields, "signature": signature}), event
+
+
+@pytest.fixture
+def executor_key(tmp_path):
+    from test_signing import key
+
+    return key(tmp_path, "executor")
+
+
+def executor_signers(private) -> str:
+    from aura.signing import EXECUTE
+    from test_signing import listed
+
+    return listed("executor@example.com", private, EXECUTE)
+
+
+def store_execution(tmp_path, private, **changes):
+    record, event = signed_execution(private, **changes)
+    store = open_store(tmp_path)
+    store.insert("audit_events", event)
+    store.insert("executions", record)
+    return record
+
+
+def test_an_execution_record_round_trips(tmp_path, executor_key) -> None:
+    record = store_execution(tmp_path, executor_key)
+
+    reader = open_store(tmp_path).with_signers(executor_signers(executor_key))
+
+    assert reader.select("executions", proposal_id=record.proposal_id) == [record]
+    assert reader.select("executions", cluster_name="example") == [record]
+
+
+def test_an_execution_signed_for_approval_is_refused(tmp_path, executor_key) -> None:
+    from aura.signing import APPROVE, EXECUTE
+    from test_signing import listed
+
+    store_execution(tmp_path, executor_key)
+    approver_only = listed("executor@example.com", executor_key, APPROVE)
+
+    with pytest.raises(RecordInvalid, match="signature"):
+        open_store(tmp_path).with_signers(approver_only).select("executions")
+    assert EXECUTE != APPROVE
+
+
+def test_a_proposal_is_dispatched_at_most_once(tmp_path, executor_key) -> None:
+    store_execution(tmp_path, executor_key)
+    second, event = signed_execution(
+        executor_key,
+        record_id="00000000-0000-0000-0000-000000000052",
+        execution_id="00000000-0000-0000-0000-000000000053",
+    )
+    store = open_store(tmp_path)
+    store.insert("audit_events", event)
+
+    with pytest.raises(RecordConflict, match="executions"):
+        store.insert("executions", second)
+
+
+def test_an_execution_has_at_most_one_terminal_record(tmp_path, executor_key) -> None:
+    store_execution(
+        tmp_path, executor_key, phase="succeeded",
+        record_id="00000000-0000-0000-0000-000000000054",
+    )
+    failed, event = signed_execution(
+        executor_key, phase="failed", failure_reason="late",
+        record_id="00000000-0000-0000-0000-000000000055",
+    )
+    store = open_store(tmp_path)
+    store.insert("audit_events", event)
+
+    with pytest.raises(RecordConflict, match="executions"):
+        store.insert("executions", failed)
+    store_execution(
+        tmp_path, executor_key, phase="running",
+        record_id="00000000-0000-0000-0000-000000000056",
+    )

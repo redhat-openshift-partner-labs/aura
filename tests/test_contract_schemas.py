@@ -7,7 +7,9 @@ import json
 import pytest
 from pydantic import BaseModel
 
+from aura.adapters import AdapterRequest, AdapterResult
 from aura.approvals import ApprovalRecord, PublishedProposal
+from aura.execution.records import ExecutionRecord, PipelineRunObservation
 from aura.contracts import (
     AuditEvent,
     CommandEnvelope,
@@ -34,6 +36,10 @@ CONTRACTS = (
     ScaffoldRequest,
     PublishedProposal,
     ApprovalRecord,
+    ExecutionRecord,
+    PipelineRunObservation,
+    AdapterRequest,
+    AdapterResult,
 )
 
 

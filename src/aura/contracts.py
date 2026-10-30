@@ -252,6 +252,7 @@ class AuditEventType(StrEnum):
     APPROVAL_RECORDED = "approval_recorded"
     EXECUTION_STARTED = "execution_started"
     EXECUTION_FINISHED = "execution_finished"
+    EXECUTION_OBSERVED = "execution_observed"
     COMMAND_REJECTED = "command_rejected"
     COMMAND_FAILED = "command_failed"
     COMMAND_REFUSED = "command_refused"

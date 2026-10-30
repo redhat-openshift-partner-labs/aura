@@ -23,13 +23,14 @@ from aura.canonical import canonical_json
 from aura.config import SQLiteStore
 from aura.contracts import AuditEvent, CommandEnvelope, EvidenceSnapshot
 from aura.json_store import parse_record
-from aura.signing import APPROVE, SignatureError, require_not_future, verify
+from aura.execution.records import ExecutionRecord, PipelineRunObservation
+from aura.signing import APPROVE, EXECUTE, SignatureError, require_not_future, verify
 
 
 R = TypeVar("R", bound=BaseModel)
 # Migrations only add tables, columns, and indexes, so a client accepts
 # every stored version in this range (D13).
-SUPPORTED_SCHEMA_VERSIONS = range(1, 2)
+SUPPORTED_SCHEMA_VERSIONS = range(1, 3)
 BUSY_TIMEOUT_SECONDS = 30
 
 
@@ -82,9 +83,10 @@ class Table:
     scoped_by_login: bool = False
     # The signature namespace of a signed record, verified on every load.
     signed: str | None = None
-    # The event type that anchors each record: the event named for the
-    # record's command and key must be stored with `audit_event_digest`.
-    anchored_by: str | None = None
+    # The event types that may anchor each record: an event of one of them,
+    # named for the record's command and key, must be stored with the
+    # record's `audit_event_digest`.
+    anchored_by: tuple[str, ...] = ()
 
 
 TABLES = {
@@ -126,7 +128,25 @@ TABLES = {
             ("proposal_id", "decision", "principal"),
             "approval_digest",
             signed=APPROVE,
-            anchored_by="approval_recorded",
+            anchored_by=("approval_recorded",),
+        ),
+        Table(
+            "executions",
+            ExecutionRecord,
+            ("record_id",),
+            ("execution_id", "proposal_id", "cluster_name", "phase"),
+            "execution_digest",
+            signed=EXECUTE,
+            anchored_by=("execution_started", "execution_finished", "execution_observed"),
+        ),
+        Table(
+            "pipeline_run_observations",
+            PipelineRunObservation,
+            ("observation_id",),
+            ("execution_id",),
+            "observation_digest",
+            signed=EXECUTE,
+            anchored_by=("execution_observed",),
         ),
     )
 }
@@ -314,19 +334,21 @@ class ExecutionStore:
                 )
         if table.signed is not None:
             self._verify(table, record, row["stored_at"])
-        if table.anchored_by is not None:
+        if table.anchored_by:
             self._require_anchor(table, fields)
         return record
 
     def _require_anchor(self, table: Table, fields: dict[str, Any]) -> None:
         subject = fields[table.key[0]]
-        event_id = uuid5(UUID(fields["command_id"]), f"{table.anchored_by}:{subject}")
-        events = self._select(TABLES["audit_events"], {"event_id": str(event_id)})
-        if not events or events[0].event_digest != fields["audit_event_digest"]:
-            raise RecordInvalid(
-                f"{table.name} row {subject} has no stored {table.anchored_by} "
-                "event with its audit_event_digest"
-            )
+        for event_type in table.anchored_by:
+            event_id = uuid5(UUID(fields["command_id"]), f"{event_type}:{subject}")
+            events = self._select(TABLES["audit_events"], {"event_id": str(event_id)})
+            if events and events[0].event_digest == fields["audit_event_digest"]:
+                return
+        raise RecordInvalid(
+            f"{table.name} row {subject} has no stored "
+            f"{' or '.join(table.anchored_by)} event with its audit_event_digest"
+        )
 
     def _verify(self, table: Table, record: Any, stored_at: object) -> None:
         """Verify a signed record at the time the database stored it, so a

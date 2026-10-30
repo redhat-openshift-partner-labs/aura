@@ -34,6 +34,7 @@ from aura.diagnosis import DiagnosisRecord
 from aura.json_store import JsonRecordStore
 from aura.proposals import Proposal
 from aura.approvals import ApprovalRecord, PublishedProposal
+from aura.execution.records import ExecutionRecord, PipelineRunObservation
 from aura.execution.store import TABLES
 from failure_injection import run_cli
 from test_failure_matrix import COMMAND_ID, KEY, scenario_named
@@ -50,6 +51,8 @@ SELF_DIGESTS = {
     Proposal: ("proposal_digest",),
     PublishedProposal: ("publication_digest",),
     ApprovalRecord: ("approval_digest",),
+    ExecutionRecord: ("execution_digest",),
+    PipelineRunObservation: ("observation_digest",),
 }
 
 

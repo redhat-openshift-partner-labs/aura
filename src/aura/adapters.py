@@ -1,4 +1,9 @@
-"""Contracts for Aura execution adapters."""
+"""Contracts for Aura execution adapters (Phase 3 task 3.1).
+
+Only the guard calls an adapter's write method, after the `dispatching`
+record is stored (I10). A request names the approved proposal by both its
+digest and its action digest.
+"""
 
 from __future__ import annotations
 
@@ -9,38 +14,44 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class AdapterName(StrEnum):
-    """External systems that can execute an approved Aura proposal."""
+_DIGEST = r"^[0-9a-f]{64}$"
 
-    SCAFFOLD = "scaffold"
-    GIT_PATCH = "git_patch"
+
+class AdapterName(StrEnum):
+    """The adapters in Phase 3 scope."""
+
+    GIT_HANDOFF = "git_handoff"
     GIT_PR = "git_pr"
     TEKTON = "tekton"
-    NOTIFY = "notify"
+    # Writes nothing outside Aura; tests inject it into `execute`.
+    RECORDING = "recording"
 
 
 class AdapterRequest(BaseModel):
-    """Input to an approved execution adapter."""
+    """Input to an adapter's write method for one approved proposal."""
 
     model_config = ConfigDict(extra="forbid")
 
     request_id: UUID
     command_id: UUID
+    execution_id: UUID
     proposal_id: UUID
+    proposal_digest: str = Field(pattern=_DIGEST)
+    action_digest: str = Field(pattern=_DIGEST)
     adapter: AdapterName
     input: dict[str, Any]
 
 
 class AdapterResult(BaseModel):
-    """Output from an execution adapter."""
+    """Output of an adapter's write method."""
 
     model_config = ConfigDict(extra="forbid")
 
     request_id: UUID
-    command_id: UUID
+    execution_id: UUID
     adapter: AdapterName
     success: bool
-    output: dict[str, Any] = Field(default_factory=dict)
+    external_result: dict[str, str] = Field(default_factory=dict)
     error: str | None = None
 
     @model_validator(mode="after")
@@ -49,16 +60,21 @@ class AdapterResult(BaseModel):
             raise ValueError("successful adapter result must not set error")
         if not self.success and (self.error is None or not self.error.strip()):
             raise ValueError("failed adapter result must set error")
+        if self.success and not self.external_result:
+            raise ValueError("successful adapter result must name its effect")
         return self
 
 
 class ExecutionAdapter(Protocol):
-    """Protocol implemented by external-system adapters."""
+    """Implemented by each adapter in `aura.execution`."""
 
     @property
     def name(self) -> AdapterName: ...
 
-    async def execute(self, request: AdapterRequest) -> AdapterResult: ...
+    @property
+    def version(self) -> str: ...
+
+    def write(self, request: AdapterRequest) -> AdapterResult: ...
 
 
 __all__ = [
@@ -67,4 +83,3 @@ __all__ = [
     "AdapterResult",
     "ExecutionAdapter",
 ]
-

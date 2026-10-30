@@ -9,28 +9,50 @@ from aura.adapters import (
     AdapterName,
     AdapterRequest,
     AdapterResult,
-    ExecutionAdapter,
 )
 
 
+REQUEST: dict[str, object] = {
+    "request_id": "00000000-0000-0000-0000-000000000030",
+    "command_id": "00000000-0000-0000-0000-000000000001",
+    "execution_id": "00000000-0000-0000-0000-000000000031",
+    "proposal_id": "00000000-0000-0000-0000-000000000040",
+    "proposal_digest": "a" * 64,
+    "action_digest": "b" * 64,
+    "adapter": "tekton",
+    "input": {"cluster_name": "example"},
+}
+RESULT: dict[str, object] = {
+    "request_id": "00000000-0000-0000-0000-000000000030",
+    "execution_id": "00000000-0000-0000-0000-000000000031",
+    "adapter": "tekton",
+    "success": True,
+    "external_result": {"pipeline_run": "aura-rerun-x"},
+}
+
+
 def make_request(**overrides: object) -> AdapterRequest:
-    values: dict[str, object] = {
-        "request_id": "00000000-0000-0000-0000-000000000030",
-        "command_id": "00000000-0000-0000-0000-000000000001",
-        "proposal_id": "00000000-0000-0000-0000-000000000040",
-        "adapter": "scaffold",
-        "input": {"cluster_name": "example"},
+    return AdapterRequest.model_validate({**REQUEST, **overrides})
+
+
+def result(**overrides: object) -> AdapterResult:
+    return AdapterResult.model_validate({**RESULT, **overrides})
+
+
+def test_the_adapters_in_scope() -> None:
+    assert {name.value for name in AdapterName} == {
+        "git_handoff",
+        "git_pr",
+        "tekton",
+        "recording",
     }
-    values.update(overrides)
-    return AdapterRequest.model_validate(values)
 
 
 def test_valid_adapter_request() -> None:
     request = make_request()
 
-    assert request.request_id == UUID("00000000-0000-0000-0000-000000000030")
-    assert request.adapter is AdapterName.SCAFFOLD
-    assert request.input == {"cluster_name": "example"}
+    assert request.adapter is AdapterName.TEKTON
+    assert request.action_digest == "b" * 64
 
 
 def test_adapter_request_round_trips_through_json() -> None:
@@ -41,13 +63,30 @@ def test_adapter_request_round_trips_through_json() -> None:
     assert restored == request
 
 
+def test_the_recording_adapter_records_and_writes_nothing_else() -> None:
+    from aura.execution.recording import RecordingAdapter
+
+    adapter = RecordingAdapter()
+    request = make_request(adapter="recording")
+
+    written = adapter.write(request)
+
+    assert adapter.requests == [request]
+    assert written.success and written.external_result == {
+        "recorded": str(request.request_id)
+    }
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
         ("request_id", "not-a-uuid"),
-        ("command_id", "not-a-uuid"),
+        ("execution_id", "not-a-uuid"),
         ("proposal_id", "not-a-uuid"),
-        ("adapter", "unknown-adapter"),
+        ("proposal_digest", "short"),
+        ("action_digest", "short"),
+        ("adapter", "scaffold"),
+        ("extra", 1),
     ],
 )
 def test_adapter_request_rejects_invalid_fields(field: str, value: object) -> None:
@@ -55,64 +94,26 @@ def test_adapter_request_rejects_invalid_fields(field: str, value: object) -> No
         make_request(**{field: value})
 
 
-def test_successful_adapter_result_has_no_error() -> None:
-    result = AdapterResult.model_validate(
-        {
-            "request_id": "00000000-0000-0000-0000-000000000030",
-            "command_id": "00000000-0000-0000-0000-000000000001",
-            "adapter": "scaffold",
-            "success": True,
-            "output": {"generated_files": []},
-        }
-    )
-
-    assert result.success is True
-    assert result.error is None
+def test_successful_adapter_result_names_its_effect() -> None:
+    assert result().error is None
 
 
-def test_failed_adapter_result_requires_error() -> None:
-    values: dict[str, object] = {
-        "request_id": "00000000-0000-0000-0000-000000000030",
-        "command_id": "00000000-0000-0000-0000-000000000001",
-        "adapter": "scaffold",
-        "success": False,
-        "output": {},
-    }
-
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"error": "unexpected"},
+        {"external_result": {}},
+        {"success": False, "external_result": {}},
+        {"success": False, "error": " "},
+    ],
+    ids=["success-with-error", "success-without-effect", "failure-without-error", "blank-error"],
+)
+def test_adapter_result_rejects_inconsistent_values(overrides) -> None:
     with pytest.raises(ValidationError):
-        AdapterResult.model_validate(values)
+        result(**overrides)
 
 
-def test_successful_adapter_result_rejects_error() -> None:
-    values: dict[str, object] = {
-        "request_id": "00000000-0000-0000-0000-000000000030",
-        "command_id": "00000000-0000-0000-0000-000000000001",
-        "adapter": "scaffold",
-        "success": True,
-        "output": {},
-        "error": "unexpected error",
-    }
+def test_failed_adapter_result_carries_its_error() -> None:
+    failed = result(success=False, external_result={}, error="create refused")
 
-    with pytest.raises(ValidationError):
-        AdapterResult.model_validate(values)
-
-
-def test_execution_adapter_protocol_accepts_async_adapter() -> None:
-    class ScaffoldAdapter:
-        @property
-        def name(self) -> AdapterName:
-            return AdapterName.SCAFFOLD
-
-        async def execute(self, request: AdapterRequest) -> AdapterResult:
-            return AdapterResult(
-                request_id=request.request_id,
-                command_id=request.command_id,
-                adapter=request.adapter,
-                success=True,
-                output={},
-            )
-
-    adapter: ExecutionAdapter = ScaffoldAdapter()
-
-    assert adapter.name is AdapterName.SCAFFOLD
-
+    assert failed.error == "create refused"
