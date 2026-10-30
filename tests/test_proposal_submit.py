@@ -213,11 +213,12 @@ def test_each_store_write_failure_fails_closed(tmp_path, monkeypatch, phase2, fa
     assert (code, stdout) == (2, "")
     assert "injected write failure" in stderr
     store = open_store(database)
-    terminal = SUBMITTED[fail_at] == "commands"
-    if terminal:
-        # The terminal record write fails last; its earlier records stay.
+    if SUBMITTED[fail_at] in {"published_proposals", "commands"}:
+        # The publication and the terminal record are stored together, so
+        # either failing stores neither; earlier events stay.
         assert writes.labels == SUBMITTED
         assert store.select("commands") == []
+        assert store.select("published_proposals") == []
         return
     assert writes.labels[: fail_at + 1] == SUBMITTED[: fail_at + 1]
     assert writes.labels[fail_at + 1 :] == ["audit_events:command_failed", "commands"]

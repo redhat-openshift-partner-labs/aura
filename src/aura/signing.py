@@ -115,7 +115,14 @@ def _require_unshared_keys(signers: str, principal: str) -> None:
         if key_type is None or key_type + 1 >= len(fields):
             raise SignatureError("allowed-signers line has no public key")
         blob = fields[key_type + 1]
-        owners.setdefault(blob, set()).update(fields[0].split(","))
+        names = fields[0].split(",")
+        options = " ".join(fields[1:key_type])
+        if principal in names and 'namespaces="' not in options:
+            # ssh-keygen accepts any namespace without it; D7 requires it.
+            raise SignatureError(
+                f"a key of {principal} has no namespaces option"
+            )
+        owners.setdefault(blob, set()).update(names)
     for names in owners.values():
         if principal in names and len(names) > 1:
             raise SignatureError(

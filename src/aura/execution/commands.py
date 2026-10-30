@@ -40,6 +40,9 @@ class Chain:
     command: CommandEnvelope
     clock: Callable[[], datetime]
     last: AuditEvent | None = field(default=None)
+    # Stored with the terminal record in one transaction, so a run that
+    # does not store its terminal record leaves no artifact (I1, I3).
+    artifacts: list[tuple[str, BaseModel]] = field(default_factory=list)
 
     def append(
         self,
@@ -77,7 +80,7 @@ class Chain:
         )
 
     def store_artifact(self, table: str, record: BaseModel) -> None:
-        self.store.insert(table, record)
+        self.artifacts.append((table, record))
 
 
 Step = Callable[[Chain], str]
@@ -158,27 +161,45 @@ def _store_terminal(chain: Chain, state: CommandState, *, report: bool = True) -
         machine.transition(chain.command.status, CommandState.COLLECTING_EVIDENCE)
     )
     command = command.with_status(machine.transition(command.status, state))
+    artifacts = chain.artifacts if state is CommandState.SUCCEEDED else []
     try:
-        chain.store.insert("commands", command)
+        chain.store.insert_together([*artifacts, ("commands", command)])
     except RecordConflict as conflict:
-        # Another run stored this key first; record that, and no terminal
-        # record of this run (I1 change).
-        winner = chain.store.get("commands", idempotency_key=command.idempotency_key)
-        reason = (
-            "idempotency key completed concurrently by command "
-            f"{winner.command_id}"
-        )
-        try:
-            chain.append(AuditEventType.COMMAND_FAILED, {"status": "failed", "reason": reason})
-        except StoreError:
-            pass
-        print(f"aura: {reason}", file=sys.stderr)
-        return 2
+        return _lost_race(chain, command, conflict)
     except StoreError as error:
         if report:
             print(f"aura: {error}", file=sys.stderr)
         return 2
     return 0 if state is CommandState.SUCCEEDED else 2
+
+
+_CLOSING_EVENTS = {AuditEventType.COMMAND_FAILED, AuditEventType.COMMAND_REFUSED}
+
+
+def _lost_race(chain: Chain, command: CommandEnvelope, conflict: RecordConflict) -> int:
+    """Report a terminal insert another record blocked. When another run
+    stored this key first, record that run, and no terminal record of this
+    one (I1 change); a chain that already closed keeps its last event."""
+
+    try:
+        winner = chain.store.get("commands", idempotency_key=command.idempotency_key)
+    except StoreError:
+        winner = None
+    if winner is None or winner.command_id == command.command_id:
+        print(f"aura: {conflict}", file=sys.stderr)
+        return 2
+    reason = f"idempotency key completed concurrently by command {winner.command_id}"
+    if chain.last is None or chain.last.event_type not in _CLOSING_EVENTS:
+        try:
+            chain.append(
+                AuditEventType.COMMAND_FAILED,
+                {"status": CommandState.FAILED.value, "reason": reason},
+                subject_id=winner.command_id,
+            )
+        except StoreError as error:
+            print(f"aura: {error}", file=sys.stderr)
+    print(f"aura: {reason}", file=sys.stderr)
+    return 2
 
 
 __all__ = ["Chain", "Refusal", "run_store_command"]

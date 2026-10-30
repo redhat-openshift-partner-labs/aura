@@ -246,9 +246,11 @@ def test_each_store_write_failure_fails_closed(approver, monkeypatch, fail_at) -
 
     assert (code, stdout) == (2, "")
     store = open_store(database, login="approver-b")
-    if APPROVED[fail_at] == "commands":
+    if APPROVED[fail_at] in {"approvals", "commands"}:
+        # The approval and the terminal record are stored together.
         assert writes.labels == APPROVED
         assert store.select("commands") == []
+        assert store.select("approvals") == []
         return
     assert writes.labels[fail_at + 1 :] == ["audit_events:command_failed", "commands"]
     (record,) = store.select("commands")
@@ -256,3 +258,53 @@ def test_each_store_write_failure_fails_closed(approver, monkeypatch, fail_at) -
     assert store.select("approvals") == []
     events = chain(store, DECIDE_ID)
     assert events[-1].event_type is AuditEventType.COMMAND_FAILED
+
+
+def race_loser(monkeypatch) -> None:
+    """Skip the up-front key check, as a run that read the key before the
+    winner stored it would."""
+
+    import aura.execution.commands as commands
+
+    monkeypatch.setattr(commands, "_duplicate", lambda store, command: None)
+
+
+def test_a_race_loser_stores_no_approval_and_names_the_winner(approver, monkeypatch) -> None:
+    database, root, private = approver
+    hub = policy(listed("approver@example.com", private, APPROVE))
+    assert decide(root, hub=hub)[0] == 0
+    race_loser(monkeypatch)
+    loser = UUID(int=601)
+
+    code, _, stderr = decide(root, hub=hub, command_id=loser)
+
+    assert code == 2
+    assert f"completed concurrently by command {DECIDE_ID}" in stderr
+    store = open_store(database, login="approver-b").with_signers(
+        listed("approver@example.com", private, APPROVE)
+    )
+    assert [record.command_id for record in store.select("approvals")] == [DECIDE_ID]
+    events = chain(store, loser)
+    assert events[-1].event_type is AuditEventType.COMMAND_FAILED
+    assert str(DECIDE_ID) in events[-1].data["reason"]
+
+
+def test_a_failed_race_loser_keeps_its_own_failure_last(approver, monkeypatch) -> None:
+    database, root, private = approver
+    assert decide(root, hub=policy(listed("approver@example.com", private, APPROVE)))[0] == 0
+    race_loser(monkeypatch)
+    loser = UUID(int=602)
+
+    def unreachable() -> HubPolicy:
+        raise HubPolicyError("hub unreachable")
+
+    code, _, stderr = decide(root, hub=unreachable, command_id=loser)
+
+    assert code == 2
+    assert f"completed concurrently by command {DECIDE_ID}" in stderr
+    events = chain(open_store(database, login="approver-b"), loser)
+    assert [event.event_type for event in events] == [
+        AuditEventType.COMMAND_RECEIVED,
+        AuditEventType.COMMAND_FAILED,
+    ]
+    assert events[-1].data["reason"] == "hub unreachable"

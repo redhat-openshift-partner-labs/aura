@@ -201,3 +201,12 @@ def test_a_signer_line_without_a_key_is_refused(approver) -> None:
 
     with pytest.raises(SignatureError, match="no public key"):
         check(approver, signature, allowed)
+
+
+def test_a_key_without_a_namespaces_option_is_refused(approver) -> None:
+    signature = sign(PAYLOAD, key=approver, namespace=APPROVE)
+    public = approver.with_suffix(".pub").read_text(encoding="utf-8").strip()
+
+    # Without the option ssh-keygen accepts any namespace; D7 requires it.
+    with pytest.raises(SignatureError, match="namespaces"):
+        check(approver, signature, f"approver@example.com {public}\n")

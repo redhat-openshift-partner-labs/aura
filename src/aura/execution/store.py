@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import resources
 from typing import Any, Protocol, TypeVar
-from uuid import uuid4
+from uuid import UUID, uuid4, uuid5
 
 from pydantic import BaseModel
 
@@ -23,7 +23,7 @@ from aura.canonical import canonical_json
 from aura.config import SQLiteStore
 from aura.contracts import AuditEvent, CommandEnvelope, EvidenceSnapshot
 from aura.json_store import parse_record
-from aura.signing import APPROVE, SignatureError, verify
+from aura.signing import APPROVE, SignatureError, require_not_future, verify
 
 
 R = TypeVar("R", bound=BaseModel)
@@ -57,6 +57,10 @@ class StoreWriteFailed(StoreError):
     """A write failed and read-back shows it was not stored."""
 
 
+class StoreReadFailed(StoreError):
+    """A read of the store failed."""
+
+
 class StoreOutcomeUnknown(StoreError):
     """A write's outcome is unknown and the row cannot be read back (I4)."""
 
@@ -78,6 +82,9 @@ class Table:
     scoped_by_login: bool = False
     # The signature namespace of a signed record, verified on every load.
     signed: str | None = None
+    # The event type that anchors each record: the event named for the
+    # record's command and key must be stored with `audit_event_digest`.
+    anchored_by: str | None = None
 
 
 TABLES = {
@@ -119,6 +126,7 @@ TABLES = {
             ("proposal_id", "decision", "principal"),
             "approval_digest",
             signed=APPROVE,
+            anchored_by="approval_recorded",
         ),
     )
 }
@@ -163,18 +171,62 @@ class ExecutionStore:
         return str(row[0])
 
     def insert(self, table_name: str, record: BaseModel) -> None:
-        table = TABLES[table_name]
-        row = self._row(table, record)
+        self.insert_together([(table_name, record)])
+
+    def insert_together(self, records: list[tuple[str, BaseModel]]) -> None:
+        """Insert records in one transaction: all are stored or none is.
+
+        An identical record already stored counts as stored; when the
+        outcome is unknown, every row is read back by its key (I4).
+        """
+
+        rows = [(TABLES[name], self._row(TABLES[name], record)) for name, record in records]
         try:
-            self._connection.execute("BEGIN IMMEDIATE")
-            self._insert(table, row)
-            self._connection.execute("COMMIT")
-        except sqlite3.IntegrityError:
+            self._insert_rows(rows)
+        except sqlite3.IntegrityError as error:
             self._rollback()
-            self._require_identical(table, row)
+            missing = self._conflicts(rows, error)
+            if missing:
+                # Rows already stored identically count; store the rest.
+                try:
+                    self._insert_rows(missing)
+                except sqlite3.Error as retry:
+                    self._rollback()
+                    raise RecordConflict(
+                        f"{missing[0][0].name} write conflicts: {retry}"
+                    ) from retry
         except sqlite3.Error as error:
             self._rollback()
-            self._read_back(table, row, error)
+            for table, row in rows:
+                self._read_back(table, row, error)
+
+    def _insert_rows(self, rows: list[tuple[Table, dict[str, Any]]]) -> None:
+        self._connection.execute("BEGIN IMMEDIATE")
+        for table, row in rows:
+            self._insert(table, row)
+        self._connection.execute("COMMIT")
+
+    def _conflicts(
+        self,
+        rows: list[tuple[Table, dict[str, Any]]],
+        error: sqlite3.Error,
+    ) -> list[tuple[Table, dict[str, Any]]]:
+        """Raise for a row whose key holds another record; return the rows
+        not stored. A conflict on another unique index names its table."""
+
+        missing = []
+        for table, row in rows:
+            stored = self._stored_record_text(table, row)
+            if stored is None:
+                missing.append((table, row))
+            elif stored != row["record"]:
+                raise RecordConflict(
+                    f"{table.name} already stores another record under "
+                    f"{self._describe_key(table, row)}"
+                )
+        if len(missing) == len(rows):
+            raise RecordConflict(f"{rows[0][0].name} write conflicts: {error}") from error
+        return missing
 
     def exclusive(
         self,
@@ -187,10 +239,20 @@ class ExecutionStore:
 
         table = TABLES[table_name]
         row = self._row(table, record)
-        self._connection.execute("BEGIN IMMEDIATE")
+        try:
+            self._connection.execute("BEGIN IMMEDIATE")
+        except sqlite3.Error as error:
+            raise StoreWriteFailed(f"{table.name} write failed: {error}") from error
         try:
             check(self)
             self._insert(table, row)
+        except sqlite3.IntegrityError as error:
+            self._rollback()
+            self._conflicts([(table, row)], error)
+            return
+        except sqlite3.Error as error:
+            self._rollback()
+            raise StoreWriteFailed(f"{table.name} write failed: {error}") from error
         except BaseException:
             self._rollback()
             raise
@@ -224,11 +286,16 @@ class ExecutionStore:
             *map(_column, table.columns),
         ]
         where = " AND ".join(f"{name} = ?" for name in equal) or "1 = 1"
-        rows = self._connection.execute(
-            f"SELECT {', '.join(names)} FROM {table.name} WHERE {where} "
-            "ORDER BY stored_at, rowid",
-            tuple(equal.values()),
-        ).fetchall()
+        # The key breaks stored_at ties in SQL both backends accept.
+        order = ", ".join(("stored_at", *self._key_columns(table)))
+        try:
+            rows = self._connection.execute(
+                f"SELECT {', '.join(names)} FROM {table.name} WHERE {where} "
+                f"ORDER BY {order}",
+                tuple(equal.values()),
+            ).fetchall()
+        except sqlite3.Error as error:
+            raise StoreReadFailed(f"{table.name} read failed: {error}") from error
         return [self._load(table, dict(zip(names, row))) for row in rows]
 
     def _load(self, table: Table, row: dict[str, Any]) -> Any:
@@ -247,7 +314,19 @@ class ExecutionStore:
                 )
         if table.signed is not None:
             self._verify(table, record, row["stored_at"])
+        if table.anchored_by is not None:
+            self._require_anchor(table, fields)
         return record
+
+    def _require_anchor(self, table: Table, fields: dict[str, Any]) -> None:
+        subject = fields[table.key[0]]
+        event_id = uuid5(UUID(fields["command_id"]), f"{table.anchored_by}:{subject}")
+        events = self._select(TABLES["audit_events"], {"event_id": str(event_id)})
+        if not events or events[0].event_digest != fields["audit_event_digest"]:
+            raise RecordInvalid(
+                f"{table.name} row {subject} has no stored {table.anchored_by} "
+                "event with its audit_event_digest"
+            )
 
     def _verify(self, table: Table, record: Any, stored_at: object) -> None:
         """Verify a signed record at the time the database stored it, so a
@@ -258,14 +337,18 @@ class ExecutionStore:
                 f"{table.name} rows are signed; reading them needs the "
                 "allowed-signers list"
             )
+        stored = _stored_time(stored_at)
         try:
+            # A record stamped after the database stored it would count
+            # past its expiry, so it is refused (D11).
+            require_not_future(record.created_at, now=stored)
             verify(
                 record.signed_payload(),
                 record.signature,
                 principal=record.principal,
                 namespace=table.signed,
                 signers=self._signers,
-                at=_stored_time(stored_at),
+                at=stored,
             )
         except SignatureError as error:
             raise RecordInvalid(
@@ -292,14 +375,6 @@ class ExecutionStore:
             f"VALUES ({', '.join('?' for _ in row)})",
             tuple(row.values()),
         )
-
-    def _require_identical(self, table: Table, row: dict[str, Any]) -> None:
-        stored = self._stored_record_text(table, row)
-        if stored != row["record"]:
-            raise RecordConflict(
-                f"{table.name} already stores another record under "
-                f"{self._describe_key(table, row)}"
-            )
 
     def _read_back(
         self,
@@ -441,6 +516,7 @@ __all__ = [
     "SchemaVersionError",
     "StoreError",
     "StoreOutcomeUnknown",
+    "StoreReadFailed",
     "StoreWriteFailed",
     "Table",
     "migrations",

@@ -6,7 +6,7 @@ import sqlite3
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid5
 
 import pytest
 
@@ -389,16 +389,38 @@ def test_every_table_refuses_a_record_without_its_stored_digest(
             store.select(name)
 
 
-def signed_approval(private, **changes):
+def approval_event(**changes) -> AuditEvent:
+    from aura.contracts import AuditEventType
+    from test_approvals import approval
+
+    fields = approval(**changes)
+    return AuditEvent.model_validate(
+        {
+            "event_id": str(uuid5(UUID(fields["command_id"]), f"approval_recorded:{fields['approval_id']}")),
+            "command_id": fields["command_id"],
+            "event_type": AuditEventType.APPROVAL_RECORDED,
+            "occurred_at": fields["created_at"],
+            "actor": fields["principal"],
+            "data": {"approval_id": fields["approval_id"]},
+        }
+    )
+
+
+def signed_approval(private, *, anchored: bool = True, **changes):
+    """A signed approval; with anchored, its audit event is stored first
+    by the caller, through the returned event."""
+
     from aura.approvals import ApprovalRecord
     from aura.signing import APPROVE, sign
     from test_approvals import SIGNATURE, approval
 
+    event = approval_event(**changes)
+    changes = {**changes, "audit_event_digest": event.event_digest}
     draft = ApprovalRecord.model_validate(approval(**changes))
     signature = sign(draft.signed_payload(), key=private, namespace=APPROVE)
     return ApprovalRecord.model_validate(
         approval(**changes, signature=signature)
-    ), SIGNATURE
+    ), event
 
 
 @pytest.fixture
@@ -416,8 +438,9 @@ def signers_for(private) -> str:
 
 
 def test_a_signed_record_verifies_on_load(tmp_path, approver_key) -> None:
-    record, _ = signed_approval(approver_key)
+    record, event = signed_approval(approver_key)
     store = open_store(tmp_path)
+    store.insert("audit_events", event)
     store.insert("approvals", record)
 
     reader = open_store(tmp_path).with_signers(signers_for(approver_key))
@@ -453,15 +476,93 @@ def test_a_bad_signature_is_refused_on_load(tmp_path, approver_key) -> None:
 
 
 def test_a_key_retired_after_storing_still_verifies(tmp_path, approver_key) -> None:
+    """Verification runs at `stored_at`, not at the reader's clock: the key
+    below was retired after the row was stored and before today."""
+
     from aura.signing import APPROVE
     from test_signing import listed
 
-    record, _ = signed_approval(approver_key)
+    record, event = signed_approval(
+        approver_key,
+        created_at="2026-10-01T11:00:00+00:00",
+        expires_at="2026-10-02T11:00:00+00:00",
+    )
+    open_store(tmp_path).insert("audit_events", event)
     open_store(tmp_path).insert("approvals", record)
-    retired = listed("approver@example.com", approver_key, APPROVE, **{"valid-before": "20990101"})
-    raw(tmp_path).execute("UPDATE approvals SET stored_at = '2026-10-30 12:00:00'")
-    expired = listed("approver@example.com", approver_key, APPROVE, **{"valid-before": "20261029"})
+    raw(tmp_path).execute("UPDATE approvals SET stored_at = '2026-10-01 12:00:00'")
+    retired = listed("approver@example.com", approver_key, APPROVE, **{"valid-before": "20261015"})
+    before = listed("approver@example.com", approver_key, APPROVE, **{"valid-before": "20260930"})
 
     assert open_store(tmp_path).with_signers(retired).select("approvals") == [record]
     with pytest.raises(RecordInvalid, match="signature"):
-        open_store(tmp_path).with_signers(expired).select("approvals")
+        open_store(tmp_path).with_signers(before).select("approvals")
+
+
+def test_a_record_stamped_after_it_was_stored_is_refused(tmp_path, approver_key) -> None:
+    record, event = signed_approval(
+        approver_key,
+        created_at="2026-10-01T12:05:01+00:00",
+        expires_at="2026-10-02T12:05:01+00:00",
+    )
+    open_store(tmp_path).insert("audit_events", event)
+    open_store(tmp_path).insert("approvals", record)
+    raw(tmp_path).execute("UPDATE approvals SET stored_at = '2026-10-01 12:00:00'")
+
+    with pytest.raises(RecordInvalid, match="in the future"):
+        open_store(tmp_path).with_signers(signers_for(approver_key)).select("approvals")
+
+
+def test_a_failed_read_is_a_store_error(tmp_path) -> None:
+    from aura.execution.store import StoreError
+
+    store = open_store(tmp_path)
+    raw(tmp_path).execute("DROP TABLE audit_events")
+
+    with pytest.raises(StoreError, match="audit_events"):
+        store.select("audit_events")
+
+
+def test_store_sql_is_portable_to_postgresql() -> None:
+    from aura.execution import store
+
+    source = Path(store.__file__).read_text(encoding="utf-8").lower()
+
+    assert "rowid" not in source
+
+
+def test_rows_stored_together_are_stored_or_refused_together(tmp_path) -> None:
+    store = open_store(tmp_path)
+    store.insert("commands", make_command("taken"))
+
+    with pytest.raises(RecordConflict, match="commands"):
+        store.insert_together(
+            [
+                ("audit_events", make_audit_event()),
+                ("commands", make_command("taken", status=CommandState.FAILED.value)),
+            ]
+        )
+
+    assert store.select("audit_events") == []
+    store.insert_together([("audit_events", make_audit_event()), ("evidence_snapshots", make_snapshot())])
+    assert store.select("audit_events") == [make_audit_event()]
+    assert store.select("evidence_snapshots") == [make_snapshot()]
+
+
+def test_an_exclusive_insert_conflict_is_a_store_error(tmp_path) -> None:
+    store = open_store(tmp_path)
+    store.insert("audit_events", make_audit_event())
+    other = AuditEvent.model_validate(
+        {**make_audit_event().model_dump(mode="json"), "actor": "other@example.com", "event_digest": ""}
+    )
+
+    with pytest.raises(RecordConflict):
+        store.exclusive("audit_events", other, lambda reader: None)
+
+
+def test_an_approval_without_its_audit_event_is_refused(tmp_path, approver_key) -> None:
+    record, _ = signed_approval(approver_key)
+    store = open_store(tmp_path)
+    store.insert("approvals", record)
+
+    with pytest.raises(RecordInvalid, match="approval_recorded"):
+        open_store(tmp_path).with_signers(signers_for(approver_key)).select("approvals")

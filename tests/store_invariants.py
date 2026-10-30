@@ -100,17 +100,23 @@ def store_write_faults(monkeypatch, fail_at: int | None = None) -> Iterator[Stor
     before it is written."""
 
     writes = StoreWrites([])
-    insert: Callable = execution_store.ExecutionStore.insert
+    insert_together: Callable = execution_store.ExecutionStore.insert_together
 
-    def recorded(self, table_name, record):
-        label = table_name
-        if isinstance(record, AuditEvent):
-            label = f"{table_name}:{record.event_type.value}"
-        index = len(writes.labels)
-        writes.labels.append(label)
-        if index == fail_at:
-            raise StoreWriteFailed(f"injected write failure: {label}")
-        return insert(self, table_name, record)
+    def recorded(self, records):
+        # Rows stored together fail together, before the transaction.
+        failed = None
+        for table_name, record in records:
+            label = table_name
+            if isinstance(record, AuditEvent):
+                label = f"{table_name}:{record.event_type.value}"
+            if len(writes.labels) == fail_at:
+                failed = label
+            writes.labels.append(label)
+        if failed is not None:
+            raise StoreWriteFailed(f"injected write failure: {failed}")
+        return insert_together(self, records)
 
-    monkeypatch.setattr(execution_store.ExecutionStore, "insert", recorded)
+    monkeypatch.setattr(
+        execution_store.ExecutionStore, "insert_together", recorded
+    )
     yield writes
