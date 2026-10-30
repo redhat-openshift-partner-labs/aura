@@ -25,7 +25,7 @@ The closure plan's [rules](10-phase-0-2-closure.md#rules) R2–R6 apply, reading
 
 ## Operator Decisions
 
-Recorded on 2026-10-27: the operator accepted every recommendation, so each row's Recommendation is its decision. D13 was added the same day, when the operator stated that Aura will have a database. On 2026-10-29 the operator confirmed the plan edits listed in the [Stage 1 Record](#stage-1-record). On 2026-10-30 the operator moved task 3.2 into Stage 2, ahead of task 2.4, because an approval signs the proposal's `action_digest`. On 2026-10-30 the operator also confirmed the plan edits listed in the [Stage 2 Record](#stage-2-record). A stage that depends on a prerequisite a decision names, such as the staging hub, a credential, or a database, does not start until the operator provides it. IDs continue from the closure plan's D1–D6.
+Recorded on 2026-10-27: the operator accepted every recommendation, so each row's Recommendation is its decision. D13 was added the same day, when the operator stated that Aura will have a database. On 2026-10-29 the operator confirmed the plan edits listed in the [Stage 1 Record](#stage-1-record). On 2026-10-30 the operator moved task 3.2 into Stage 2, ahead of task 2.4, because an approval signs the proposal's `action_digest`. On 2026-10-30 the operator also confirmed the plan edits listed in the [Stage 2 Record](#stage-2-record) and the [Stage 3 Record](#stage-3-record). A stage that depends on a prerequisite a decision names, such as the staging hub, a credential, or a database, does not start until the operator provides it. IDs continue from the closure plan's D1–D6.
 
 | ID | Question | Options | Recommendation | Blocks |
 | --- | --- | --- | --- | --- |
@@ -434,7 +434,7 @@ Requires D8, and D10 and D12 under D8 (b). Live runs need task 0.3's staging sto
 | 0 | 0.3 Stage 4 prerequisites | Pending | |
 | 1 | 1.1–1.11 Hardening | Done; the operator confirmed its plan edits on 2026-10-29, see [Stage 1 Record](#stage-1-record) | `7e2fca9`, `9beb53d`, `4889513`, `b989aff`, `d88ab1c`, `3689b4c`, `ab480a9`, `71d82cc`, `8dc07a5`, `c74d7d3`; review fixes `1de5003`, `2171460`, `3c3e054` |
 | 2 | 2.1–2.5 and 3.2 Identity and approvals | Done; the operator confirmed its plan edits on 2026-10-30, see [Stage 2 Record](#stage-2-record) | `b8e223b`, `29ecb84`, `186062d`, `cba8acd`, `b4a8f26`, `925a00d`, `bd92e5b`, `22e6c10`, `d19846f`; review fixes `7802ed1` and the commit that records this |
-| 3 | 3.1–3.7 Guard and dry run | Done; its plan edits await the operator's confirmation, see [Stage 3 Record](#stage-3-record) | `566c7df`, `d6d12f7`, `0a84abd`, `2f6e685`, `1b05cf8`, `d0155cd`; review fixes `a7c159c`, `111cf36`, `58762da`, `8b13d07`, and the commit that records this |
+| 3 | 3.1–3.7 Guard and dry run | Done; the operator confirmed its plan edits on 2026-10-30, see [Stage 3 Record](#stage-3-record) | `566c7df`, `d6d12f7`, `0a84abd`, `2f6e685`, `1b05cf8`, `d0155cd`; review fixes `a7c159c`, `111cf36`, `58762da`, `8b13d07`, `cf3d7c1` |
 | 4 | 4.1–4.4 Tekton adapter | Pending | |
 | 5 | 5.1–5.4 Git execution | Pending | |
 | 6 | 6.1–6.5 Acceptance gate | Pending | |
@@ -523,7 +523,7 @@ Implemented 2026-10-30. The stage review ran the full suite at each commit, with
 | V14: the `recording` adapter could run on the production store | `a7c159c`: SQLite only (operator decision) |
 | V15: the guard loaded the publication before G2 | `a7c159c`: G2 first (operator decision) |
 | V16: the login check was a constraint outside the migrations, and the grants file could not be run again | `58762da`: a `CURRENT_USER` default and column-level `INSERT` |
-| V17 and the doc inaccuracies | The commit that records this |
+| V17 and the doc inaccuracies | `cf3d7c1` |
 
 Rule exceptions and notes:
 
@@ -532,7 +532,7 @@ Rule exceptions and notes:
 - Task 3.5's race of two `execute` commands is covered by the store's locked check-and-insert races on both backends and by `execute` tests that remove the guard's G6 and G11 so the transaction's recheck refuses; no test runs two `execute` processes at once.
 - `act` reached the PostgreSQL service container at `d0155cd`; [Validation](../validation.md) records the run.
 
-Plan edits made during Stage 3, awaiting the operator's confirmation (P3-1):
+Plan edits made during Stage 3, confirmed by the operator on 2026-10-30 (P3-1):
 
 1. [Guard](#guard) order: G2 runs first, then G3 loads the publication, then G1 and G4–G12, so an unsigned caller learns nothing about a proposal.
 2. A record that fails verification on load is a refusal under the rule that reads it (G3, G5, or G6); a store that cannot be read fails the command.

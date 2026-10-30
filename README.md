@@ -263,7 +263,7 @@ An idempotency key identifies one request. Aura stores one terminal record per k
 | --- | --- | --- |
 | [Phase 1](docs/plans/04-phase-1-read-only-assistant.md) | Read-only inventory, workflow inspection, and diagnosis | ✅ Shipped and validated |
 | [Phase 2](docs/plans/05-phase-2-proposals.md) | Deterministic proposals, never applied | ✅ Closed: scaffold, deprovision, cluster-edit, and rerun proposals validated; signed off 2026-10-26 |
-| [Phase 3](docs/plans/06-phase-3-approved-execution.md) | Guarded execution after explicit human approval | 🚧 Stages 1–3 done: hardening, the execution store, signed approvals, the guard and `execute` dry run; Stage 3's plan edits await confirmation; Stage 4, the Tekton adapter, next |
+| [Phase 3](docs/plans/06-phase-3-approved-execution.md) | Guarded execution after explicit human approval | 🚧 Stages 1–3 done: hardening, the execution store, signed approvals, the guard and `execute` dry run; Stage 4, the Tekton adapter, next |
 
 Current numbers, validation runs, and remaining gaps live in [Implementation Status](docs/status.md).
 
