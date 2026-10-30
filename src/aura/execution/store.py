@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel
 
+from aura.approvals import ApprovalRecord, PublishedProposal
 from aura.canonical import canonical_json
 from aura.config import SQLiteStore
 from aura.contracts import AuditEvent, CommandEnvelope, EvidenceSnapshot
@@ -68,7 +69,8 @@ class Table:
     model: type[BaseModel]
     # Fields that identify a row; the store adds `login` for commands.
     key: tuple[str, ...]
-    # Further fields copied into columns for constraints and queries.
+    # Further fields copied into columns for constraints and queries; a
+    # dotted path copies a nested field into a column named by its last part.
     columns: tuple[str, ...]
     digest: str
     scoped_by_login: bool = False
@@ -98,6 +100,20 @@ TABLES = {
             ("snapshot_id",),
             ("command_id",),
             "snapshot_digest",
+        ),
+        Table(
+            "published_proposals",
+            PublishedProposal,
+            ("publication_id",),
+            ("proposal_id", "proposal.cluster_name"),
+            "publication_digest",
+        ),
+        Table(
+            "approvals",
+            ApprovalRecord,
+            ("approval_id",),
+            ("proposal_id", "decision", "principal"),
+            "approval_digest",
         ),
     )
 }
@@ -188,7 +204,12 @@ class ExecutionStore:
         return self._select(table, values)
 
     def _select(self, table: Table, equal: dict[str, str | None]) -> list[Any]:
-        names = ["record", "digest", *self._key_columns(table), *table.columns]
+        names = [
+            "record",
+            "digest",
+            *self._key_columns(table),
+            *map(_column, table.columns),
+        ]
         where = " AND ".join(f"{name} = ?" for name in equal) or "1 = 1"
         rows = self._connection.execute(
             f"SELECT {', '.join(names)} FROM {table.name} WHERE {where} "
@@ -205,10 +226,11 @@ class ExecutionStore:
         fields = record.model_dump(mode="json")
         if row["digest"] != fields[table.digest]:
             raise RecordInvalid(f"{table.name} row digest does not match its record")
-        for name in (*table.key, *table.columns):
-            if row[name] != fields[name]:
+        for path in (*table.key, *table.columns):
+            if row[_column(path)] != _field(fields, path):
                 raise RecordInvalid(
-                    f"{table.name} row column {name} does not match its record"
+                    f"{table.name} row column {_column(path)} does not match "
+                    "its record"
                 )
         return record
 
@@ -216,7 +238,10 @@ class ExecutionStore:
         if not isinstance(record, table.model):
             raise TypeError(f"{table.name} stores {table.model.__name__}")
         fields = record.model_dump(mode="json")
-        row = {name: fields[name] for name in (*table.key, *table.columns)}
+        row = {
+            _column(path): _field(fields, path)
+            for path in (*table.key, *table.columns)
+        }
         if table.scoped_by_login:
             row["login"] = self._login
         row["record"] = canonical_json(fields)
@@ -308,6 +333,17 @@ class ExecutionStore:
                 f"{SUPPORTED_SCHEMA_VERSIONS.start}-"
                 f"{SUPPORTED_SCHEMA_VERSIONS.stop - 1}"
             )
+
+
+def _column(path: str) -> str:
+    return path.rsplit(".", 1)[-1]
+
+
+def _field(fields: dict[str, Any], path: str) -> Any:
+    value: Any = fields
+    for name in path.split("."):
+        value = value[name]
+    return value
 
 
 def _text(value: object) -> str | None:

@@ -309,3 +309,79 @@ def test_a_refused_exclusive_check_writes_nothing(tmp_path) -> None:
         store.exclusive("audit_events", make_audit_event(), refuse)
 
     assert store.select("audit_events") == []
+
+
+def test_publications_and_approvals_round_trip(tmp_path, monkeypatch) -> None:
+    from test_approvals import approval, proposal_records
+    from aura.approvals import ApprovalRecord, PublishedProposal
+
+    published = PublishedProposal.model_validate(
+        proposal_records(tmp_path / "run", monkeypatch)
+    )
+    record = ApprovalRecord.model_validate(
+        approval(proposal_id=str(published.proposal_id))
+    )
+    store = open_store(tmp_path)
+
+    store.insert("published_proposals", published)
+    store.insert("approvals", record)
+
+    assert store.get(
+        "published_proposals", publication_id=published.publication_id
+    ) == published
+    assert store.select(
+        "approvals", proposal_id=published.proposal_id, decision="approved"
+    ) == [record]
+    cluster = raw(tmp_path).execute(
+        "SELECT cluster_name FROM published_proposals"
+    ).fetchone()
+    assert cluster == (published.proposal.cluster_name,)
+
+
+def test_a_nested_column_that_differs_from_its_record_is_refused(
+    tmp_path, monkeypatch
+) -> None:
+    from test_approvals import proposal_records
+    from aura.approvals import PublishedProposal
+
+    published = PublishedProposal.model_validate(
+        proposal_records(tmp_path / "run", monkeypatch)
+    )
+    store = open_store(tmp_path)
+    store.insert("published_proposals", published)
+    raw(tmp_path).execute("UPDATE published_proposals SET cluster_name = 'other'")
+
+    with pytest.raises(RecordInvalid, match="cluster_name"):
+        store.select("published_proposals")
+
+
+def every_table_record(tmp_path, monkeypatch) -> dict[str, object]:
+    from test_approvals import approval, proposal_records
+    from aura.approvals import ApprovalRecord, PublishedProposal
+
+    return {
+        **dict(RECORDS),
+        "published_proposals": PublishedProposal.model_validate(
+            proposal_records(tmp_path / "run", monkeypatch)
+        ),
+        "approvals": ApprovalRecord.model_validate(approval()),
+    }
+
+
+def test_every_table_refuses_a_record_without_its_stored_digest(
+    tmp_path, monkeypatch
+) -> None:
+    from aura.execution.store import TABLES
+
+    records = every_table_record(tmp_path, monkeypatch)
+    assert set(records) == set(TABLES)
+    store = open_store(tmp_path)
+    for name, record in records.items():
+        store.insert(name, record)
+        digest = TABLES[name].digest
+        raw(tmp_path).execute(
+            f"UPDATE {name} SET record = json_remove(record, '$.{digest}')"
+        )
+
+        with pytest.raises(RecordInvalid, match=f"no stored {digest}"):
+            store.select(name)

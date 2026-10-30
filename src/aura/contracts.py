@@ -31,6 +31,9 @@ class CommandType(StrEnum):
     PROPOSE_PATCH = "propose.patch"
     PROPOSE_PIPELINE = "propose.pipeline"
     PROPOSAL_STATUS = "proposal.status"
+    PROPOSAL_SUBMIT = "proposal.submit"
+    PROPOSAL_APPROVE = "proposal.approve"
+    PROPOSAL_REJECT = "proposal.reject"
     EXECUTE_PATCH = "execute.patch"
     EXECUTE_PIPELINE = "execute.pipeline"
 

@@ -33,6 +33,8 @@ from aura.cwa import CWASnapshot, CWATrace
 from aura.diagnosis import DiagnosisRecord
 from aura.json_store import JsonRecordStore
 from aura.proposals import Proposal
+from aura.approvals import ApprovalRecord, PublishedProposal
+from aura.execution.store import TABLES
 from failure_injection import run_cli
 from test_failure_matrix import COMMAND_ID, KEY, scenario_named
 from test_inventory_service import make_command
@@ -46,6 +48,8 @@ SELF_DIGESTS = {
     CWATrace: ("trace_digest",),
     DiagnosisRecord: ("response_digest",),
     Proposal: ("proposal_digest",),
+    PublishedProposal: ("publication_digest",),
+    ApprovalRecord: ("approval_digest",),
 }
 
 
@@ -168,8 +172,10 @@ def test_every_store_rejects_a_record_without_its_stored_digest(
             (target / path.name).unlink()
         checked.add(model)
 
-    assert checked == set(SELF_DIGESTS)
-    assert {store.record_type for store in STORE_TYPES} | {CommandEnvelope} == (
+    assert checked == {store.record_type for store in STORE_TYPES} | {
+        CommandEnvelope
+    }
+    assert {store.record_type for store in STORE_TYPES} | {CommandEnvelope} <= (
         set(SELF_DIGESTS)
     ), "every stored record type needs a self-digest"
 
@@ -250,3 +256,8 @@ def test_every_store_refuses_a_record_whose_digest_is_stale(
             store.save(stale)
 
         assert not target.exists() or list(target.iterdir()) == []
+
+
+def test_every_execution_store_table_stores_a_self_digest() -> None:
+    for table in TABLES.values():
+        assert table.digest in SELF_DIGESTS[table.model], table.name

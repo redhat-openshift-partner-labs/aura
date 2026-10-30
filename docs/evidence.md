@@ -439,6 +439,41 @@ The render rules mirror `fleet-clusters` `scripts/check_new_overlays.py`; Aura r
 | `stale` | Whether `HEAD` moved past `base_commit` and touched the cluster, or `base_commit` is not an ancestor of `HEAD` |
 | `reasons` | Changed cluster paths or the history problem |
 
+## Published Proposal
+
+A `PublishedProposal` is a stored proposal with the records that prove its provenance, published to the Phase 3 [execution store](architecture.md#execution-store) so approvers and executors on other machines read the same records:
+
+| Field | Rule |
+| --- | --- |
+| `publication_id` | Derived from `proposal_id`, so publishing the same proposal again reads back the same row |
+| `proposal_id`, `proposal_digest` | Equal the nested proposal's |
+| `proposal` | The stored `Proposal` |
+| `cwa_trace` | Its CWA trace: `trace_id` equals the proposal's `cwa_trace_id`, `command_id` equals the proposal's, and `response_digest` equals `proposal_digest` |
+| `proposal_created` | Its `proposal_created` audit event, for the proposal's command, whose data names the same `proposal_id` and `proposal_digest` |
+| `command` | The proposal command's terminal record, which must be `succeeded` |
+| `created_at` | When it was published |
+| `publication_digest` | SHA-256 over canonical JSON of every other field |
+
+Each nested record must carry its own stored digests; a blank one is refused rather than recomputed.
+
+## Approval Record
+
+An `ApprovalRecord` approves or rejects one proposal's action ([D7, D11](plans/06-phase-3-approved-execution.md#operator-decisions)):
+
+| Field | Rule |
+| --- | --- |
+| `approval_id`, `command_id`, `proposal_id` | IDs |
+| `proposal_digest`, `action_digest` | The approved proposal and its [action subset](plans/06-phase-3-approved-execution.md#action-subset) |
+| `decision` | `approved` or `rejected` |
+| `principal` | The signer's principal from the allowed-signers list |
+| `signature` | An armored SSH signature over the signed payload |
+| `created_at` | Timezone-aware |
+| `expires_at` | Required for an approval, after `created_at` and at most 24 hours later; absent for a rejection |
+| `audit_event_digest` | The digest of the record's `approval_recorded` audit event |
+| `approval_digest` | SHA-256 over canonical JSON of every other field |
+
+The signed payload is the canonical JSON of every field except `signature` and `approval_digest`.
+
 ## Audit Events
 
 Audit events are immutable and reference the previous event where applicable:
