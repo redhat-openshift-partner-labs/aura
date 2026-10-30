@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import os
 import threading
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from importlib import resources
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -21,10 +23,13 @@ from aura.config import PostgreSQLStore
 from aura.contracts import AuditEvent, CommandState
 from aura.execution.records import ExecutionRecord
 from aura.execution.store import (
+    POSTGRESQL,
     ExecutionStore,
     RecordConflict,
     RecordInvalid,
     SchemaVersionError,
+    StoreOutcomeUnknown,
+    StoreWriteFailed,
     _statements,
     migrations,
 )
@@ -32,6 +37,13 @@ from test_audit_event_store import make_audit_event
 from test_command_store import make_command
 from test_evidence_snapshot_store import make_snapshot
 from test_execution_records import execution
+from test_execution_store import (
+    executor_signers,
+    signed_approval,
+    signed_execution,
+    signers_for,
+)
+from test_signing import key
 
 
 OPERATORS = ("operator_a", "operator_b")
@@ -156,8 +168,18 @@ def test_an_operator_cannot_write_another_login(database, tmp_path) -> None:
     row = store._row(store_table("commands"), make_command("spoof"))
     row["login"] = "operator_b"
 
-    with pytest.raises(psycopg.errors.CheckViolation):
-        store._insert(store_table("commands"), row)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        store._execute(
+            f"INSERT INTO commands ({', '.join(row)}) "
+            f"VALUES ({', '.join('?' for _ in row)})",
+            tuple(row.values()),
+        )
+
+
+def test_the_grants_can_be_applied_again(database) -> None:
+    grants = (resources.files("aura.execution") / "postgresql" / "grants.sql").read_text(encoding="utf-8")
+    for statement in _statements(grants):
+        database["admin"].execute(statement)
 
 
 def store_table(name):
@@ -204,14 +226,45 @@ def test_a_proposal_is_dispatched_at_most_once(database, tmp_path) -> None:
     assert store.dispatches_in_last_hour() == 1
 
 
+def race(database, tmp_path, table: str, records, none_stored, *, signers: str = "") -> dict[str, str]:
+    """Run two exclusive inserts whose checks both pass before either
+    commits; return each one's outcome."""
+
+    first_checked = threading.Event()
+    second_checked = threading.Event()
+    results: dict[str, str] = {}
+
+    def run(name: str, record, check) -> None:
+        try:
+            store = open_store(database, tmp_path).with_signers(signers)
+            store.exclusive(table, record, check)
+            results[name] = "stored"
+        except RecordConflict as error:
+            results[name] = str(error)
+
+    def first_check(reader):
+        none_stored(reader)
+        first_checked.set()
+        second_checked.wait(5)
+
+    def second_check(reader):
+        none_stored(reader)
+        second_checked.set()
+
+    first = threading.Thread(target=run, args=("first", records[0], first_check))
+    first.start()
+    first_checked.wait(5)
+    second = threading.Thread(target=run, args=("second", records[1], second_check))
+    second.start()
+    for thread in (first, second):
+        thread.join(30)
+    return results
+
+
 def test_two_locked_check_and_inserts_commit_once(database, tmp_path) -> None:
     """Under SERIALIZABLE, two transactions that each check that no event
     of the command exists cannot both commit."""
 
-    open_store(database, tmp_path)
-    first_checked = threading.Event()
-    second_checked = threading.Event()
-    results: dict[str, str] = {}
     event = make_audit_event()
     other = AuditEvent.model_validate(
         {**event.model_dump(mode="json"), "event_id": str(UUID(int=21)), "event_digest": ""}
@@ -221,32 +274,39 @@ def test_two_locked_check_and_inserts_commit_once(database, tmp_path) -> None:
         if reader.select("audit_events", command_id=event.command_id):
             raise RecordConflict("an event for this command is stored")
 
-    def run(name: str, record: AuditEvent, check) -> None:
-        try:
-            open_store(database, tmp_path).exclusive("audit_events", record, check)
-            results[name] = "stored"
-        except RecordConflict as error:
-            results[name] = str(error)
-
-    def first_check(reader):
-        none_for_the_command(reader)
-        first_checked.set()
-        second_checked.wait(5)
-
-    def second_check(reader):
-        none_for_the_command(reader)
-        second_checked.set()
-
-    first = threading.Thread(target=run, args=("first", event, first_check))
-    first.start()
-    first_checked.wait(5)
-    second = threading.Thread(target=run, args=("second", other, second_check))
-    second.start()
-    for thread in (first, second):
-        thread.join(30)
+    results = race(database, tmp_path, "audit_events", (event, other), none_for_the_command)
 
     assert sorted(results.values()).count("stored") == 1, results
     assert len(open_store(database, tmp_path).select("audit_events")) == 1
+
+
+def test_two_dispatches_for_one_cluster_commit_once(database, tmp_path) -> None:
+    """Two proposals of one cluster pass the unique indexes; the G11-style
+    check under SERIALIZABLE lets only one dispatch commit."""
+
+    private = key(tmp_path, "executor")
+    first, first_event = signed_execution(private)
+    second, second_event = signed_execution(
+        private,
+        record_id=str(UUID(int=62)), execution_id=str(UUID(int=63)),
+        proposal_id=str(UUID(int=64)),
+    )
+    store = open_store(database, tmp_path)
+    store.insert("audit_events", first_event)
+    store.insert("audit_events", second_event)
+
+    def none_open_for_the_cluster(reader: ExecutionStore) -> None:
+        if reader.select("executions", cluster_name="example"):
+            raise RecordConflict("the cluster has an open execution")
+
+    results = race(
+        database, tmp_path, "executions", (first, second), none_open_for_the_cluster,
+        signers=executor_signers(private),
+    )
+
+    assert sorted(results.values()).count("stored") == 1, results
+    reader = open_store(database, tmp_path).with_signers(executor_signers(private))
+    assert len(reader.select("executions")) == 1
 
 
 @pytest.mark.parametrize(
@@ -267,3 +327,116 @@ def test_the_operator_role_can_only_insert_and_select(database, tmp_path, statem
 
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         store._connection.execute(statement)
+
+
+def test_signed_records_verify_on_load(database, tmp_path) -> None:
+    approver = key(tmp_path, "approver")
+    executor = key(tmp_path, "executor")
+    approval, approval_event = signed_approval(approver)
+    record, execution_event = signed_execution(executor)
+    store = open_store(database, tmp_path)
+    store.insert_together([
+        ("audit_events", approval_event),
+        ("audit_events", execution_event),
+        ("approvals", approval),
+        ("executions", record),
+    ])
+
+    reader = open_store(database, tmp_path, "operator_b").with_signers(
+        signers_for(approver) + executor_signers(executor)
+    )
+
+    assert reader.select("approvals") == [approval]
+    assert reader.select("executions", cluster_name="example") == [record]
+
+
+def test_a_forged_signature_is_refused_on_load(database, tmp_path) -> None:
+    from aura.approvals import ApprovalRecord
+    from test_approvals import SIGNATURE, approval
+
+    approver = key(tmp_path, "approver")
+    store = open_store(database, tmp_path)
+    store.insert("approvals", ApprovalRecord.model_validate(approval(signature=SIGNATURE)))
+
+    with pytest.raises(RecordInvalid, match="signature"):
+        open_store(database, tmp_path).with_signers(signers_for(approver)).select("approvals")
+
+
+def test_a_tampered_indexed_column_is_refused_on_load(database, tmp_path) -> None:
+    executor = key(tmp_path, "executor")
+    record, event = signed_execution(executor)
+    store = open_store(database, tmp_path)
+    store.insert_together([("audit_events", event), ("executions", record)])
+    database["admin"].execute("UPDATE executions SET cluster_name = 'other'")
+
+    with pytest.raises(RecordInvalid, match="cluster_name"):
+        open_store(database, tmp_path).with_signers(executor_signers(executor)).select("executions")
+
+
+@dataclass
+class FailingCommit:
+    """Wraps a connection so COMMIT fails, after or before it applies."""
+
+    connection: psycopg.Connection
+    applied: bool
+    reads_fail: bool = False
+    failed: bool = False
+
+    def execute(self, sql, parameters=()):
+        if self.failed and self.reads_fail:
+            raise psycopg.OperationalError("connection lost")
+        if sql.strip().upper() == "COMMIT" and not self.failed:
+            self.failed = True
+            self.connection.execute(sql if self.applied else "ROLLBACK")
+            raise psycopg.OperationalError("connection lost")
+        return self.connection.execute(sql, parameters)
+
+
+@pytest.mark.parametrize(
+    ("failure", "outcome"),
+    [
+        ({"applied": True}, None),
+        ({"applied": False}, StoreWriteFailed),
+        ({"applied": True, "reads_fail": True}, StoreOutcomeUnknown),
+    ],
+    ids=["applied", "not-applied", "unresolvable"],
+)
+def test_a_lost_commit_acknowledgement_is_resolved_by_reading_back(
+    database, tmp_path, failure, outcome,
+) -> None:
+    connection = open_store(database, tmp_path)._connection
+    store = ExecutionStore(
+        FailingCommit(connection, **failure), login="operator_a", dialect=POSTGRESQL
+    )
+    command = make_command("lost")
+
+    if outcome is None:
+        store.insert("commands", command)
+    else:
+        with pytest.raises(outcome, match="connection lost"):
+            store.insert("commands", command)
+
+    stored = open_store(database, tmp_path).select("commands")
+    assert stored == ([command] if failure["applied"] else [])
+
+
+def test_the_hourly_window_uses_the_database_clock(database, tmp_path) -> None:
+    executor = key(tmp_path, "executor")
+    record, event = signed_execution(executor)
+    store = open_store(database, tmp_path)
+    store.insert_together([("audit_events", event), ("executions", record)])
+
+    assert store.dispatches_in_last_hour() == 1
+    database["admin"].execute("UPDATE executions SET stored_at = stored_at - INTERVAL '61 minutes'")
+    assert store.dispatches_in_last_hour() == 0
+
+
+def test_stored_at_is_utc_whatever_the_database_time_zone(database, tmp_path) -> None:
+    # UTC+14: a session that kept this zone would store a future stamp.
+    database["admin"].execute(f"ALTER DATABASE {database['name']} SET TimeZone = 'Pacific/Kiritimati'")
+    store = open_store(database, tmp_path)
+    store.insert("audit_events", make_audit_event())
+
+    (stored_at,) = database["admin"].execute("SELECT stored_at FROM audit_events").fetchone()
+    assert abs(stored_at - datetime.now(UTC).replace(tzinfo=None)) < timedelta(minutes=1)
+    assert store.dispatches_in_last_hour() == 0

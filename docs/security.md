@@ -138,7 +138,7 @@ Wait until the pod is ready:
 oc -n aura-db rollout status statefulset/aura-postgresql
 ```
 
-The Secret is read only on the first start, when the data directory is empty; changing it later does not change the superuser password. The Service is reachable only inside the cluster. For staging, the administrator reaches it with `oc -n aura-db port-forward statefulset/aura-postgresql 5432:5432`. Phase 3 task 3.7 adds the SQL that creates Aura's insert-only role and grants, and task 0.3 records the staging store's connection in [Validation](validation.md).
+The Secret is read only on the first start, when the data directory is empty; changing it later does not change the superuser password. The Service is reachable only inside the cluster. For staging, the administrator reaches it with `oc -n aura-db port-forward statefulset/aura-postgresql 5432:5432`. The administrator creates role `aura_operator` and one login per operator in it, then runs `aura/execution/postgresql/grants.sql`, which grants the role insert-only access (task 3.7); task 0.3 records the staging store's connection in [Validation](validation.md).
 
 ## Secret Redaction
 
@@ -203,7 +203,7 @@ Records are serialized to a private temporary file, flushed with `fsync`, and li
 
 ## Execution Store Integrity
 
-The [execution store](architecture.md#execution-store) never updates or deletes a row; `tests/test_execution_store.py` traces every statement a session runs and fails on `UPDATE` or `DELETE`. A row whose record, digest, or copied columns were edited is refused on load. On PostgreSQL, `aura/execution/postgresql/grants.sql` limits role `aura_operator` to `INSERT` and `SELECT`; `tests/test_postgresql_store.py` connects as a member of it and requires `UPDATE`, `DELETE`, `TRUNCATE`, DDL, and a schema-version insert to fail, and requires a command row that names another login to fail its check.
+The [execution store](architecture.md#execution-store) never updates or deletes a row; `tests/test_execution_store.py` traces every statement a session runs and fails on `UPDATE` or `DELETE`. A row whose record, digest, or copied columns were edited is refused on load. On PostgreSQL, `aura/execution/postgresql/grants.sql` limits role `aura_operator` to `INSERT` and `SELECT`; `tests/test_postgresql_store.py` connects as a member of it and requires `UPDATE`, `DELETE`, `TRUNCATE`, DDL, and a schema-version insert to fail, and requires an insert that writes the `login` column of `commands` to fail, so a command row always carries the session's login. The tests also cover signature and column verification on load, read-back of a lost commit, a race of two dispatches for one cluster, the hourly dispatch window, and UTC `stored_at` under a non-UTC database time zone.
 
 ## Operational cautions
 

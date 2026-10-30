@@ -86,6 +86,8 @@ class Dialect:
     hour_ago: str
     # Raised when a locked transaction loses to a concurrent one.
     conflict_errors: tuple[type[Exception], ...] = ()
+    # The database fills a command row's login from the session.
+    session_login: bool = False
 
 
 SQLITE = Dialect(
@@ -107,6 +109,7 @@ POSTGRESQL = Dialect(
     # Sessions run in UTC, so LOCALTIMESTAMP compares with stored_at.
     hour_ago="LOCALTIMESTAMP - INTERVAL '1 hour'",
     conflict_errors=(psycopg.errors.SerializationFailure,),
+    session_login=True,
 )
 
 
@@ -260,7 +263,7 @@ class ExecutionStore:
                 autocommit=True,
                 options="-c TimeZone=UTC",
             )
-            # Rows carry the session's login; the grants check it (D13).
+            # Command rows take the session's login from the column default (D13).
             (login,) = connection.execute("SELECT CURRENT_USER").fetchone()
         except psycopg.Error as error:
             raise StoreReadFailed(f"cannot connect to the execution store: {error}") from error
@@ -500,6 +503,10 @@ class ExecutionStore:
         return row
 
     def _insert(self, table: Table, row: dict[str, Any]) -> None:
+        if table.scoped_by_login and self._dialect.session_login:
+            # The role cannot write the login column; its default is
+            # CURRENT_USER, the same value the store read at connect.
+            row = {name: value for name, value in row.items() if name != "login"}
         self._execute(
             f"INSERT INTO {table.name} ({', '.join(row)}) "
             f"VALUES ({', '.join('?' for _ in row)})",
