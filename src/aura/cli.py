@@ -15,7 +15,7 @@ from pydantic_core import from_json
 import sqlite3
 
 from aura.config import ConfigError, SQLiteStore, load_config
-from aura.execution.commands import run_store_command
+from aura.execution.commands import Refusal, run_store_command
 from aura.approvals import ApprovalDecision
 from aura.collectors.hub_policy import HubPolicy, read_hub_policy
 from aura.execution.proposal_commands import (
@@ -2133,6 +2133,102 @@ def _proposal_command_input(args: argparse.Namespace) -> dict[str, object]:
         )
     command_input["history"] = []
     return command_input
+
+
+@dataclass(frozen=True)
+class RegenerationSources:
+    """The checkouts and hub that a proposal's evidence is collected from."""
+
+    fleet_clusters: Path
+    openshift_kubeconfig: Path
+    scaffold: Path | None = None
+
+
+def regenerate_proposal(
+    proposal: Proposal,
+    sources: RegenerationSources,
+    *,
+    clock: Callable[[], datetime],
+    collector: EvidenceCollector | None = None,
+) -> Proposal:
+    """Re-collect a proposal's evidence and run its generator again,
+    storing nothing (G8, task 3.4). A generator refusal is a guard
+    refusal; a collection failure fails the command."""
+
+    args = _regeneration_args(proposal, sources)
+    service_type = (
+        PipelineProposalService if args.proposal_type == _RERUN else ProposalService
+    )
+    command = CommandEnvelope(
+        command_id=uuid5(proposal.proposal_id, "regeneration"),
+        command_type=service_type.spec.command_type,
+        operator_id="aura-guard",
+        created_at=clock(),
+        input=_proposal_command_input(args),
+        idempotency_key=f"regenerate:{proposal.proposal_id}",
+        status=CommandState.RECEIVED,
+    )
+    roles = {OperatorRole.PROPOSER}
+    result = service_type(
+        collector=_selected_proposal_collector(args, collector)
+    ).run(command, roles)
+    event = _audit_event(
+        result.command,
+        event_id=uuid5(command.command_id, AuditEventType.EVIDENCE_COLLECTED.value),
+        event_type=AuditEventType.EVIDENCE_COLLECTED,
+        occurred_at=clock(),
+        data={
+            "snapshot_id": str(result.snapshot.snapshot_id),
+            "snapshot_digest": result.snapshot.snapshot_digest,
+        },
+    )
+    assembly = CWAAssembler().assemble(
+        _assembly_request(result, roles, event, "proposal", clock)
+    )
+    try:
+        return _generated(_proposal_generator(args), assembly, clock())
+    except ProposalRefused as refusal:
+        raise Refusal(f"proposal refused: {refusal}") from refusal
+
+
+def _regeneration_args(
+    proposal: Proposal,
+    sources: RegenerationSources,
+) -> argparse.Namespace:
+    """The propose command's arguments, rebuilt from the proposal."""
+
+    values: dict[str, object] = {
+        "proposal_type": proposal.proposal_type.value,
+        "cluster": proposal.cluster_name,
+        "fleet_clusters": sources.fleet_clusters,
+        "openshift_kubeconfig": sources.openshift_kubeconfig,
+        "scaffold": sources.scaffold,
+        "query": "regenerate the approved proposal",
+        "pipeline_run": None,
+    }
+    if proposal.pipeline_run is not None:
+        annotations = proposal.pipeline_run.get("metadata", {}).get("annotations", {})
+        values["pipeline_run"] = annotations.get(
+            "aura.openshiftpartnerlabs.com/source-pipeline-run"
+        )
+    if proposal.scaffold_run is not None:
+        values.update(_scaffold_values(proposal.scaffold_run.arguments))
+    return argparse.Namespace(**values)
+
+
+def _scaffold_values(arguments: list[str]) -> dict[str, object]:
+    """Read the scaffold request back from the recorded arguments:
+    `<cloud> --name N --region R --tier T [options] --base-path ...`."""
+
+    flags = dict(zip(arguments[1::2], arguments[2::2]))
+    values: dict[str, object] = {
+        "cloud": arguments[0],
+        "region": flags["--region"],
+        "tier": flags["--tier"],
+    }
+    for flag in SCAFFOLD_OPERATOR_FLAGS:
+        values[_flag_dest(flag)] = flags.get(flag)
+    return values
 
 
 def run_proposal_submit(
