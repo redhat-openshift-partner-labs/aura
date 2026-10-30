@@ -202,6 +202,8 @@ Recorded with the operator's sign-off of Phases 0–2 on 2026-10-26. Each must b
 | E3 | The Phase 3 guard requires a `succeeded` command record before it acts on a proposal | Stage 1 review F2 residual | Any Phase 3 execution |
 | E4 | The Phase 3 guard compares the defined action subset of the proposal it acts on with the approved proposal | Backlog: proposal digest anchoring | Any Phase 3 execution |
 
+Closed on 2026-10-30 by Phase 3 Stage 3, when `execute` ran the guard: E2 by G8, which re-collects live and Git evidence and regenerates the proposal (`0a84abd`); E3 by G4 (`d6d12f7`); E4 by G5 and G8, which compare the [action subset](06-phase-3-approved-execution.md#action-subset) (`b4a8f26`, `d6d12f7`). `execute` runs them before any dispatch in the commit that records this. Stage 1's task 1.5 revalidation on save covers stored model responses; E1 stays open until an external model is connected.
+
 ## Progress
 
 | Stage | Task | State | Commit |

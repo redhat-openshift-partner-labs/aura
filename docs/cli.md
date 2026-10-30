@@ -362,6 +362,21 @@ uv run --no-sync aura proposal approve \
 
 `proposal reject` takes the same flags. The command reads the published proposal from the store, reads ConfigMap `aura-allowed-signers` from the hub in one `oc` call, computes the proposal's [action digest](plans/06-phase-3-approved-execution.md#action-subset), and builds an [`ApprovalRecord`](evidence.md#approval-record) whose `audit_event_digest` is the digest of its `approval_recorded` event. It signs the record with namespace `aura-approve` and verifies the signature against the hub list before writing anything but `command_received` and its refusal. An approval expires 24 hours after it is signed; a rejection has no expiry. It refuses a proposal that is not published and a signature the hub list does not accept, and fails when the hub cannot be read. On success it stores `command_received`, `approval_recorded`, the approval, and the terminal command record in that order, and prints the approval.
 
+## `execute`
+
+Dispatches one approved, published proposal through the [Command Guard](architecture.md#command-guard). Like approve, it takes identity from the `[signing]` section of Aura's configuration file; the key must be listed for `aura-execute`. Until Stages 4 and 5 add the real adapters, only the test-only `recording` adapter dispatches, when `[execution] adapters` enables it.
+
+```bash
+uv run --no-sync aura execute \
+  --proposal-id <proposal-id> \
+  --openshift-kubeconfig "$HOME/.kube/aura-readonly" \
+  --fleet-clusters ../fleet-clusters \
+  --idempotency-key execute-001 \
+  --dry-run
+```
+
+`--scaffold` names the scaffold checkout for a scaffold proposal. The command reads the hub signer list, runs G1–G12, and with `--dry-run` stops there and prints the adapter request. Otherwise it stores `execution_started` and the signed `dispatching` record in a locked transaction that rechecks G5, G6, and G11; calls the adapter; and stores `execution_finished`, the result record, and the terminal command record. A guard refusal names its rule. A proposal is dispatched at most once: a second `execute` is refused by G6. When the adapter reports no result, or a write after the dispatch fails, the `dispatching` record stands, the execution is `awaiting_operator`, and the message names `aura execution status`.
+
 ## Output and Exit Codes
 
 | Exit code | Meaning |

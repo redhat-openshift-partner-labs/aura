@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from aura.approvals import ApprovalDecision
-from aura.cli import main
+from aura.cli import HubAccess, main
 from aura.collectors.hub_policy import HubPolicy, HubPolicyError
 from aura.contracts import AuditEventType, CommandState
 from aura.execution.action import action_digest
@@ -84,7 +84,7 @@ def decide(
             ],
             command_id_factory=lambda: command_id,
             clock=lambda: NOW,
-            hub_policy=read,
+            hub=HubAccess(policy=read),
         )
     assert set(readings) <= {Path("/kube/aura-readonly")}
     return code, stdout.getvalue(), stderr.getvalue()

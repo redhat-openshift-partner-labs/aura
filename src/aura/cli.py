@@ -15,7 +15,12 @@ from pydantic_core import from_json
 import sqlite3
 
 from aura.config import ConfigError, SQLiteStore, load_config
-from aura.execution.commands import Refusal, run_store_command
+from aura.adapters import AdapterName
+from aura.config import AuraConfig
+from aura.execution.commands import Chain, Refusal, run_store_command
+from aura.execution.execute import execute_step
+from aura.execution.guard import GuardContext
+from aura.execution.recording import RecordingAdapter
 from aura.approvals import ApprovalDecision
 from aura.collectors.hub_policy import HubPolicy, read_hub_policy
 from aura.execution.proposal_commands import (
@@ -24,7 +29,7 @@ from aura.execution.proposal_commands import (
     approval_step,
     submit_step,
 )
-from aura.signing import APPROVE, sign
+from aura.signing import APPROVE, EXECUTE, sign
 from aura.execution.derived import derive_state
 from aura.execution.store import ExecutionStore, StoreError
 
@@ -52,7 +57,7 @@ from aura.collectors.git_staleness import (
     ProposalRecordUnreadable,
     ProposalStalenessCollector,
 )
-from aura.collectors.oc_cli import OpenShiftCLIError, oc_call_budget
+from aura.collectors.oc_cli import OpenShiftCLI, OpenShiftCLIError, oc_call_budget
 from aura.collectors.openshift_cli_client import OpenShiftCLIInventoryClient
 from aura.collectors.openshift_cli_tekton_client import (
     OpenShiftCLITektonClient,
@@ -476,7 +481,24 @@ def build_parser() -> argparse.ArgumentParser:
     _add_proposal_submit_arguments(proposal_command_parser.add_parser("submit"))
     for decision in ("approve", "reject"):
         _add_proposal_decision_arguments(proposal_command_parser.add_parser(decision))
+    _add_execute_arguments(command_parser.add_parser("execute"))
     return parser
+
+
+def _add_execute_arguments(parser: argparse.ArgumentParser) -> None:
+    """Phase 3: identity comes from the signing key in Aura's configuration
+    file; the checkouts and hub are where G8 re-collects evidence."""
+
+    parser.add_argument("--proposal-id", type=UUID, required=True)
+    parser.add_argument("--openshift-kubeconfig", type=Path, required=True)
+    parser.add_argument("--fleet-clusters", type=Path, required=True)
+    parser.add_argument("--scaffold", type=Path)
+    parser.add_argument("--idempotency-key", required=True)
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run the guard, record the command, and print the adapter request",
+    )
 
 
 def _add_proposal_decision_arguments(parser: argparse.ArgumentParser) -> None:
@@ -2136,6 +2158,15 @@ def _proposal_command_input(args: argparse.Namespace) -> dict[str, object]:
 
 
 @dataclass(frozen=True)
+class HubAccess:
+    """How Phase 3 commands read the hub; tests pass their own."""
+
+    policy: Callable[[Path], HubPolicy]
+    # Whether a PipelineRun on the hub carries a proposal's ID (G6).
+    effect: Callable[[Path, UUID], bool] | None = None
+
+
+@dataclass(frozen=True)
 class RegenerationSources:
     """The checkouts and hub that a proposal's evidence is collected from."""
 
@@ -2313,6 +2344,108 @@ def run_proposal_decision(
         )
 
 
+def run_execute(
+    args: argparse.Namespace,
+    command_id_factory: Callable[[], UUID],
+    clock: Callable[[], datetime],
+    collector: EvidenceCollector | None,
+) -> int:
+    try:
+        config = load_config()
+    except ConfigError as error:
+        print(f"aura: {error}", file=sys.stderr)
+        return 2
+    if config.signing is None:
+        print("aura: Aura's configuration file has no [signing] section", file=sys.stderr)
+        return 2
+    store = _open_execution_store()
+    if isinstance(store, str):
+        print(f"aura: {store}", file=sys.stderr)
+        return 2
+    published = store.select("published_proposals", proposal_id=args.proposal_id)
+    pipeline = bool(published) and published[0].proposal.proposal_type is ProposalType.POST_PROVISION_RERUN
+    args.operator = config.signing.principal
+    command = _make_command(
+        args,
+        CommandType.EXECUTE_PIPELINE if pipeline else CommandType.EXECUTE_PATCH,
+        {"proposal_id": str(args.proposal_id), "dry_run": args.dry_run},
+        command_id_factory,
+        clock,
+    )
+    make_context = _guard_context_factory(args, config, store, clock, collector)
+    with oc_call_budget():
+        return run_store_command(
+            store,
+            command,
+            execute_step(args.proposal_id, make_context, dry_run=args.dry_run),
+            clock,
+        )
+
+
+def _guard_context_factory(
+    args: argparse.Namespace,
+    config: AuraConfig,
+    store: ExecutionStore,
+    clock: Callable[[], datetime],
+    collector: EvidenceCollector | None,
+) -> Callable[[Chain], GuardContext]:
+    signing = config.signing
+    read = args.hub_policy or (lambda path: read_hub_policy(kubeconfig_path=path))
+    hub_effect = args.hub_effect or _hub_pipeline_run
+    sources = RegenerationSources(
+        fleet_clusters=args.fleet_clusters,
+        openshift_kubeconfig=args.openshift_kubeconfig,
+        scaffold=args.scaffold,
+    )
+    staleness = GitProposalStaleness(args.fleet_clusters)
+    enabled = frozenset(AdapterName(name) for name in config.execution.adapters)
+
+    def make(chain: Chain) -> GuardContext:
+        policy = read(args.openshift_kubeconfig)
+        return GuardContext(
+            store=store.with_signers(policy.allowed_signers),
+            policy=policy,
+            command=chain.command,
+            executor=signing.principal,
+            sign=lambda payload: sign(
+                payload, key=signing.key, namespace=EXECUTE, agent=signing.agent
+            ),
+            now=clock(),
+            backend=config.store.backend,
+            deployment_id=store.deployment_id(),
+            enabled_adapters=enabled,
+            # Stages 4 and 5 add the real adapters.
+            adapters=(
+                {AdapterName.RECORDING: RecordingAdapter()}
+                if AdapterName.RECORDING in enabled
+                else {}
+            ),
+            git_stale=lambda proposal: staleness.check(proposal, staleness.head()).stale,
+            regenerate=lambda proposal: regenerate_proposal(
+                proposal, sources, clock=clock, collector=collector
+            ),
+            hub_effect=lambda proposal_id: hub_effect(args.openshift_kubeconfig, proposal_id),
+            preflight=lambda name: None,
+        )
+
+    return make
+
+
+def _hub_pipeline_run(kubeconfig: Path, proposal_id: UUID) -> bool:
+    """Whether a PipelineRun on the hub carries the proposal's ID (G6)."""
+
+    runs = OpenShiftCLI(kubeconfig_path=kubeconfig).resource(
+        "pipelineruns", namespace="openshift-pipelines"
+    )
+    return any(
+        (run.get("metadata", {}).get("annotations") or {}).get(
+            "aura.openshiftpartnerlabs.com/proposal-id"
+        )
+        == str(proposal_id)
+        for run in runs.items()
+    )
+
+
 def _open_execution_store() -> ExecutionStore | str:
     """Open the store Aura's configuration names, or return why not."""
 
@@ -2340,6 +2473,8 @@ def _dispatch_command(
         return run_proposal_submit(args, command_id_factory, clock)
     if args.command == "proposal" and args.proposal_command in _DECISIONS:
         return run_proposal_decision(args, command_id_factory, clock, hub_policy)
+    if args.command == "execute":
+        return run_execute(args, command_id_factory, clock, collector)
     route = _EVIDENCE_ROUTES.get(args.command)
     if route is not None:
         return _run_simple_evidence_command(
@@ -2383,12 +2518,13 @@ def main(
     collector: EvidenceCollector | None = None,
     command_id_factory: Callable[[], UUID] = uuid4,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
-    hub_policy: Callable[[Path], HubPolicy] | None = None,
+    hub: HubAccess | None = None,
 ) -> int:
     args = build_parser().parse_args(argv)
     args.role = getattr(args, "role", None) or [OperatorRole.VIEWER.value]
     # The Phase 3 derived state in proposal status reads these.
-    args.hub_policy = hub_policy
+    args.hub_policy = None if hub is None else hub.policy
+    args.hub_effect = None if hub is None else hub.effect
     args.clock = clock
     argument_error = _argument_error(args)
     if argument_error is not None:
@@ -2402,7 +2538,7 @@ def main(
         collector=collector,
         command_id_factory=command_id_factory,
         clock=clock,
-        hub_policy=hub_policy,
+        hub_policy=args.hub_policy,
     )
 
 

@@ -24,6 +24,9 @@ from aura.execution.store import ExecutionStore, StoreWriteFailed
 ARTIFACT_EVENTS = {
     AuditEventType.PROPOSAL_PUBLISHED: ("published_proposals", "publication_id"),
     AuditEventType.APPROVAL_RECORDED: ("approvals", "approval_id"),
+    # A result record; a dispatching record stands even when the command
+    # fails, so `execution_started` is not listed.
+    AuditEventType.EXECUTION_FINISHED: ("executions", "record_id"),
 }
 
 
@@ -121,7 +124,17 @@ def store_write_faults(monkeypatch, fail_at: int | None = None) -> Iterator[Stor
             raise StoreWriteFailed(f"injected write failure: {failed}")
         return insert_together(self, records)
 
+    exclusive: Callable = execution_store.ExecutionStore.exclusive
+
+    def recorded_exclusive(self, table_name, record, check):
+        index = len(writes.labels)
+        writes.labels.append(table_name)
+        if index == fail_at:
+            raise StoreWriteFailed(f"injected write failure: {table_name}")
+        return exclusive(self, table_name, record, check)
+
     monkeypatch.setattr(
         execution_store.ExecutionStore, "insert_together", recorded
     )
+    monkeypatch.setattr(execution_store.ExecutionStore, "exclusive", recorded_exclusive)
     yield writes

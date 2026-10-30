@@ -11,7 +11,7 @@ from uuid import UUID
 
 import pytest
 
-from aura.cli import main
+from aura.cli import HubAccess, main
 from aura.collectors.hub_policy import HubPolicy, HubPolicyError
 from aura.signing import APPROVE
 from test_proposal_approve import approver_config, decide, policy
@@ -40,7 +40,7 @@ def status(root: Path, *, hub: HubPolicy | None = None, kubeconfig: bool = True,
         arguments += ["--openshift-kubeconfig", "/kube/aura-readonly"]
     stdout, stderr = io.StringIO(), io.StringIO()
     with redirect_stdout(stdout), redirect_stderr(stderr):
-        code = main(arguments, clock=lambda: NOW, hub_policy=read)
+        code = main(arguments, clock=lambda: NOW, hub=HubAccess(policy=read))
     return code, stdout.getvalue(), stderr.getvalue()
 
 

@@ -32,6 +32,11 @@ class Refusal(Exception):
     """Raised by a command step to refuse the command with a reason."""
 
 
+class CommandFailure(Exception):
+    """Raised by a command step to fail the command with a reason that
+    carries no secret value and is stored whole."""
+
+
 @dataclass
 class Chain:
     """Appends a command's audit events and artifacts to the store."""
@@ -43,6 +48,8 @@ class Chain:
     # Stored with the terminal record in one transaction, so a run that
     # does not store its terminal record leaves no artifact (I1, I3).
     artifacts: list[tuple[str, BaseModel]] = field(default_factory=list)
+    # Appended to a failure message once an external effect may exist.
+    recovery: str = ""
 
     def append(
         self,
@@ -113,7 +120,7 @@ def run_store_command(
         output = step(chain)
     except Refusal as refusal:
         return _close(chain, CommandState.REFUSED, str(refusal))
-    except (StoreError, OpenShiftCLIError, OSError, ValueError) as error:
+    except (CommandFailure, StoreError, OpenShiftCLIError, OSError, ValueError) as error:
         return _close(chain, CommandState.FAILED, str(error))
     except Exception as error:
         # Exception text may carry secret values; store only its type (I6).
@@ -148,14 +155,15 @@ def _close(
         if state is CommandState.REFUSED
         else AuditEventType.COMMAND_FAILED
     )
+    message = (message or reason) + chain.recovery
     try:
         chain.append(event_type, {"status": state.value, "reason": reason})
     except StoreError as error:
-        print(f"aura: {message or reason}", file=sys.stderr)
+        print(f"aura: {message}", file=sys.stderr)
         print(f"aura: {error}", file=sys.stderr)
         _store_terminal(chain, CommandState.FAILED, report=False)
         return 2
-    print(f"aura: {message or reason}", file=sys.stderr)
+    print(f"aura: {message}", file=sys.stderr)
     _store_terminal(chain, state, report=True)
     return 2
 
@@ -173,7 +181,7 @@ def _store_terminal(chain: Chain, state: CommandState, *, report: bool = True) -
         return _lost_race(chain, command, conflict)
     except StoreError as error:
         if report:
-            print(f"aura: {error}", file=sys.stderr)
+            print(f"aura: {error}{chain.recovery}", file=sys.stderr)
         return 2
     return 0 if state is CommandState.SUCCEEDED else 2
 
@@ -207,4 +215,4 @@ def _lost_race(chain: Chain, command: CommandEnvelope, conflict: RecordConflict)
     return 2
 
 
-__all__ = ["Chain", "Refusal", "run_store_command"]
+__all__ = ["Chain", "CommandFailure", "Refusal", "run_store_command"]
