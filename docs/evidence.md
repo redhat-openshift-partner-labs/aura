@@ -438,6 +438,8 @@ The render rules mirror `fleet-clusters` `scripts/check_new_overlays.py`; Aura r
 | `git_checked` | Always `true` for a record that loads, because the contract requires a base commit of every type; kept so the item shape does not change |
 | `stale` | Whether `HEAD` moved past `base_commit` and touched the cluster, or `base_commit` is not an ancestor of `HEAD` |
 | `reasons` | Changed cluster paths or the history problem |
+| `published` | Whether the proposal is published to the execution store; `null` without `--openshift-kubeconfig` |
+| `derived_state` | The Phase 3 [derived state](cli.md#proposal-status); `null` without `--openshift-kubeconfig` |
 
 ## Published Proposal
 

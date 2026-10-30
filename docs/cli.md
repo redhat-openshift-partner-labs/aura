@@ -299,6 +299,7 @@ The command prints the stored `Proposal`. Its `patch` adds `provision/<id>/`; me
 | `--fleet-clusters` | Yes | None | Path to a local `fleet-clusters` checkout |
 | `--proposal-dir` | Yes | None | Directory of stored proposals |
 | `--proposal-id` | No | All stored proposals | Proposal UUID; may be repeated |
+| `--openshift-kubeconfig` | No | None | Read-only kubeconfig; with it, each item reports its Phase 3 derived state |
 | `--query` | No | `check proposal staleness` | Any string |
 
 Example:
@@ -313,6 +314,8 @@ UV_CACHE_DIR=/private/tmp/aura-uv-cache uv run --no-sync aura proposal status \
 ```
 
 The command prints an evidence snapshot with one `proposal_staleness` item per proposal, ordered by proposal ID, all checked against one pinned `fleet-clusters` `HEAD`. A stale proposal is a successful result; the command exits `0`. A missing or unreadable `--proposal-dir`, a missing requested proposal, a `.json` file whose name is not a proposal ID, a record that cannot be read, a record whose digest no longer matches or is blank, and a record whose ID differs from its file name each exit `2` and store a `failed` command record. Repeated `--proposal-id` values are checked once.
+
+With `--openshift-kubeconfig`, the command also opens the execution store that Aura's configuration file names, reads the hub's allowed-signers list in one `oc` call, and reports for each proposal whether it is published and its derived state. Approvals are verified against the hub list when they are read, so an approval whose signature the list no longer accepts fails the command. The derived state is the first that applies: `rejected` when any rejection names the proposal; `stale` when it is Git-stale; `proposal_ready` when it is unpublished or has no approval records; `approved` when unexpired approvals of its exact `proposal_digest` and action digest come from enough distinct principals, two for `deprovision` and one otherwise ([D11](plans/06-phase-3-approved-execution.md#operator-decisions)); otherwise `awaiting_approval`, which includes a proposal whose approvals have all expired. Without `--openshift-kubeconfig`, `published` and `derived_state` are `null`.
 
 The check is Git-only and covers every proposal type, reruns included: it does not detect live OpenShift or Tekton state that has changed since the proposal's evidence was collected. The Phase 3 execution guard re-collects that state before executing. Rerun proposals stored before `base_commit` became required for reruns no longer load, and one such record fails every `proposal status` run that does not name its proposals with `--proposal-id`. Aura never deletes or overwrites a record, so move the old record out of `--proposal-dir` and generate the proposal again.
 

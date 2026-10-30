@@ -209,6 +209,8 @@ def test_staleness_collector_reports_each_stored_proposal(
             "base_commit": base,
             "head": head,
             "git_checked": True,
+            "published": None,
+            "derived_state": None,
             "stale": True,
             "reasons": [
                 "provision/example/metadata.yaml changed since base "
@@ -225,6 +227,8 @@ def test_staleness_collector_reports_each_stored_proposal(
             "base_commit": base,
             "head": head,
             "git_checked": True,
+            "published": None,
+            "derived_state": None,
             "stale": False,
             "reasons": [],
         },
@@ -236,6 +240,8 @@ def test_staleness_collector_reports_each_stored_proposal(
             "base_commit": base,
             "head": head,
             "git_checked": True,
+            "published": None,
+            "derived_state": None,
             "stale": False,
             "reasons": [],
         },

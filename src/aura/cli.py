@@ -25,6 +25,7 @@ from aura.execution.proposal_commands import (
     submit_step,
 )
 from aura.signing import APPROVE, sign
+from aura.execution.derived import derive_state
 from aura.execution.store import ExecutionStore, StoreError
 
 from pydantic import ValidationError
@@ -370,6 +371,14 @@ def _add_proposal_status_arguments(
         help="Proposal ID to check; may be repeated; omit for all",
     )
     _add_path_arguments(parser, _SNAPSHOT_DIR, _AUDIT_DIR)
+    parser.add_argument(
+        "--openshift-kubeconfig",
+        type=Path,
+        help=(
+            "Read-only kubeconfig for the hub signer list; with it, report "
+            "each proposal's Phase 3 derived state from the execution store"
+        ),
+    )
     _add_operator_arguments(
         parser,
         "check proposal staleness",
@@ -1219,7 +1228,60 @@ def _selected_proposal_status_collector(
         proposal_store=JsonProposalStore(args.proposal_dir),
         staleness=GitProposalStaleness(args.fleet_clusters),
         proposal_ids=args.proposal_id,
+        derive=(
+            _proposal_deriver(args)
+            if args.openshift_kubeconfig is not None
+            else None
+        ),
     )
+
+
+def _proposal_deriver(
+    args: argparse.Namespace,
+) -> Callable[[Proposal, bool], tuple[bool, str]]:
+    """Derive each proposal's Phase 3 state from the execution store, with
+    approvals verified against the hub signer list read once (task 2.5)."""
+
+    opened: list[ExecutionStore] = []
+
+    def store() -> ExecutionStore:
+        if not opened:
+            execution_store = _open_execution_store()
+            if isinstance(execution_store, str):
+                raise ProposalRecordUnreadable(
+                    f"cannot read the derived state: {execution_store}"
+                )
+            read = args.hub_policy or (
+                lambda path: read_hub_policy(kubeconfig_path=path)
+            )
+            policy = read(args.openshift_kubeconfig)
+            opened.append(execution_store.with_signers(policy.allowed_signers))
+        return opened[0]
+
+    def derive(proposal: Proposal, stale: bool) -> tuple[bool, str]:
+        try:
+            published = bool(
+                store().select("published_proposals", proposal_id=proposal.proposal_id)
+            )
+            approvals = (
+                store().select("approvals", proposal_id=proposal.proposal_id)
+                if published
+                else []
+            )
+        except StoreError as error:
+            raise ProposalRecordUnreadable(
+                f"cannot read the derived state: {error}"
+            ) from error
+        state = derive_state(
+            proposal,
+            approvals,
+            git_stale=stale,
+            published=published,
+            now=args.clock(),
+        )
+        return published, state.value
+
+    return derive
 
 
 _EVIDENCE_ROUTES = {
@@ -1244,6 +1306,7 @@ _EVIDENCE_ROUTES = {
         select_collector=_selected_proposal_status_collector,
         source_errors=(
             GitInventoryError,
+            OpenShiftCLIError,
             ProposalNotFound,
             ProposalRecordUnreadable,
         ),
@@ -2228,6 +2291,9 @@ def main(
 ) -> int:
     args = build_parser().parse_args(argv)
     args.role = getattr(args, "role", None) or [OperatorRole.VIEWER.value]
+    # The Phase 3 derived state in proposal status reads these.
+    args.hub_policy = hub_policy
+    args.clock = clock
     argument_error = _argument_error(args)
     if argument_error is not None:
         print(

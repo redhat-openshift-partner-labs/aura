@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import final
+from typing import ClassVar, final
 from uuid import UUID, uuid5
 
 from aura.collectors.git_inventory import GitInventoryError, read_git
@@ -123,21 +124,18 @@ class GitProposalStaleness:
 
 
 @final
+@dataclass(frozen=True, kw_only=True)
 class ProposalStalenessCollector:
     """Reports Git staleness of stored proposals against one pinned HEAD."""
 
-    collector_version = "0.1.0"
+    collector_version: ClassVar[str] = "0.1.0"
 
-    def __init__(
-        self,
-        *,
-        proposal_store: JsonProposalStore,
-        staleness: GitProposalStaleness,
-        proposal_ids: list[UUID] | None = None,
-    ) -> None:
-        self._store = proposal_store
-        self._staleness = staleness
-        self._proposal_ids = proposal_ids
+    proposal_store: JsonProposalStore
+    staleness: GitProposalStaleness
+    proposal_ids: list[UUID] | None = None
+    # Phase 3: returns whether a proposal is published and its derived
+    # state; without it both are reported as not read.
+    derive: Callable[[Proposal, bool], tuple[bool, str]] | None = None
 
     def collect(
         self,
@@ -147,15 +145,16 @@ class ProposalStalenessCollector:
         collected_at: datetime | None = None,
         source_version: str | None = None,
     ) -> EvidenceSnapshot:
-        head = self._staleness.head()
-        items = [
-            _staleness_item(
-                command_id,
-                proposal,
-                self._staleness.check(proposal, head),
+        head = self.staleness.head()
+        items = []
+        for proposal in self._proposals():
+            staleness = self.staleness.check(proposal, head)
+            derived = (
+                None
+                if self.derive is None
+                else self.derive(proposal, staleness.stale)
             )
-            for proposal in self._proposals()
-        ]
+            items.append(_staleness_item(command_id, proposal, staleness, derived))
         return EvidenceSnapshot(
             snapshot_id=snapshot_id or uuid5(command_id, "proposal-staleness"),
             command_id=command_id,
@@ -170,10 +169,10 @@ class ProposalStalenessCollector:
 
     def _proposals(self) -> list[Proposal]:
         try:
-            proposal_ids = self._proposal_ids or self._store.record_ids()
+            proposal_ids = self.proposal_ids or self.proposal_store.record_ids()
         except FileNotFoundError as error:
             raise ProposalRecordUnreadable(
-                f"proposal store does not exist: {self._store.root}"
+                f"proposal store does not exist: {self.proposal_store.root}"
             ) from error
         except (OSError, ValueError) as error:
             raise ProposalRecordUnreadable(
@@ -186,7 +185,7 @@ class ProposalStalenessCollector:
 
     def _load(self, proposal_id: UUID) -> Proposal:
         try:
-            return self._store.load(proposal_id)
+            return self.proposal_store.load(proposal_id)
         except (OSError, ValueError) as error:
             raise ProposalRecordUnreadable(
                 f"proposal record is unreadable: {proposal_id}.json"
@@ -197,6 +196,7 @@ def _staleness_item(
     command_id: UUID,
     proposal: Proposal,
     staleness: ProposalStaleness,
+    derived: tuple[bool, str] | None,
 ) -> EvidenceItem:
     return EvidenceItem(
         item_id=uuid5(
@@ -212,6 +212,8 @@ def _staleness_item(
             "base_commit": proposal.base_commit,
             "head": staleness.head,
             "git_checked": proposal.base_commit is not None,
+            "published": None if derived is None else derived[0],
+            "derived_state": None if derived is None else derived[1],
             "stale": staleness.stale,
             "reasons": list(staleness.reasons),
         },

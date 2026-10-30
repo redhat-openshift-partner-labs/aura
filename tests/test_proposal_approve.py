@@ -65,6 +65,7 @@ def decide(
     hub: HubPolicy | Callable[[], HubPolicy],
     key_name: str = "decide-1",
     pid: str | None = None,
+    command_id: UUID = DECIDE_ID,
 ):
     readings: list[Path] = []
 
@@ -81,7 +82,7 @@ def decide(
                 "--openshift-kubeconfig", "/kube/aura-readonly",
                 "--idempotency-key", key_name,
             ],
-            command_id_factory=lambda: DECIDE_ID,
+            command_id_factory=lambda: command_id,
             clock=lambda: NOW,
             hub_policy=read,
         )
