@@ -2453,10 +2453,10 @@ def _open_execution_store() -> ExecutionStore | str:
         config = load_config()
     except ConfigError as error:
         return str(error)
-    if not isinstance(config.store, SQLiteStore):
-        return "the PostgreSQL execution store is added in Phase 3 task 3.7"
     try:
-        return ExecutionStore.open_sqlite(config.store)
+        if isinstance(config.store, SQLiteStore):
+            return ExecutionStore.open_sqlite(config.store)
+        return ExecutionStore.open_postgresql(config.store)
     except (StoreError, OSError, sqlite3.Error) as error:
         return f"cannot open the execution store: {error}"
 

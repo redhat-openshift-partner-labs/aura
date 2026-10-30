@@ -9,6 +9,8 @@ column. SQLite serves development and tests; PostgreSQL is added in task 3.7.
 from __future__ import annotations
 
 import sqlite3
+
+import psycopg
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -20,7 +22,7 @@ from pydantic import BaseModel
 
 from aura.approvals import ApprovalRecord, PublishedProposal
 from aura.canonical import canonical_json
-from aura.config import SQLiteStore
+from aura.config import PostgreSQLStore, SQLiteStore
 from aura.contracts import AuditEvent, CommandEnvelope, EvidenceSnapshot
 from aura.json_store import parse_record
 from aura.execution.records import ExecutionRecord, PipelineRunObservation
@@ -68,6 +70,44 @@ class StoreOutcomeUnknown(StoreError):
 
 class Connection(Protocol):
     def execute(self, sql: str, parameters: Any = ..., /) -> sqlite3.Cursor: ...
+
+
+@dataclass(frozen=True)
+class Dialect:
+    """What differs between the SQLite and PostgreSQL backends; every other
+    statement is SQL that both accept."""
+
+    name: str
+    placeholder: str
+    begin: str
+    begin_locked: str
+    error: type[Exception]
+    integrity_error: type[Exception]
+    hour_ago: str
+    # Raised when a locked transaction loses to a concurrent one.
+    conflict_errors: tuple[type[Exception], ...] = ()
+
+
+SQLITE = Dialect(
+    name="sqlite",
+    placeholder="?",
+    begin="BEGIN IMMEDIATE",
+    begin_locked="BEGIN IMMEDIATE",
+    error=sqlite3.Error,
+    integrity_error=sqlite3.IntegrityError,
+    hour_ago="datetime('now', '-1 hour')",
+)
+POSTGRESQL = Dialect(
+    name="postgresql",
+    placeholder="%s",
+    begin="BEGIN",
+    begin_locked="BEGIN ISOLATION LEVEL SERIALIZABLE",
+    error=psycopg.Error,
+    integrity_error=psycopg.IntegrityError,
+    # Sessions run in UTC, so LOCALTIMESTAMP compares with stored_at.
+    hour_ago="LOCALTIMESTAMP - INTERVAL '1 hour'",
+    conflict_errors=(psycopg.errors.SerializationFailure,),
+)
 
 
 @dataclass(frozen=True)
@@ -155,11 +195,27 @@ TABLES = {
 class ExecutionStore:
     """Insert-only access to the execution store over one connection."""
 
-    def __init__(self, connection: Connection, *, login: str) -> None:
+    def __init__(
+        self,
+        connection: Connection,
+        *,
+        login: str,
+        dialect: Dialect = SQLITE,
+    ) -> None:
         self._connection = connection
         self._login = login
+        self._dialect = dialect
         self._signers: str | None = None
         self._check_schema()
+
+    @property
+    def backend(self) -> str:
+        return self._dialect.name
+
+    def _execute(self, sql: str, parameters: tuple[Any, ...] = ()) -> Any:
+        return self._connection.execute(
+            sql.replace("?", self._dialect.placeholder), parameters
+        )
 
     def with_signers(self, signers: str) -> "ExecutionStore":
         """Use the hub's allowed-signers list to verify signed records."""
@@ -182,8 +238,33 @@ class ExecutionStore:
             _initialize(connection)
         return cls(connection, login=config.login)
 
+    @classmethod
+    def open_postgresql(cls, config: PostgreSQLStore) -> "ExecutionStore":
+        """Connect as the operator's own login; the administrator applies
+        the migrations and grants, so this never changes the schema."""
+
+        try:
+            password = config.password_file.read_text(encoding="utf-8").strip()
+        except OSError as error:
+            raise StoreReadFailed(f"cannot read the store password file: {error}") from error
+        try:
+            connection = psycopg.connect(
+                host=config.host,
+                port=config.port,
+                dbname=config.database,
+                user=config.user,
+                password=password,
+                autocommit=True,
+                options="-c TimeZone=UTC",
+            )
+            # Rows carry the session's login; the grants check it (D13).
+            (login,) = connection.execute("SELECT CURRENT_USER").fetchone()
+        except psycopg.Error as error:
+            raise StoreReadFailed(f"cannot connect to the execution store: {error}") from error
+        return cls(connection, login=str(login), dialect=POSTGRESQL)
+
     def deployment_id(self) -> str:
-        row = self._connection.execute(
+        row = self._execute(
             "SELECT deployment_id FROM deployment"
         ).fetchone()
         if row is None:
@@ -203,33 +284,33 @@ class ExecutionStore:
         rows = [(TABLES[name], self._row(TABLES[name], record)) for name, record in records]
         try:
             self._insert_rows(rows)
-        except sqlite3.IntegrityError as error:
+        except self._dialect.integrity_error as error:
             self._rollback()
             missing = self._conflicts(rows, error)
             if missing:
                 # Rows already stored identically count; store the rest.
                 try:
                     self._insert_rows(missing)
-                except sqlite3.Error as retry:
+                except self._dialect.error as retry:
                     self._rollback()
                     raise RecordConflict(
                         f"{missing[0][0].name} write conflicts: {retry}"
                     ) from retry
-        except sqlite3.Error as error:
+        except self._dialect.error as error:
             self._rollback()
             for table, row in rows:
                 self._read_back(table, row, error)
 
     def _insert_rows(self, rows: list[tuple[Table, dict[str, Any]]]) -> None:
-        self._connection.execute("BEGIN IMMEDIATE")
+        self._execute(self._dialect.begin)
         for table, row in rows:
             self._insert(table, row)
-        self._connection.execute("COMMIT")
+        self._execute("COMMIT")
 
     def _conflicts(
         self,
         rows: list[tuple[Table, dict[str, Any]]],
-        error: sqlite3.Error,
+        error: Exception,
     ) -> list[tuple[Table, dict[str, Any]]]:
         """Raise for a row whose key holds another record; return the rows
         not stored. A conflict on another unique index names its table."""
@@ -260,25 +341,35 @@ class ExecutionStore:
         table = TABLES[table_name]
         row = self._row(table, record)
         try:
-            self._connection.execute("BEGIN IMMEDIATE")
-        except sqlite3.Error as error:
+            self._execute(self._dialect.begin_locked)
+        except self._dialect.error as error:
             raise StoreWriteFailed(f"{table.name} write failed: {error}") from error
         try:
             check(self)
             self._insert(table, row)
-        except sqlite3.IntegrityError as error:
+        except self._dialect.conflict_errors as error:
+            self._rollback()
+            raise RecordConflict(
+                f"{table.name} write lost to a concurrent transaction: {error}"
+            ) from error
+        except self._dialect.integrity_error as error:
             self._rollback()
             self._conflicts([(table, row)], error)
             return
-        except sqlite3.Error as error:
+        except self._dialect.error as error:
             self._rollback()
             raise StoreWriteFailed(f"{table.name} write failed: {error}") from error
         except BaseException:
             self._rollback()
             raise
         try:
-            self._connection.execute("COMMIT")
-        except sqlite3.Error as error:
+            self._execute("COMMIT")
+        except self._dialect.conflict_errors as error:
+            self._rollback()
+            raise RecordConflict(
+                f"{table.name} write lost to a concurrent transaction: {error}"
+            ) from error
+        except self._dialect.error as error:
             self._rollback()
             self._read_back(table, row, error)
 
@@ -288,11 +379,11 @@ class ExecutionStore:
         Time arithmetic is per backend; this is SQLite's."""
 
         try:
-            row = self._connection.execute(
+            row = self._execute(
                 "SELECT COUNT(*) FROM executions WHERE phase = 'dispatching' "
-                "AND stored_at > datetime('now', '-1 hour')"
+                f"AND stored_at > {self._dialect.hour_ago}"
             ).fetchone()
-        except sqlite3.Error as error:
+        except self._dialect.error as error:
             raise StoreReadFailed(f"executions read failed: {error}") from error
         return int(row[0])
 
@@ -323,12 +414,12 @@ class ExecutionStore:
         # The key breaks stored_at ties in SQL both backends accept.
         order = ", ".join(("stored_at", *self._key_columns(table)))
         try:
-            rows = self._connection.execute(
+            rows = self._execute(
                 f"SELECT {', '.join(names)} FROM {table.name} WHERE {where} "
                 f"ORDER BY {order}",
                 tuple(equal.values()),
             ).fetchall()
-        except sqlite3.Error as error:
+        except self._dialect.error as error:
             raise StoreReadFailed(f"{table.name} read failed: {error}") from error
         return [self._load(table, dict(zip(names, row))) for row in rows]
 
@@ -406,7 +497,7 @@ class ExecutionStore:
         return row
 
     def _insert(self, table: Table, row: dict[str, Any]) -> None:
-        self._connection.execute(
+        self._execute(
             f"INSERT INTO {table.name} ({', '.join(row)}) "
             f"VALUES ({', '.join('?' for _ in row)})",
             tuple(row.values()),
@@ -416,13 +507,13 @@ class ExecutionStore:
         self,
         table: Table,
         row: dict[str, Any],
-        error: sqlite3.Error,
+        error: Exception,
     ) -> None:
         """Resolve a write whose outcome is unknown (I4 change, D13)."""
 
         try:
             stored = self._stored_record_text(table, row)
-        except sqlite3.Error as read_error:
+        except self._dialect.error as read_error:
             raise StoreOutcomeUnknown(
                 f"{table.name} write outcome unknown for "
                 f"{self._describe_key(table, row)}: {error}; if that row "
@@ -438,7 +529,7 @@ class ExecutionStore:
 
     def _stored_record_text(self, table: Table, row: dict[str, Any]) -> str | None:
         columns = self._key_columns(table)
-        found = self._connection.execute(
+        found = self._execute(
             f"SELECT record FROM {table.name} WHERE "
             + " AND ".join(f"{name} = ?" for name in columns),
             tuple(row[name] for name in columns),
@@ -461,16 +552,16 @@ class ExecutionStore:
 
     def _rollback(self) -> None:
         try:
-            self._connection.execute("ROLLBACK")
-        except sqlite3.Error:
+            self._execute("ROLLBACK")
+        except self._dialect.error:
             pass
 
     def _check_schema(self) -> None:
         try:
-            row = self._connection.execute(
+            row = self._execute(
                 "SELECT MAX(version) FROM schema_versions"
             ).fetchone()
-        except sqlite3.Error as error:
+        except self._dialect.error as error:
             raise SchemaVersionError(
                 f"the store has no schema version: {error}"
             ) from error
@@ -544,6 +635,8 @@ def _statements(script: str) -> list[str]:
 
 
 __all__ = [
+    "POSTGRESQL",
+    "SQLITE",
     "SUPPORTED_SCHEMA_VERSIONS",
     "TABLES",
     "ExecutionStore",

@@ -203,7 +203,7 @@ Records are serialized to a private temporary file, flushed with `fsync`, and li
 
 ## Execution Store Integrity
 
-The [execution store](architecture.md#execution-store) never updates or deletes a row; `tests/test_execution_store.py` traces every statement a session runs and fails on `UPDATE` or `DELETE`. A row whose record, digest, or copied columns were edited is refused on load. The PostgreSQL role that enforces insert-only access is added in Phase 3 task 3.7.
+The [execution store](architecture.md#execution-store) never updates or deletes a row; `tests/test_execution_store.py` traces every statement a session runs and fails on `UPDATE` or `DELETE`. A row whose record, digest, or copied columns were edited is refused on load. On PostgreSQL, `aura/execution/postgresql/grants.sql` limits role `aura_operator` to `INSERT` and `SELECT`; `tests/test_postgresql_store.py` connects as a member of it and requires `UPDATE`, `DELETE`, `TRUNCATE`, DDL, and a schema-version insert to fail, and requires a command row that names another login to fail its check.
 
 ## Operational cautions
 

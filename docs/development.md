@@ -77,6 +77,18 @@ Make the smallest correct change. Match the surrounding style. Before relying on
 
 ### 5. Verify
 
+The full suite includes the execution store's PostgreSQL contract tests, which fail without `AURA_TEST_POSTGRES_URL`, an administrator URL for a disposable PostgreSQL server. CI provides one as a service container. Locally, start one with Podman once:
+
+```bash
+podman run -d --name aura-pg-test -e POSTGRES_PASSWORD=aura-test-admin -p 55432:5432 docker.io/library/postgres:18.6-trixie
+```
+
+```bash
+export AURA_TEST_POSTGRES_URL=postgresql://postgres:aura-test-admin@localhost:55432/postgres
+```
+
+Each test creates and drops its own database and reuses the `aura_operator` role and two operator logins it creates on first use.
+
 Run all of these before every commit, in this order:
 
 ```bash

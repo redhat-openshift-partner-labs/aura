@@ -8,6 +8,21 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      # The execution store's PostgreSQL contract tests (Phase 3 task 3.7).
+      postgres:
+        image: docker.io/library/postgres:18.6-trixie
+        env:
+          POSTGRES_PASSWORD: aura-test-admin
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      AURA_TEST_POSTGRES_URL: postgresql://postgres:aura-test-admin@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
