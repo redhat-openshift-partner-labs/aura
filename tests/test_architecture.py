@@ -248,8 +248,11 @@ def adapter_classes(tree: ast.AST) -> list[str]:
                 isinstance(item, ast.FunctionDef)
                 and item.name == "write"
                 and any(
-                    isinstance(arg.annotation, ast.Name)
-                    and arg.annotation.id == "AdapterRequest"
+                    (isinstance(arg.annotation, ast.Name) and arg.annotation.id == "AdapterRequest")
+                    or (
+                        isinstance(arg.annotation, ast.Constant)
+                        and arg.annotation.value == "AdapterRequest"
+                    )
                     for arg in item.args.args
                 )
             ):
@@ -258,13 +261,14 @@ def adapter_classes(tree: ast.AST) -> list[str]:
 
 
 def adapter_write_calls(tree: ast.AST) -> int:
-    """Calls of `write` on an object named as an adapter."""
+    """Calls of `write` on an object named as an adapter, or that pass an
+    adapter request, whatever the object is called."""
 
-    def named_adapter(node: ast.AST) -> bool:
+    def named(node: ast.AST, word: str) -> bool:
         if isinstance(node, ast.Name):
-            return "adapter" in node.id.lower()
+            return word in node.id.lower()
         if isinstance(node, ast.Attribute):
-            return "adapter" in node.attr.lower() or named_adapter(node.value)
+            return word in node.attr.lower() or named(node.value, word)
         return False
 
     return sum(
@@ -273,7 +277,10 @@ def adapter_write_calls(tree: ast.AST) -> int:
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "write"
-        and named_adapter(node.func.value)
+        and (
+            named(node.func.value, "adapter")
+            or any(named(arg, "request") for arg in node.args)
+        )
     )
 
 
@@ -313,5 +320,7 @@ def test_only_their_modules_read_credentials() -> None:
             for node in ast.walk(tree)
             if (isinstance(node, ast.Attribute) and node.attr == credential)
             or (isinstance(node, ast.AnnAssign) and getattr(node.target, "id", None) == credential)
+            # getattr(config.store, "password_file") and the like.
+            or (isinstance(node, ast.Constant) and node.value == credential)
         }
         assert reading <= readers, (credential, reading - readers)
