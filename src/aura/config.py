@@ -151,7 +151,13 @@ def load_config(path: Path | None = None) -> AuraConfig:
     try:
         return AuraConfig.model_validate(document)
     except ValidationError as error:
-        raise ConfigError(f"{path} is invalid: {error}") from error
+        # Name each field and problem without its value, which may be a
+        # secret placed in the wrong key (I6).
+        details = "; ".join(
+            f"{'.'.join(map(str, problem['loc']))}: {problem['msg']}"
+            for problem in error.errors(include_input=False, include_url=False)
+        )
+        raise ConfigError(f"{path} is invalid: {details}") from error
 
 
 __all__ = [

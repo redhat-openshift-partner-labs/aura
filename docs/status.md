@@ -101,7 +101,7 @@ The operator approved the [Phase 3](plans/06-phase-3-approved-execution.md) plan
 - A failed `oc` read is not retried within a command, and an `oc` list without `metadata.resourceVersion` is an error.
 - Scaffold output is limited to 1 MiB per stream, 1 MiB per generated file, and 8 MiB of generated files in total.
 
-`deploy/postgresql/` deploys the staging PostgreSQL for the Phase 3 execution store. No Phase 3 command exists yet.
+`deploy/postgresql/` deploys the staging PostgreSQL for the Phase 3 execution store. Stage 2 added the execution store on SQLite, Aura's configuration file, SSH signing against the hub signer list, the action digest, `proposal submit`, `proposal approve`, and `proposal reject`, and the derived state in `proposal status`; no command executes a proposal yet.
 
 ## Not Implemented
 
@@ -112,7 +112,7 @@ The operator approved the [Phase 3](plans/06-phase-3-approved-execution.md) plan
 - Portal integration.
 - RabbitMQ integration or replacement.
 - Long-running daemon, scheduler, or web UI.
-- Database-backed stores; current stores are append-only JSON files. Phase 3 Stage 2 adds the execution store.
+- Database-backed stores for Phases 0–2: their records stay in append-only JSON files. Phase 3 records are in the execution store, on SQLite until the PostgreSQL backend in Phase 3 task 3.7.
 - Meaningful OpenShift and Tekton source versions: `oc get -o json` returns a `List` with an empty `resourceVersion`, so those `source_version` values are empty, for example `pipelines=`.
 
 ## Recent Implementation Commits

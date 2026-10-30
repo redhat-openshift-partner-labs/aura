@@ -94,7 +94,12 @@ def run_store_command(
 ) -> int:
     """Run step for command and print its output; exit 0 or 2."""
 
-    duplicate = _duplicate(store, command)
+    try:
+        duplicate = _duplicate(store, command)
+    except StoreError as error:
+        # The key check runs before any write, so nothing is stored (I7).
+        print(f"aura: {error}", file=sys.stderr)
+        return 2
     if duplicate is not None:
         print(f"aura: {duplicate}", file=sys.stderr)
         return 2

@@ -235,13 +235,14 @@ def test_a_reused_key_exits_before_any_write(approver, monkeypatch) -> None:
     assert writes.labels == []
 
 
+@pytest.mark.parametrize("decision", ["approve", "reject"])
 @pytest.mark.parametrize("fail_at", range(len(APPROVED)), ids=APPROVED)
-def test_each_store_write_failure_fails_closed(approver, monkeypatch, fail_at) -> None:
+def test_each_store_write_failure_fails_closed(approver, monkeypatch, fail_at, decision) -> None:
     database, root, private = approver
 
     with store_write_faults(monkeypatch, fail_at) as writes:
         code, stdout, stderr = decide(
-            root, hub=policy(listed("approver@example.com", private, APPROVE))
+            root, decision, hub=policy(listed("approver@example.com", private, APPROVE))
         )
 
     assert (code, stdout) == (2, "")
@@ -308,3 +309,31 @@ def test_a_failed_race_loser_keeps_its_own_failure_last(approver, monkeypatch) -
         AuditEventType.COMMAND_FAILED,
     ]
     assert events[-1].data["reason"] == "hub unreachable"
+
+
+@pytest.mark.parametrize("decision", ["approve", "reject"])
+def test_a_decision_holds_every_invariant(approver, decision) -> None:
+    database, root, private = approver
+    allowed = listed("approver@example.com", private, APPROVE)
+
+    code, _, stderr = decide(root, decision, hub=policy(allowed))
+
+    assert code == 0, stderr
+    store = open_store(database, login="approver-b").with_signers(allowed)
+    assert assert_store_command_invariants(
+        store, database, key="decide-1", command_id=DECIDE_ID
+    ) is CommandState.SUCCEEDED
+
+
+def test_the_hub_read_spends_the_oc_budget(approver) -> None:
+    from aura.collectors.oc_cli import _call_budget
+
+    _, root, private = approver
+    budgets = []
+
+    def read() -> HubPolicy:
+        budgets.append(_call_budget.get())
+        return policy(listed("approver@example.com", private, APPROVE))
+
+    assert decide(root, hub=read)[0] == 0
+    assert budgets and budgets[0] is not None

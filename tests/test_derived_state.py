@@ -146,3 +146,11 @@ def test_approvals_of_another_proposal_do_not_count() -> None:
     other = record(proposal, 1, proposal_id=str(UUID(int=4242)))
 
     assert state(proposal, [other]) is DerivedState.PROPOSAL_READY
+
+
+def test_approvals_of_an_unpublished_proposal_do_not_count() -> None:
+    proposal = make_proposal("cluster_edit")
+
+    assert state(proposal, [record(proposal, 1)], published=False) is (
+        DerivedState.PROPOSAL_READY
+    )

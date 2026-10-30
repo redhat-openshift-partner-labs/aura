@@ -2,7 +2,9 @@
 
 The store counterpart of tests/invariants.py: I1 one terminal record,
 I2 a linear audit chain whose last event matches the record, I3 an
-artifact only with its event and only for a succeeded command.
+artifact only with its event and only for a succeeded command. Reading
+every row through the store also verifies its digest and columns (I4,
+I9); I6-I8 have their own tests.
 """
 
 from __future__ import annotations
@@ -18,10 +20,10 @@ from aura.execution import store as execution_store
 from aura.execution.store import ExecutionStore, StoreWriteFailed
 
 
-# Artifact tables and the event each artifact follows.
+# The event that names each artifact: its type, table, and key field.
 ARTIFACT_EVENTS = {
-    "published_proposals": AuditEventType.PROPOSAL_PUBLISHED,
-    "approvals": AuditEventType.APPROVAL_RECORDED,
+    AuditEventType.PROPOSAL_PUBLISHED: ("published_proposals", "publication_id"),
+    AuditEventType.APPROVAL_RECORDED: ("approvals", "approval_id"),
 }
 
 
@@ -77,15 +79,18 @@ def assert_store_command_invariants(
             AuditEventType.COMMAND_FAILED,
             AuditEventType.COMMAND_REFUSED,
         }, "I2"
-    stored_types = {event.event_type for event in events}
-    for table, event_type in ARTIFACT_EVENTS.items():
-        command_rows = [
-            row for (row,) in rows(database, f"SELECT record FROM {table}")
-            if str(command_id) in row
-        ]
-        if command_rows:
-            assert status is CommandState.SUCCEEDED, f"I3: {table} after {status}"
-            assert event_type in stored_types, f"I3: {table} without its event"
+    # I3: an artifact the command's events name is stored exactly when the
+    # command succeeded, and only after its event.
+    for event in events:
+        if event.event_type not in ARTIFACT_EVENTS:
+            continue
+        table, key = ARTIFACT_EVENTS[event.event_type]
+        stored = rows(
+            database, f"SELECT 1 FROM {table} WHERE {key} = ?", event.data[key]
+        )
+        assert bool(stored) is (status is CommandState.SUCCEEDED), (
+            f"I3: {table} {event.data[key]} after {status}"
+        )
     return status
 
 

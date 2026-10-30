@@ -154,3 +154,13 @@ def test_a_missing_file_is_an_error(tmp_path) -> None:
 def test_an_invalid_config_is_an_error(tmp_path, text, message) -> None:
     with pytest.raises(ConfigError, match=message):
         load_config(write(tmp_path, text))
+
+
+def test_an_invalid_config_message_omits_its_values(tmp_path) -> None:
+    text = SQLITE.replace('login = "operator-a"', 'login = "operator-a"\npassword = "hunter2-secret"')
+
+    with pytest.raises(ConfigError) as error:
+        load_config(write(tmp_path, text))
+
+    assert "store.sqlite.password" in str(error.value)
+    assert "hunter2-secret" not in str(error.value)

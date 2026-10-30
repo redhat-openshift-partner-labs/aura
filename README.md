@@ -53,7 +53,7 @@ Every command makes one pass through the same pipeline. The numbers match the di
 1. **CLI** – [`aura`](docs/cli.md) parses flags, checks flag combinations, and wires the right collector for the command.
 2. **Idempotency gate** – the CLI locks `--command-dir` and checks your [idempotency key](#idempotency-explained) before anything is read.
 3. **Service** – an `EvidenceCommandService` enforces the [authorization policy](docs/cli.md#common-flags) and the command type, then moves the command through its [lifecycle states](docs/wiring.md#command-routes).
-4. **Collectors** – [Git, OpenShift, and Tekton collectors](docs/wiring.md#collector-wiring) read with list-only access and correlate by cluster name. Git is pinned to one resolved `HEAD`, so uncommitted work is never treated as desired state.
+4. **Collectors** – [Git, OpenShift, and Tekton collectors](docs/wiring.md#collector-wiring) read with list-only access and correlate by cluster name; Phase 3 also gets two policy ConfigMaps by name. Git is pinned to one resolved `HEAD`, so uncommitted work is never treated as desired state.
 5. **Evidence** – results become a typed, [redacted](docs/security.md#secret-redaction), SHA-256-digested [`EvidenceSnapshot`](docs/evidence.md#evidence-snapshot).
 6. **CWA** – the [Context Window Architecture](docs/evidence.md#cwa-snapshot) assembler freezes model input into nine required slots and records a [trace](docs/evidence.md#cwa-trace).
 7. **Model** – a deterministic, local model or [proposal generator](docs/wiring.md#deprovision-proposals) returns strict, schema-validated output. No external model is wired, and model output is never treated as authorization.
@@ -113,7 +113,7 @@ Reading OpenShift and Tekton needs this setup, once per hub.
 | Python 3.12+ and [`uv`](https://docs.astral.sh/uv/) | Runs Aura and its locked dependencies |
 | `git` and a local `fleet-clusters` checkout | Source of desired state; Aura reads its committed `HEAD` |
 | `oc` | Reads `ClusterDeployment`, `ManagedCluster`, `PipelineRun`, `TaskRun`, and `Pipeline` resources |
-| A kubeconfig for the `aura:aura-readonly` service account | Keeps Aura's access list-only and away from admin credentials |
+| A kubeconfig for the `aura:aura-readonly` service account | Keeps Aura's access read-only and away from admin credentials |
 
 ### 1. Grant read-only RBAC on the hub
 
@@ -242,7 +242,7 @@ An idempotency key identifies one request. Aura stores one terminal record per k
 ## Safety model
 
 - **Read-only.** Collectors only list resources and read committed Git. Aura writes nothing to Git, Kubernetes, pipelines, Portal, or RabbitMQ ([invariant I5](docs/development.md#project-invariants)). Phase 3 plans guarded execution of approved proposals; no adapter that writes exists yet.
-- **Least privilege.** The [`deploy/`](deploy) manifests grant `list` only, and [`tests/test_deploy_manifests.py`](tests/test_deploy_manifests.py) fails the suite if a collector reads a resource they do not grant. The staging PostgreSQL for Phase 3 is a separate kustomization in [`deploy/postgresql/`](deploy/postgresql); see [Staging Database](docs/security.md#staging-database).
+- **Least privilege.** The [`deploy/`](deploy) manifests grant `list` only, plus `get` on two Phase 3 policy ConfigMaps by name, and [`tests/test_deploy_manifests.py`](tests/test_deploy_manifests.py) fails the suite if a collector reads a resource they do not grant. The staging PostgreSQL for Phase 3 is a separate kustomization in [`deploy/postgresql/`](deploy/postgresql); see [Staging Database](docs/security.md#staging-database).
 - **No secrets at rest.** Secret-named fields are [redacted](docs/security.md#secret-redaction) across case and separator spellings before anything is stored, and an unhandled error stores only its type.
 - **Refusal on missing evidence.** Missing, incomplete, invalid, or conflicting evidence produces a structured [refusal](docs/architecture.md#refusal).
 - **Proposals are drafts.** Aura stores proposals and never applies, commits, or pushes them. A human reviews and merges.
@@ -261,7 +261,7 @@ An idempotency key identifies one request. Aura stores one terminal record per k
 | --- | --- | --- |
 | [Phase 1](docs/plans/04-phase-1-read-only-assistant.md) | Read-only inventory, workflow inspection, and diagnosis | ✅ Shipped and validated |
 | [Phase 2](docs/plans/05-phase-2-proposals.md) | Deterministic proposals, never applied | ✅ Closed: scaffold, deprovision, cluster-edit, and rerun proposals validated; signed off 2026-10-26 |
-| [Phase 3](docs/plans/06-phase-3-approved-execution.md) | Guarded execution after explicit human approval | 🚧 Stage 1 hardening done; Stage 2, identity and approvals, next |
+| [Phase 3](docs/plans/06-phase-3-approved-execution.md) | Guarded execution after explicit human approval | 🚧 Stages 1 and 2 done: hardening, the execution store, signed approvals; Stage 3, the guard, next |
 
 Current numbers, validation runs, and remaining gaps live in [Implementation Status](docs/status.md).
 
@@ -347,7 +347,7 @@ aura/
 │   ├── json_store.py     # the only module that parses stored records
 │   └── *_store.py        # append-only JSON stores
 ├── tests/                # contract, collector, service, CLI, and fixture tests
-├── deploy/               # list-only OpenShift RBAC, applied with oc apply -k deploy
+├── deploy/               # read-only OpenShift RBAC, applied with oc apply -k deploy
 │   └── postgresql/       # staging PostgreSQL for Phase 3, applied separately
 ├── docs/                 # user, design, and contributor documentation
 │   └── assets/           # README diagrams (SVG)

@@ -210,8 +210,10 @@ def test_an_unresolvable_write_names_the_record(tmp_path) -> None:
     store = failing_store(tmp_path, applied=True, reads_fail=True)
     event = make_audit_event()
 
-    with pytest.raises(StoreOutcomeUnknown, match=str(event.event_id)):
+    with pytest.raises(StoreOutcomeUnknown, match=str(event.event_id)) as error:
         store.insert("audit_events", event)
+
+    assert "if that row was stored, it counts" in str(error.value)
 
 
 def test_the_store_never_updates_or_deletes(tmp_path) -> None:

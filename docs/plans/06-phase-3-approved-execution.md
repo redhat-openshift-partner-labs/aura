@@ -433,7 +433,7 @@ Requires D8, and D10 and D12 under D8 (b). Live runs need task 0.3's staging sto
 | 0 | 0.2 Apply decisions and approval | Done | `a6e7554`, `fe3fc8b`, `a61a08c` |
 | 0 | 0.3 Stage 4 prerequisites | Pending | |
 | 1 | 1.1–1.11 Hardening | Done; the operator confirmed its plan edits on 2026-10-29, see [Stage 1 Record](#stage-1-record) | `7e2fca9`, `9beb53d`, `4889513`, `b989aff`, `d88ab1c`, `3689b4c`, `ab480a9`, `71d82cc`, `8dc07a5`, `c74d7d3`; review fixes `1de5003`, `2171460`, `3c3e054` |
-| 2 | 2.1–2.5 and 3.2 Identity and approvals | In progress: 2.1–2.4 and 3.2 done; 2.5 pending | `b8e223b`, `29ecb84`, `186062d`, `cba8acd`, `b4a8f26`, `925a00d`, `bd92e5b` |
+| 2 | 2.1–2.5 and 3.2 Identity and approvals | Done; plan edits await the operator's confirmation, see [Stage 2 Record](#stage-2-record) | `b8e223b`, `29ecb84`, `186062d`, `cba8acd`, `b4a8f26`, `925a00d`, `bd92e5b`, `22e6c10`, `d19846f`; review fixes `7802ed1` and the commit that records this |
 | 3 | 3.1–3.7 Guard and dry run | Pending | |
 | 4 | 4.1–4.4 Tekton adapter | Pending | |
 | 5 | 5.1–5.4 Git execution | Pending | |
@@ -468,3 +468,35 @@ Backlog, from the stage review, for the stage that owns each item:
 - The 1.9 error cache is per `OpenShiftResource` instance; `OpenShiftCLI.resource()` builds a new one per call (next `oc` client change).
 - The scaffold size limits do not cap the number of generated files (next scaffold change).
 - Store discovery covers only `JsonRecordStore` subclasses; the command store is checked separately (Stage 2 store work).
+
+## Stage 2 Record
+
+Implemented 2026-10-30, with task 3.2 moved into this stage by the operator. The stage review ran each new test against a mutation of the code it covers.
+
+Rule exceptions and notes:
+
+- `29ecb84` failed the full suite (R5): it added three command types without role policy entries, and 16 authorization tests failed until `cba8acd`.
+- `22e6c10` and `d19846f` changed existing tests without saying so in their messages (R4): the approve tests now read approvals with the signer list, and the staleness tests expect `published` and `derived_state`. `925a00d`'s message names `JsonCommandStore.find`; the function is `command_store.find_command`.
+- The shared store harness, `tests/store_invariants.py`, checks I1–I3 and, by reading every row through the store, I4 and I9. I6–I8 have their own tests: secrets in config errors, a tampered command row, and fail-closed reads.
+
+Plan edits made during Stage 2 that the operator has not yet confirmed (P3-1):
+
+1. A command's artifact, a publication or an approval, is inserted in one transaction with its terminal record, so a run that stores no terminal record leaves no artifact; the [Write order](#guard)'s separate artifact write becomes part of the terminal write.
+2. A race loser whose chain already ended with `command_failed` or `command_refused` stores no further event (I1 change), so the Stage 1 rule that `command_refused` stays last holds.
+3. Load refuses a signed record whose `created_at` is more than five minutes after its `stored_at`, in addition to the guard's check against its clock, and refuses a key of the claimed principal listed without a `namespaces` option.
+4. `proposal status` reports the derived state only with `--openshift-kubeconfig`; without it, `published` and `derived_state` are `null`.
+5. Approve and reject take the signer's principal and key from a `[signing]` section of Aura's configuration file.
+
+Backlog, from the stage review, for the stage that owns each item:
+
+- A new SQLite file whose initialization fails, or two first opens that race, leave a store that is refused until the file is removed (task 3.7 store work).
+- `_check_schema` reports a locked database as having no schema version (task 3.7).
+- `published` in `proposal status` matches only `proposal_id`, not the local `proposal_digest` (task 3.3, G3).
+- `--openshift-kubeconfig` is not part of the `proposal status` request input (next CLI change).
+- The Phase 3 runner stores the text of an `OSError` without an errno, which task 1.4 stores as its type only (task 3.5).
+- `_retention` raises a bare `ValueError` for non-ASCII digits (task 4.2).
+- The `commands.login` column needs `DEFAULT CURRENT_USER` on PostgreSQL (task 3.7).
+- The plan's "Every Phase 3 command reads the list" does not hold for `proposal submit`, which reads no hub policy (task 3.3 wording).
+- If a `command_refused` append has an unknown outcome, the terminal record is `failed` while the chain may end in `command_refused` (task 3.5 failure matrix).
+- `test_stored_digests.py` accepts a self-digested contract that no store holds since `29ecb84` (next schema change).
+- The hub-read cache in `proposal status` and the `principals != [principal]` check have no test that fails without them (task 3.3).

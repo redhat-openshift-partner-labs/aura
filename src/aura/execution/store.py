@@ -389,7 +389,8 @@ class ExecutionStore:
         except sqlite3.Error as read_error:
             raise StoreOutcomeUnknown(
                 f"{table.name} write outcome unknown for "
-                f"{self._describe_key(table, row)}: {error}"
+                f"{self._describe_key(table, row)}: {error}; if that row "
+                "was stored, it counts"
             ) from read_error
         if stored is None:
             raise StoreWriteFailed(f"{table.name} write failed: {error}") from error

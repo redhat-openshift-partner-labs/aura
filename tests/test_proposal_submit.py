@@ -235,3 +235,18 @@ def test_each_store_write_failure_fails_closed(tmp_path, monkeypatch, phase2, fa
     assert store.select("published_proposals") == []
     events = chain(store, SUBMIT_ID)
     assert events[-1].previous_event_id == events[-2].event_id
+
+
+def test_a_tampered_command_row_is_reported_without_a_traceback(tmp_path, monkeypatch, phase2) -> None:
+    import sqlite3
+
+    database = use_store(tmp_path, monkeypatch)
+    assert submit(phase2)[0] == 0
+    connection = sqlite3.connect(database, isolation_level=None)
+    connection.execute("UPDATE commands SET digest = ?", ("0" * 64,))
+    connection.close()
+
+    code, stdout, stderr = submit(phase2)
+
+    assert (code, stdout) == (2, "")
+    assert stderr.startswith("aura: commands row digest does not match")

@@ -109,7 +109,6 @@ EXCLUDED = {
     "reversibility": Reversibility.IRREVERSIBLE,
     "rollback": "Another rollback.",
     "proposal_digest": "9" * 64,
-    "patch_check": None,
 }
 
 
@@ -169,3 +168,28 @@ def test_aura_naming_in_the_pipeline_run_does_not_change_the_digest(edit) -> Non
     assert action_digest(
         variant(proposal, pipeline_run=manifest_with(proposal, edit))
     ) == action_digest(proposal)
+
+
+@pytest.mark.filterwarnings("ignore::UserWarning")
+def test_status_does_not_change_the_digest() -> None:
+    # ProposalStatus has one value, so only a copy that skips validation
+    # can hold another.
+    proposal = make_proposal("deprovision")
+
+    assert action_digest(variant(proposal, status="other")) == action_digest(proposal)
+
+
+def test_a_patch_check_does_not_change_the_digest() -> None:
+    from aura.contracts import PatchCheckRecord
+    from aura.proposals import patch_digest
+
+    proposal = make_proposal("deprovision")
+    record = PatchCheckRecord(
+        base_commit=proposal.base_commit,
+        cluster_name=proposal.cluster_name,
+        patch_digest=patch_digest(proposal.patch),
+        require_definition=False,
+        outcome="applies",
+    )
+
+    assert action_digest(variant(proposal, patch_check=record)) == action_digest(proposal)

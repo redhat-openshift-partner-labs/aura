@@ -210,3 +210,24 @@ def test_a_key_without_a_namespaces_option_is_refused(approver) -> None:
     # Without the option ssh-keygen accepts any namespace; D7 requires it.
     with pytest.raises(SignatureError, match="namespaces"):
         check(approver, signature, f"approver@example.com {public}\n")
+
+
+def test_signing_through_ssh_agent_names_the_public_key(monkeypatch) -> None:
+    import aura.signing as signing
+    from aura.process import ProcessResult
+
+    calls: list[tuple[list[str], object]] = []
+
+    def run(argv, *, env, timeout, input):
+        calls.append((list(argv), env))
+        return ProcessResult(0, b"-----BEGIN SSH SIGNATURE-----\nAAAA\n-----END SSH SIGNATURE-----\n", b"")
+
+    monkeypatch.setattr(signing, "run_process", run)
+
+    sign(PAYLOAD, key=Path("/home/me/.ssh/id_ed25519.pub"), namespace=APPROVE, agent=True)
+
+    # -U signs with the agent's private key; env=None keeps SSH_AUTH_SOCK.
+    assert calls == [(
+        ["ssh-keygen", "-Y", "sign", "-U", "-f", "/home/me/.ssh/id_ed25519.pub", "-n", APPROVE],
+        None,
+    )]
