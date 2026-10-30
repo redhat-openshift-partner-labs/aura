@@ -32,7 +32,9 @@ Git evidence resolves `HEAD` once and reads the tree listing and blobs from that
 
 ## Operator Identity
 
-Phase 1 accepts a non-empty, self-asserted `--operator` value. That value is the audit actor and CWA user identifier; it is not authentication and must not be treated as proof that a person holds the supplied roles. `--role` values are equally self-asserted: authorization evaluates only the supplied roles, defaulting to `viewer` when none are given, but does not verify them. This includes `proposer`: a stored proposal does not prove its operator holds that role, and Phase 3 approval must not rely on it. Operator authentication can be added later without changing the evidence contracts.
+Phase 1 accepts a non-empty, self-asserted `--operator` value. That value is the audit actor and CWA user identifier; it is not authentication and must not be treated as proof that a person holds the supplied roles. `--role` values are equally self-asserted: authorization evaluates only the supplied roles, defaulting to `viewer` when none are given, but does not verify them. This includes `proposer`: a stored proposal does not prove its operator holds that role, and Phase 3 approval must not rely on it.
+
+Phase 3 approvals and execution requests are signed with SSH keys instead ([D7](plans/06-phase-3-approved-execution.md#operator-decisions)). `aura.signing` signs and verifies with `ssh-keygen -Y` through `run_process`. A signature counts only when the allowed-signers list names its key for exactly one principal, that principal is the one the record claims, and the key may sign the record's namespace, `aura-approve` or `aura-execute`. A key listed for more than one principal is refused, so one key cannot count as two approvers. Verification runs at a given time, so a key retired by setting `valid-before` in the list still verifies records signed before that time. A signed record whose `created_at` is more than five minutes after the reader's clock is refused. The list is read from ConfigMap `aura-allowed-signers` in namespace `aura`, which only hub administrators can edit; tests pass a list directly, and the CLI has no option for one.
 
 ## Service Account
 
@@ -59,15 +61,16 @@ Kubeconfig rules:
 
 ## Minimum RBAC
 
-The service account needs only `list` on five resources. Aura always lists resources and does not request individual objects by name. The manifests are in [`deploy/`](../deploy) and target the OpenShift hub:
+The service account needs `list` on five resources, and `get` on two ConfigMaps by name for Phase 3. Collectors always list resources; only the Phase 3 policy reader gets objects by name. The manifests are in [`deploy/`](../deploy) and target the OpenShift hub:
 
 | Manifest | Grants |
 | --- | --- |
 | `namespace.yaml`, `serviceaccount.yaml` | The `aura` namespace and the `aura-readonly` service account |
 | `clusterrole.yaml`, `clusterrolebinding.yaml` | `list` on `clusterdeployments.hive.openshift.io`, `managedclusters.cluster.open-cluster-management.io`, and `pipelineruns` and `taskruns` in `tekton.dev`, cluster-wide |
 | `pipelines-role.yaml`, `pipelines-rolebinding.yaml` | `list` on `pipelines.tekton.dev` in `openshift-pipelines` only, for prerequisite P2 |
+| `policy-role.yaml`, `policy-rolebinding.yaml` | `get` on ConfigMaps `aura-allowed-signers` and `aura-execution-store` in namespace `aura`, by name only, for Phase 3. Both are read in one `oc get`: the allowed-signers list, the execution store's `deployment_id`, and the optional `pipeline_run_retention_seconds` |
 
-`tests/test_deploy_manifests.py` keeps every rule `list`-only and the granted resources equal to the resources the `oc` clients query, so a collector that reads a new resource fails the suite until the manifests grant it. The manifests create no token Secret; build the read-only kubeconfig from a token for the service account as before.
+`tests/test_deploy_manifests.py` keeps every rule `list`-only except the policy Role, which must grant exactly `get` on the two policy ConfigMaps, and keeps the granted resources equal to the resources the `oc` clients query, so a collector that reads a new resource fails the suite until the manifests grant it. The manifests create no token Secret; build the read-only kubeconfig from a token for the service account as before.
 
 Preview the change on the hub without applying it, then apply it as a cluster administrator:
 
@@ -89,9 +92,11 @@ oc --kubeconfig "$HOME/.kube/aura-readonly" auth can-i list managedclusters.clus
 oc --kubeconfig "$HOME/.kube/aura-readonly" auth can-i list pipelineruns.tekton.dev -A
 oc --kubeconfig "$HOME/.kube/aura-readonly" auth can-i list taskruns.tekton.dev -A
 oc --kubeconfig "$HOME/.kube/aura-readonly" auth can-i list pipelines.tekton.dev -n openshift-pipelines
+oc --kubeconfig "$HOME/.kube/aura-readonly" auth can-i get configmap/aura-allowed-signers -n aura
+oc --kubeconfig "$HOME/.kube/aura-readonly" auth can-i get configmap/aura-execution-store -n aura
 ```
 
-Every command must print `yes`. Write verbs such as `create`, `patch`, and `delete` must print `no`.
+Every command must print `yes`. Write verbs such as `create`, `patch`, and `delete` must print `no`, and so must `get` on any other ConfigMap, for example `oc --kubeconfig "$HOME/.kube/aura-readonly" auth can-i get configmap/other -n aura`.
 
 ## Staging Database
 

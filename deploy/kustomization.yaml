@@ -9,3 +9,5 @@ resources:
 - clusterrolebinding.yaml
 - pipelines-role.yaml
 - pipelines-rolebinding.yaml
+- policy-role.yaml
+- policy-rolebinding.yaml

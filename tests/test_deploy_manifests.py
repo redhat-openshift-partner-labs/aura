@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 
 import aura.cli  # registers every oc client subclass the CLI can build
+from aura.collectors.hub_policy import POLICY_CONFIGMAPS, POLICY_NAMESPACE
 from aura.collectors.oc_cli import OpenShiftCLIResourceClient
 from aura.collectors.openshift_cli_client import OpenShiftCLIInventoryClient
 from aura.collectors.openshift_cli_pipeline_client import (
@@ -81,6 +82,8 @@ def test_manifests_create_only_read_only_access_objects() -> None:
         "ClusterRoleBinding",
         "Namespace",
         "Role",
+        "Role",
+        "RoleBinding",
         "RoleBinding",
         "ServiceAccount",
     ]
@@ -91,10 +94,39 @@ def test_manifests_create_only_read_only_access_objects() -> None:
     }
 
 
+def named(kind: str, name: str) -> dict[str, Any]:
+    [document] = [d for d in by_kind(kind) if d["metadata"]["name"] == name]
+    return document
+
+
+PIPELINES = "aura-readonly-pipelines"
+POLICY = "aura-readonly-policy"
+
+
 def test_every_rule_grants_only_list() -> None:
     for role in [*by_kind("ClusterRole"), *by_kind("Role")]:
+        if role["metadata"]["name"] == POLICY:
+            continue
         for rule in role["rules"]:
             assert rule["verbs"] == ["list"], role["metadata"]["name"]
+
+
+def test_policy_role_gets_only_the_two_policy_configmaps() -> None:
+    role = named("Role", POLICY)
+
+    assert role["metadata"]["namespace"] == POLICY_NAMESPACE
+    assert role["rules"] == [
+        {
+            "apiGroups": [""],
+            "resources": ["configmaps"],
+            "resourceNames": list(POLICY_CONFIGMAPS),
+            "verbs": ["get"],
+        }
+    ]
+    binding = named("RoleBinding", POLICY)
+    assert binding["metadata"]["namespace"] == POLICY_NAMESPACE
+    assert binding["subjects"] == [SUBJECT]
+    assert binding["roleRef"]["name"] == POLICY
 
 
 def refuse_oc(args: Sequence[str]) -> str:
@@ -148,7 +180,7 @@ def test_every_client_option_is_built() -> None:
 
 def test_every_read_is_granted() -> None:
     [cluster_role] = by_kind("ClusterRole")
-    [role] = by_kind("Role")
+    role = named("Role", PIPELINES)
     roles = {role["metadata"]["namespace"]: granted(role)}
 
     for namespace, resource in client_reads():
@@ -169,7 +201,7 @@ def test_cluster_role_grants_exactly_the_cluster_wide_reads() -> None:
 
 
 def test_pipeline_role_grants_pipelines_in_their_namespace_only() -> None:
-    [role] = by_kind("Role")
+    role = named("Role", PIPELINES)
 
     assert role["metadata"]["namespace"] == PIPELINE_NAMESPACE
     assert granted(role) == {
@@ -181,9 +213,9 @@ def test_pipeline_role_grants_pipelines_in_their_namespace_only() -> None:
 
 def test_bindings_bind_the_read_only_account() -> None:
     [cluster_role] = by_kind("ClusterRole")
-    [role] = by_kind("Role")
+    role = named("Role", PIPELINES)
     [cluster_binding] = by_kind("ClusterRoleBinding")
-    [binding] = by_kind("RoleBinding")
+    binding = named("RoleBinding", PIPELINES)
 
     assert cluster_binding["subjects"] == [SUBJECT]
     assert binding["subjects"] == [SUBJECT]

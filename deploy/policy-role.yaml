@@ -1,0 +1,12 @@
+# Phase 3 reads the allowed-signers list and the execution store's ID
+# from these two ConfigMaps, by name only, so it can read no other.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aura-readonly-policy
+  namespace: aura
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  resourceNames: ["aura-allowed-signers", "aura-execution-store"]
+  verbs: ["get"]
