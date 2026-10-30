@@ -282,6 +282,20 @@ class ExecutionStore:
             self._rollback()
             self._read_back(table, row, error)
 
+    def dispatches_in_last_hour(self) -> int:
+        """Count `dispatching` records stored in the past hour by the
+        database's clock, so a client's clock cannot shift the limit (G11).
+        Time arithmetic is per backend; this is SQLite's."""
+
+        try:
+            row = self._connection.execute(
+                "SELECT COUNT(*) FROM executions WHERE phase = 'dispatching' "
+                "AND stored_at > datetime('now', '-1 hour')"
+            ).fetchone()
+        except sqlite3.Error as error:
+            raise StoreReadFailed(f"executions read failed: {error}") from error
+        return int(row[0])
+
     def get(self, table_name: str, **key: object) -> Any:
         table = TABLES[table_name]
         rows = self._select(table, self._key_values(table, key))

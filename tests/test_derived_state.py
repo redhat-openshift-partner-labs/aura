@@ -154,3 +154,81 @@ def test_approvals_of_an_unpublished_proposal_do_not_count() -> None:
     assert state(proposal, [record(proposal, 1)], published=False) is (
         DerivedState.PROPOSAL_READY
     )
+
+
+def run_record(proposal, phase: str, number: int, **changes):
+    from aura.execution.records import ExecutionRecord
+    from test_execution_records import execution
+
+    fields = execution(
+        record_id=str(UUID(int=900 + number)),
+        proposal_id=str(proposal.proposal_id),
+        proposal_type=proposal.proposal_type.value,
+        adapter="recording",
+        phase=phase,
+        **changes,
+    )
+    return ExecutionRecord.model_validate(fields)
+
+
+def executed(proposal, records):
+    return derive_state(
+        proposal, [record(proposal, 1)], git_stale=False, published=True,
+        now=NOW, executions=records,
+    )
+
+
+def test_a_dispatch_without_a_result_awaits_the_operator() -> None:
+    proposal = make_proposal("cluster_edit")
+
+    assert executed(proposal, [run_record(proposal, "dispatching", 1)]) is (
+        DerivedState.AWAITING_OPERATOR
+    )
+
+
+@pytest.mark.parametrize(
+    ("phases", "expected"),
+    [
+        (["dispatching", "submitted"], DerivedState.SUBMITTED),
+        (["dispatching", "submitted", "running"], DerivedState.RUNNING),
+        (["dispatching", "running", "submitted"], DerivedState.RUNNING),
+        (["dispatching", "submitted", "running", "succeeded"], DerivedState.SUCCEEDED),
+        (["dispatching", "succeeded", "running"], DerivedState.SUCCEEDED),
+        (["dispatching", "failed"], DerivedState.FAILED),
+        (["dispatching", "not_dispatched"], DerivedState.NOT_DISPATCHED),
+    ],
+    ids=["submitted", "running", "running-out-of-order", "succeeded",
+         "terminal-out-of-order", "failed", "not-dispatched"],
+)
+def test_the_highest_ranked_result_wins(phases, expected) -> None:
+    proposal = make_proposal("post_provision_rerun")
+    extras = {
+        "submitted": {"external_result": {"pipeline_run": "x"}},
+        "failed": {"failure_reason": "refused"},
+        "not_dispatched": {"resolution": "timeout_margin"},
+    }
+    records = [
+        run_record(proposal, phase, number, **extras.get(phase, {}))
+        for number, phase in enumerate(phases)
+    ]
+
+    assert executed(proposal, records) is expected
+
+
+def test_an_execution_outranks_a_later_rejection() -> None:
+    proposal = make_proposal("cluster_edit")
+
+    state = derive_state(
+        proposal, [rejection(proposal, 2)], git_stale=True, published=True,
+        now=NOW, executions=[run_record(proposal, "dispatching", 1)],
+    )
+
+    assert state is DerivedState.AWAITING_OPERATOR
+
+
+def test_open_states() -> None:
+    from aura.execution.derived import OPEN_STATES
+
+    assert {state.value for state in OPEN_STATES} == {
+        "awaiting_operator", "submitted", "running",
+    }

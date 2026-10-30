@@ -146,6 +146,10 @@ The store only inserts rows. Each row holds its record's canonical JSON as text,
 
 The schema is versioned by migration files in `aura/execution/migrations/` that only add tables, columns, and indexes. A client refuses a store whose highest version is outside the range it supports. A new SQLite file applies the migrations and records a deployment ID when it is created, for development; in production the database administrator applies them. `proposal submit`, `proposal approve`, and `proposal reject` write to the store, and `proposal status` reads it with `--openshift-kubeconfig`. A command's artifact, a publication or an approval, is inserted in one transaction with its terminal record, so a command that stores no terminal record leaves no artifact.
 
+## Command Guard
+
+`aura.execution.guard.check` runs the Phase 3 [guard rules](plans/06-phase-3-approved-execution.md#guard) G1–G12 in order and refuses at the first that fails, naming it. The publication loads first, because G1 reads its type; one that does not load is a G3 refusal. G2 signs a payload with the executor's key and verifies it as `aura-execute` against the hub list. G5 counts unexpired approvals of the exact proposal and action digests from distinct principals other than the executor. G6 requires the derived state, including execution records, to be `approved`, ignoring staleness, which G7 checks. G10 selects `recording` when it is enabled, otherwise `git_handoff` for Git proposals and `tekton` for reruns, and allows a real adapter only on the PostgreSQL store the hub names. G11 counts the past hour's dispatches by the database's clock. The checks that read the hub or Git, and the regeneration of G8, are passed in, so tests supply them. A change that breaks the contract usually changes the approved action too, so G5 refuses it before G9.
+
 ## Failure Model
 
 | Failure | Current behavior |

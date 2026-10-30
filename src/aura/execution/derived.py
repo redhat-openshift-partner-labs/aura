@@ -1,9 +1,9 @@
 """A proposal's derived lifecycle state (Phase 3 Records and State).
 
 A proposal's `status` is inside its digest, so its state is derived from
-the records that name it. Stage 2 has no execution records, so the states
-here are the first ones in the plan's precedence: rejected, stale,
-approved, awaiting approval, and ready.
+the records that name it, first match wins: the highest-ranked execution
+result, `awaiting_operator`, `rejected`, `stale`, `approved`,
+`awaiting_approval`, and `proposal_ready`.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from enum import StrEnum
 
 from aura.approvals import ApprovalDecision, ApprovalRecord
 from aura.execution.action import action_digest
+from aura.execution.records import ExecutionPhase, ExecutionRecord, TERMINAL_PHASES
 from aura.proposals import Proposal, ProposalType
 
 
@@ -23,6 +24,21 @@ class DerivedState(StrEnum):
     APPROVED = "approved"
     STALE = "stale"
     REJECTED = "rejected"
+    AWAITING_OPERATOR = "awaiting_operator"
+    SUBMITTED = "submitted"
+    HANDED_OFF = "handed_off"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    MERGED = "merged"
+    CLOSED = "closed"
+    NOT_DISPATCHED = "not_dispatched"
+
+
+# An execution in one of these states keeps its cluster open (G11).
+OPEN_STATES = frozenset(
+    {DerivedState.AWAITING_OPERATOR, DerivedState.SUBMITTED, DerivedState.RUNNING}
+)
 
 
 def required_approvers(proposal: Proposal) -> int:
@@ -38,7 +54,13 @@ def derive_state(
     git_stale: bool,
     published: bool,
     now: datetime,
+    executions: Iterable[ExecutionRecord] = (),
 ) -> DerivedState:
+    executed = execution_state(
+        record for record in executions if record.proposal_id == proposal.proposal_id
+    )
+    if executed is not None:
+        return executed
     records = [
         record for record in approvals if record.proposal_id == proposal.proposal_id
     ]
@@ -64,4 +86,27 @@ def derive_state(
     return DerivedState.AWAITING_APPROVAL
 
 
-__all__ = ["DerivedState", "derive_state", "required_approvers"]
+def execution_state(records: Iterable[ExecutionRecord]) -> DerivedState | None:
+    """The terminal result, else running, else submitted; a dispatch with
+    no result is awaiting_operator, and no record is None."""
+
+    phases = {record.phase for record in records}
+    if not phases:
+        return None
+    terminal = phases & TERMINAL_PHASES
+    if terminal:
+        (phase,) = terminal
+        return DerivedState(phase.value)
+    for phase in (ExecutionPhase.RUNNING, ExecutionPhase.SUBMITTED):
+        if phase in phases:
+            return DerivedState(phase.value)
+    return DerivedState.AWAITING_OPERATOR
+
+
+__all__ = [
+    "OPEN_STATES",
+    "DerivedState",
+    "derive_state",
+    "execution_state",
+    "required_approvers",
+]

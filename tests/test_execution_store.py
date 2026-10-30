@@ -680,3 +680,12 @@ def test_an_execution_has_at_most_one_terminal_record(tmp_path, executor_key) ->
         tmp_path, executor_key, phase="running",
         record_id="00000000-0000-0000-0000-000000000056",
     )
+
+
+def test_dispatches_in_the_past_hour_count_by_the_database_clock(tmp_path, executor_key) -> None:
+    store_execution(tmp_path, executor_key)
+    store = open_store(tmp_path)
+
+    assert store.dispatches_in_last_hour() == 1
+    raw(tmp_path).execute("UPDATE executions SET stored_at = datetime('now', '-61 minutes')")
+    assert store.dispatches_in_last_hour() == 0
