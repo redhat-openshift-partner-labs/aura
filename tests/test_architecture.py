@@ -326,3 +326,51 @@ def test_only_their_modules_read_credentials() -> None:
             or (isinstance(node, ast.Constant) and node.value == credential)
         }
         assert reading <= readers, (credential, reading - readers)
+
+
+# Commands that write to Kubernetes, and Git commands that write to a
+# repository (I5, task 4.3).
+OC_WRITE_VERBS = frozenset(
+    {"annotate", "apply", "create", "delete", "edit", "expose", "label", "patch",
+     "replace", "rollout", "run", "scale", "set"}
+)
+GIT_WRITE_COMMANDS = frozenset({"am", "commit", "merge", "push", "rebase", "reset", "tag"})
+# Where each write verb may appear as a command argument, and why.
+WRITE_VERBS_ALLOWED = {
+    # The approved PipelineRun create, and its can-i preflight.
+    (EXECUTION / "tekton.py", "create"),
+    # `git apply --cached` stages scaffold output in a temporary clone's index.
+    (SOURCE / "scaffold_runner.py", "apply"),
+}
+
+
+def command_arguments(tree: ast.AST) -> set[str]:
+    """String arguments of `oc` and `git` command lines: a list or tuple
+    that names the program, or a call to a helper named for it, such as
+    `_oc` or `_run_git`."""
+
+    def strings(values) -> set[str]:
+        return {v.value for v in values if isinstance(v, ast.Constant) and isinstance(v.value, str)}
+
+    def helper(func: ast.AST) -> bool:
+        name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
+        return bool({"oc", "git"} & set(name.lower().split("_")))
+
+    found = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.List, ast.Tuple)) and strings(node.elts) & {"oc", "git"}:
+            found |= strings(node.elts)
+        elif isinstance(node, ast.Call) and helper(node.func):
+            found |= strings(node.args)
+            found |= {s for arg in node.args if isinstance(arg, (ast.List, ast.Tuple)) for s in strings(arg.elts)}
+    return found
+
+
+def test_only_adapters_pass_a_write_command() -> None:
+    writes = {
+        (path, verb)
+        for path, tree in parsed().items()
+        for verb in command_arguments(tree) & (OC_WRITE_VERBS | GIT_WRITE_COMMANDS)
+    }
+
+    assert writes == WRITE_VERBS_ALLOWED
