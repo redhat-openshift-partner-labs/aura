@@ -1351,18 +1351,19 @@ def _proposal_deriver(
                 if published
                 else []
             )
+            # Conflicting execution results are an invalid record too.
+            state = derive_state(
+                proposal,
+                approvals,
+                git_stale=stale,
+                published=published,
+                now=args.clock(),
+                executions=executions,
+            )
         except StoreError as error:
             raise ProposalRecordUnreadable(
                 f"cannot read the derived state: {error}"
             ) from error
-        state = derive_state(
-            proposal,
-            approvals,
-            git_stale=stale,
-            published=published,
-            now=args.clock(),
-            executions=executions,
-        )
         return published, state.value
 
     return derive

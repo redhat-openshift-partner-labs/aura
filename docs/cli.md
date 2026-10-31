@@ -389,18 +389,17 @@ uv run --no-sync aura execution status \
   --record
 ```
 
-Without `--record` it needs `--operator` and a `viewer`, `executor`, or `admin` `--role`, prints what it would record under `would_record`, and stores only its command record and audit events. With `--record` it signs with the `[signing]` key, which must be listed for `aura-execute`, and stores, each after an `execution_observed` event:
+Without `--record` it needs `--operator` and a `viewer`, `executor`, or `admin` `--role`, prints what it would record under `would_record`, and stores only its command record and audit events. With `--record` it signs with the `[signing]` key and refuses, before reading anything else, a key the hub does not list for `aura-execute` and a clock more than five minutes ahead of the database's. It stores, each after an `execution_observed` event:
 
 - One `PipelineRunObservation` per run read.
-- `submitted` when an `awaiting_operator` execution's run exists, then `running`, `succeeded`, or `failed` when the run's `Succeeded` condition is `Unknown`, `True`, or `False` and that phase ranks above the current one. A run with no `Succeeded` condition has not started and stays `submitted`.
-- `failed` when an `awaiting_operator` execution finds a run of that name whose execution-ID annotation names another execution.
-- `not_dispatched` when no run exists and the `dispatching` record, by the database's `stored_at`, is older than `adapter_timeout_seconds` plus five minutes: with resolution `timeout_margin` inside the hub's `pipeline_run_retention_seconds`, and otherwise only with `--confirmation-id`, as resolution `manual`, which names a confirmation of the same execution by another principal and uses its statement as `failure_reason`.
+- `submitted` when an `awaiting_operator` execution's run exists and the timeout margin has passed, then `running`, `succeeded`, or `failed` when the run's `Succeeded` condition is `Unknown`, `True`, or `False` and that phase ranks above the current one. A run with no `Succeeded` condition has not started and stays `submitted`. The timeout margin is the `dispatching` record's `adapter_timeout_seconds`, the timeout the call ran under, plus five minutes, measured from the record's `stored_at` by the database's clock; a record without the field uses the reader's configured timeout.
+- `not_dispatched` when no run exists and the timeout margin has passed: with resolution `timeout_margin` inside the hub's `pipeline_run_retention_seconds`, and otherwise only with `--confirmation-id`, as resolution `manual`, which names a confirmation of the same execution by another principal and uses its statement as `failure_reason`.
 
-A run that is gone after it was observed keeps its last observation in the report, and is never recorded `not_dispatched`. An execution by another adapter reports its state and reads nothing.
+A run of that name whose execution-ID annotation names another execution was created outside this execution: the report says so, nothing is stored, and the execution stays open, so G11 keeps its cluster closed until an operator handles the run. A run that is gone after it was observed keeps its last observation in the report, and is never recorded `not_dispatched`. An execution by another adapter reports its state and reads nothing.
 
 ## `execution confirm`
 
-Stores an approver's signed `ResolutionConfirmation` that an `awaiting_operator` execution made no external effect, for a `manual` resolution by another principal. It takes identity from the `[signing]` key, which must be listed for `aura-approve`, and is refused unless the execution is `awaiting_operator`. `--statement`, at most 1,000 characters, says how the operators confirmed that no run took place.
+Stores an approver's signed `ResolutionConfirmation` that an `awaiting_operator` execution made no external effect, for a `manual` resolution by another principal. It takes identity from the `[signing]` key, refuses a key the hub does not list for `aura-approve` and a clock more than five minutes ahead of the database's, and is refused unless the execution is `awaiting_operator`. `--statement`, at most 1,000 characters, says how the operators confirmed that no run took place.
 
 ```bash
 uv run --no-sync aura execution confirm \

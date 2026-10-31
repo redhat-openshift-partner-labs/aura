@@ -80,6 +80,8 @@ def status_step(
     def step(chain: Chain) -> str:
         context = make_context(chain)
         store = chain.store.with_signers(context.policy.allowed_signers)
+        if context.signer is not None:
+            _require_signer(chain, store, context.signer, context.policy, EXECUTE)
         dispatch, records = _execution(store, proposal_id)
         state = execution_state(records)
         report: dict[str, Any] = {
@@ -103,7 +105,7 @@ def status_step(
             report["last_observation"] = observations[-1].model_dump(mode="json")
         run = _find_run(context.runs(), proposal_id)
         if run is not None:
-            _observed(recorder, report, run, state)
+            _observed(recorder, report, run, state, _past_margin(store, dispatch, context))
         elif observations:
             # Pruned after it was observed: the last observation stands, and
             # a pruned run is never recorded not_dispatched (P3.21).
@@ -133,21 +135,29 @@ def _find_run(runs: list[dict[str, Any]], proposal_id: UUID) -> dict[str, Any] |
     return found[0] if found else None
 
 
-def _observed(recorder: "_Recorder", report: dict[str, Any], run: dict[str, Any], state: DerivedState) -> None:
+def _observed(
+    recorder: "_Recorder", report: dict[str, Any], run: dict[str, Any], state: DerivedState,
+    past_margin: bool,
+) -> None:
     metadata = run.get("metadata") or {}
     owner = (metadata.get("annotations") or {}).get(EXECUTION_ANNOTATION)
     report["pipeline_run"] = {"name": metadata.get("name"), "uid": metadata.get("uid")}
     if owner != str(recorder.dispatch.execution_id):
-        report["note"] = "the PipelineRun of this name belongs to another execution"
-        if state is DerivedState.AWAITING_OPERATOR:
-            recorder.result(
-                report, ExecutionPhase.FAILED,
-                failure_reason=f"PipelineRun {metadata.get('name')} belongs to another execution",
-            )
+        # Created outside this execution and possibly running: the
+        # execution stays open, so G11 keeps its cluster closed (operator
+        # decision). An observation names its execution, so none is stored.
+        report["note"] = (
+            "a PipelineRun of this name was created by another execution; "
+            "the execution stays open until an operator resolves the run"
+        )
         return
     observation = recorder.observation(run)
     report["pipeline_run"]["succeeded_status"] = observation["succeeded_status"]
     report["last_observation"] = observation
+    if state is DerivedState.AWAITING_OPERATOR and not past_margin:
+        # The executor's call may still be storing its own result.
+        report["note"] = "the PipelineRun exists; submitted is recorded once the timeout margin has passed"
+        return
     if state is DerivedState.AWAITING_OPERATOR:
         recorder.result(report, ExecutionPhase.SUBMITTED, external_result={
             "pipeline_run": str(metadata["name"]),
@@ -167,9 +177,44 @@ def _observed(recorder: "_Recorder", report: dict[str, Any], run: dict[str, Any]
         recorder.result(report, phase)
 
 
+def _margin(dispatch: ExecutionRecord, context: StatusContext) -> timedelta:
+    """The dispatch's own adapter timeout plus five minutes; the reader's
+    configured timeout only for a record stored before the field existed."""
+
+    timeout = (
+        timedelta(seconds=dispatch.adapter_timeout_seconds)
+        if dispatch.adapter_timeout_seconds is not None
+        else context.adapter_timeout
+    )
+    return timeout + CLOCK_MARGIN
+
+
+def _age(store, dispatch: ExecutionRecord) -> timedelta:
+    return store.database_time() - store.stored_at("executions", record_id=dispatch.record_id)
+
+
+def _past_margin(store, dispatch: ExecutionRecord, context: StatusContext) -> bool:
+    return _age(store, dispatch) >= _margin(dispatch, context)
+
+
+def _require_signer(chain: Chain, store, signer: "Signer", policy: HubPolicy, namespace: str) -> None:
+    """Refuse a key the hub does not list for namespace, and a clock so far
+    ahead of the store's that the signed records would fail to load."""
+
+    payload = json.dumps({"command_id": str(chain.command.command_id), "purpose": namespace}).encode()
+    try:
+        verify(payload, signer.sign(payload), principal=signer.principal, namespace=namespace,
+               signers=policy.allowed_signers, at=chain.clock())
+    except SignatureError as error:
+        raise Refusal(f"the signing key is refused for {namespace}: {error}") from error
+    ahead = chain.clock() - store.database_time()
+    if ahead > CLOCK_MARGIN:
+        raise Refusal(f"this clock is {int(ahead.total_seconds())} seconds ahead of the store's")
+
+
 def _unfound(recorder: "_Recorder", report: dict[str, Any], store, dispatch: ExecutionRecord, context: StatusContext) -> None:
-    age = store.database_time() - store.stored_at("executions", record_id=dispatch.record_id)
-    margin = context.adapter_timeout + CLOCK_MARGIN
+    age = _age(store, dispatch)
+    margin = _margin(dispatch, context)
     if age < margin:
         report["note"] = (
             f"no PipelineRun yet; the dispatch is {int(age.total_seconds())} seconds old, "
@@ -336,6 +381,7 @@ def confirm_step(
     def step(chain: Chain) -> str:
         policy = read_policy()
         store = chain.store.with_signers(policy.allowed_signers)
+        _require_signer(chain, store, signer, policy, APPROVE)
         dispatch, records = _execution(store, proposal_id)
         state = execution_state(records)
         if state is not DerivedState.AWAITING_OPERATOR:

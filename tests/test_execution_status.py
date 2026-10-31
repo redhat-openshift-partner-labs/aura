@@ -37,6 +37,10 @@ APPROVER = "approver@example.com"
 def status_world(tmp_path):
     """A Tekton execution dispatched with no result: awaiting_operator."""
 
+    return dispatched_world(tmp_path)
+
+
+def dispatched_world(tmp_path, **dispatch):
     keys = {name: key(tmp_path, name) for name in ("executor", "approver")}
     signers = listed(EXECUTOR, keys["executor"], EXECUTE) + listed(APPROVER, keys["approver"], APPROVE)
     database = tmp_path / "aura.db"
@@ -48,6 +52,7 @@ def status_world(tmp_path):
         proposal_id=str(PROPOSAL_ID),
         proposal_type="post_provision_rerun",
         adapter="tekton",
+        **dispatch,
     )
     store.insert("audit_events", event)
     store.insert("executions", record)
@@ -149,9 +154,11 @@ def test_without_record_it_reports_and_stores_no_observation(world_running) -> N
 
 @pytest.fixture
 def world_running(status_world, monkeypatch):
-    """The run exists and has not started: no Succeeded condition yet."""
+    """The run exists and has not started: no Succeeded condition yet. The
+    dispatch is past its timeout margin, 60 seconds plus five minutes."""
 
     status_world["runs"] = [pipeline_run()]
+    backdate(status_world, 7)
     return status_world, monkeypatch
 
 
@@ -191,6 +198,7 @@ def test_a_found_run_resolves_awaiting_operator_to_submitted(world_running) -> N
 )
 def test_a_finished_run_records_its_result(status_world, monkeypatch, condition, expected) -> None:
     status_world["runs"] = [pipeline_run(condition["status"], reason=condition["reason"])]
+    backdate(status_world, 7)
 
     code, _, stderr = status(status_world, monkeypatch, "--record")
 
@@ -220,16 +228,83 @@ def test_a_result_is_recorded_only_when_the_phase_rises(world_running) -> None:
     assert execution_state(reader(world).select("executions")).value == "succeeded"
 
 
-def test_a_run_of_another_execution_fails_the_awaiting_execution(status_world, monkeypatch) -> None:
+def test_a_run_of_another_execution_keeps_the_execution_open(status_world, monkeypatch) -> None:
+    """Operator decision: the run may be going, so G11 keeps the cluster closed."""
+
     status_world["runs"] = [pipeline_run("Unknown", owner=UUID(int=999))]
+    backdate(status_world, 7)
 
     code, stdout, stderr = status(status_world, monkeypatch, "--record")
 
     assert code == 0, stderr
-    assert json.loads(stdout)["recorded"] == ["failed"]
-    (failed,) = [r for r in reader(status_world).select("executions") if r.phase is ExecutionPhase.FAILED]
-    assert "belongs to another execution" in failed.failure_reason
+    report = json.loads(stdout)
+    assert report["recorded"] == []
+    assert "created by another execution" in report["note"]
+    assert phases(status_world) == ["dispatching"]
+    assert execution_state(reader(status_world).select("executions")).value == "awaiting_operator"
     assert reader(status_world).select("pipeline_run_observations") == []
+
+
+def test_a_found_run_is_not_recorded_submitted_before_the_margin(status_world, monkeypatch) -> None:
+    """The executor's own call may still be storing its result (V4)."""
+
+    status_world["runs"] = [pipeline_run("Unknown", reason="Running")]
+
+    code, stdout, stderr = status(status_world, monkeypatch, "--record")
+
+    assert code == 0, stderr
+    report = json.loads(stdout)
+    assert report["recorded"] == []
+    assert "once the timeout margin has passed" in report["note"]
+    assert phases(status_world) == ["dispatching"]
+    assert len(reader(status_world).select("pipeline_run_observations")) == 1
+
+
+def test_the_margin_follows_the_dispatchers_timeout(tmp_path, monkeypatch) -> None:
+    """A dispatch under a 30-minute timeout is not resolved after 7 minutes,
+    whatever the reader's configured timeout (V6)."""
+
+    world = dispatched_world(tmp_path, adapter_timeout_seconds=1800)
+    world["retention"] = timedelta(days=1)
+    backdate(world, 7)
+
+    code, stdout, stderr = status(world, monkeypatch, "--record")
+
+    assert code == 0, stderr
+    assert json.loads(stdout)["recorded"] == []
+    assert "not_dispatched needs 2100" in json.loads(stdout)["note"]
+
+
+def test_a_fast_clock_cannot_record(status_world, monkeypatch) -> None:
+    monkeypatch.setattr(ExecutionStore, "database_time", lambda self: datetime.now(UTC) - timedelta(minutes=6))
+    status_world["runs"] = [pipeline_run()]
+
+    code, _, stderr = status(status_world, monkeypatch, "--record")
+
+    assert code == 2
+    assert "seconds ahead of the store's" in stderr
+    assert phases(status_world) == ["dispatching"]
+
+
+def test_a_key_not_listed_for_execute_cannot_record(status_world, monkeypatch) -> None:
+    monkeypatch.setenv("AURA_CONFIG", str(config(status_world, EXECUTOR, "approver")))
+
+    code, _, stderr = run(
+        status_world, monkeypatch, "execution", "status", "--proposal-id", str(PROPOSAL_ID),
+        "--openshift-kubeconfig", "/kube/aura-readonly", "--idempotency-key", "s", "--record",
+        config_path=config(status_world, EXECUTOR, "approver"),
+    )
+
+    assert code == 2
+    assert "the signing key is refused for aura-execute" in stderr
+
+
+def test_a_key_not_listed_for_approve_cannot_confirm(status_world, monkeypatch) -> None:
+    code, _, stderr = confirm(status_world, monkeypatch, principal=EXECUTOR, key_name="executor")
+
+    assert code == 2
+    assert "the signing key is refused for aura-approve" in stderr
+    assert reader(status_world).select("resolution_confirmations") == []
 
 
 def test_no_run_before_the_margin_records_nothing(status_world, monkeypatch) -> None:

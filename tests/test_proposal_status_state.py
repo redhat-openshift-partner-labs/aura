@@ -153,3 +153,32 @@ def test_the_state_follows_an_execution(tmp_path, monkeypatch, phase2, keys) -> 
 
     assert code == 0, stderr
     assert item(stdout)["derived_state"] == "awaiting_operator"
+
+
+def test_conflicting_execution_results_are_reported_without_an_internal_error(
+    tmp_path, monkeypatch, phase2, keys
+) -> None:
+    from aura.config import SQLiteStore
+    from aura.execution.store import ExecutionStore
+    from test_execution_store import signed_execution
+
+    database = use_store(tmp_path, monkeypatch, login="proposer-a")
+    assert submit(phase2)[0] == 0
+    executor = key(tmp_path, "executor")
+    hub = policy(signers(*keys) + listed("executor@example.com", executor, "aura-execute"))
+    store = ExecutionStore.open_sqlite(SQLiteStore(backend="sqlite", path=database, login="executor@example.com"))
+    for number, changes in enumerate(
+        ({"phase": "failed", "failure_reason": "refused"}, {"phase": "not_dispatched", "resolution": "timeout_margin"})
+    ):
+        record, event = signed_execution(
+            executor, record_id=str(UUID(int=6100 + number)), execution_id=str(UUID(int=6200 + number)),
+            proposal_id=proposal_id(phase2), proposal_type="deprovision", adapter="recording", **changes,
+        )
+        store.insert("audit_events", event)
+        store.insert("executions", record)
+
+    code, stdout, stderr = status(phase2, hub=hub)
+
+    assert (code, stdout) == (2, "")
+    assert "conflicting results" in stderr
+    assert "internal error" not in stderr
