@@ -59,6 +59,15 @@ _ISSUE_PERMISSIONS: dict[CommandType, frozenset[OperatorRole]] = {
     CommandType.EXECUTE_PIPELINE: frozenset(
         {OperatorRole.EXECUTOR, OperatorRole.ADMIN}
     ),
+    # Without --record; a recording run takes its identity from the
+    # aura-execute signature.
+    CommandType.EXECUTION_STATUS: frozenset(
+        {OperatorRole.VIEWER, OperatorRole.EXECUTOR, OperatorRole.ADMIN}
+    ),
+    # Phase 3 takes the confirmer's identity from the aura-approve signature.
+    CommandType.EXECUTION_CONFIRM: frozenset(
+        {OperatorRole.APPROVER, OperatorRole.ADMIN}
+    ),
 }
 
 

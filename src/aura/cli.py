@@ -5,10 +5,10 @@ import re
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, TypeVar
 from uuid import UUID, uuid4, uuid5
 
 from pydantic_core import from_json
@@ -21,6 +21,7 @@ from aura.execution.commands import Chain, Refusal, run_store_command
 from aura.execution.execute import execute_step
 from aura.execution.guard import GuardContext
 from aura.execution.recording import RecordingAdapter
+from aura.execution.status import Signer, StatusContext, confirm_step, status_step
 from aura.execution.tekton import TektonAdapter
 from aura.approvals import ApprovalDecision
 from aura.collectors.hub_policy import HubPolicy, read_hub_policy
@@ -220,11 +221,15 @@ def _add_operator_arguments(
     )
     parser.add_argument("--operator", required=True)
     parser.add_argument("--idempotency-key", required=True)
+    _add_role_argument(parser, "Operator role; may be repeated; defaults to viewer")
+
+
+def _add_role_argument(parser: argparse.ArgumentParser, help_text: str) -> None:
     parser.add_argument(
         "--role",
         action="append",
         choices=[role.value for role in OperatorRole],
-        help="Operator role; may be repeated; defaults to viewer",
+        help=help_text,
     )
 
 
@@ -483,7 +488,45 @@ def build_parser() -> argparse.ArgumentParser:
     for decision in ("approve", "reject"):
         _add_proposal_decision_arguments(proposal_command_parser.add_parser(decision))
     _add_execute_arguments(command_parser.add_parser("execute"))
+    execution_parser = command_parser.add_parser("execution")
+    execution_command_parser = execution_parser.add_subparsers(
+        dest="execution_command",
+        required=True,
+    )
+    _add_execution_status_arguments(execution_command_parser.add_parser("status"))
+    _add_execution_confirm_arguments(execution_command_parser.add_parser("confirm"))
     return parser
+
+
+def _add_execution_status_arguments(parser: argparse.ArgumentParser) -> None:
+    """Phase 3: reads the execution store and, for a Tekton execution, the
+    hub's PipelineRuns; --record stores what it finds, signed."""
+
+    parser.add_argument("--proposal-id", type=UUID, required=True)
+    parser.add_argument("--openshift-kubeconfig", type=Path, required=True)
+    parser.add_argument("--idempotency-key", required=True)
+    parser.add_argument(
+        "--record",
+        action="store_true",
+        help="Sign with the [signing] key (aura-execute) and store observations and results",
+    )
+    parser.add_argument(
+        "--confirmation-id",
+        type=UUID,
+        help="With --record: the confirmation a manual not_dispatched resolution names",
+    )
+    parser.add_argument("--operator", help="Without --record: the operator recorded with the command")
+    _add_role_argument(parser, "Without --record: operator role; may be repeated; defaults to viewer")
+
+
+def _add_execution_confirm_arguments(parser: argparse.ArgumentParser) -> None:
+    """Phase 3: an approver's signed statement that an awaiting_operator
+    execution made no external effect."""
+
+    parser.add_argument("--proposal-id", type=UUID, required=True)
+    parser.add_argument("--openshift-kubeconfig", type=Path, required=True)
+    parser.add_argument("--idempotency-key", required=True)
+    parser.add_argument("--statement", required=True)
 
 
 def _add_execute_arguments(parser: argparse.ArgumentParser) -> None:
@@ -615,6 +658,18 @@ def _argument_error(args: argparse.Namespace) -> str | None:
         return _diagnose_state_argument_error(args)
     if args.command == "propose":
         return _propose_argument_error(args)
+    if args.command == "execution":
+        return _execution_argument_error(args)
+    return None
+
+
+def _execution_argument_error(args: argparse.Namespace) -> str | None:
+    if args.execution_command == "confirm":
+        return None if args.statement.strip() else "--statement must not be blank"
+    if args.confirmation_id is not None and not args.record:
+        return "--confirmation-id requires --record"
+    if not args.record and args.operator is None:
+        return "--operator is required without --record"
     return None
 
 
@@ -2171,6 +2226,8 @@ class HubAccess:
     policy: Callable[[Path], HubPolicy]
     # Whether a PipelineRun on the hub carries a proposal's ID (G6).
     effect: Callable[[Path, UUID], bool] | None = None
+    # The PipelineRuns in openshift-pipelines (execution status).
+    runs: Callable[[Path], list[dict[str, Any]]] | None = None
 
 
 @dataclass(frozen=True)
@@ -2508,6 +2565,113 @@ def _guard_context_factory(
     return make
 
 
+def run_execution_status(
+    args: argparse.Namespace,
+    command_id_factory: Callable[[], UUID],
+    clock: Callable[[], datetime],
+) -> int:
+    try:
+        config = load_config()
+    except ConfigError as error:
+        print(f"aura: {error}", file=sys.stderr)
+        return 2
+    signer: Signer | None = None
+    if args.record:
+        signing = config.signing
+        if signing is None:
+            print("aura: --record needs a [signing] section in Aura's configuration file", file=sys.stderr)
+            return 2
+        # A recording run's identity is its aura-execute signature.
+        args.operator = signing.principal
+        signer = Signer(
+            signing.principal,
+            lambda payload: sign(payload, key=signing.key, namespace=EXECUTE, agent=signing.agent),
+        )
+    elif not AuthorizationPolicy().can_issue(
+        {OperatorRole(role) for role in args.role}, CommandType.EXECUTION_STATUS
+    ):
+        print("aura: operator roles cannot read execution status", file=sys.stderr)
+        return 2
+    store = _open_execution_store()
+    if isinstance(store, str):
+        print(f"aura: {store}", file=sys.stderr)
+        return 2
+    command = _make_command(
+        args,
+        CommandType.EXECUTION_STATUS,
+        {
+            "proposal_id": str(args.proposal_id),
+            "record": args.record,
+            "confirmation_id": None if args.confirmation_id is None else str(args.confirmation_id),
+        },
+        command_id_factory,
+        clock,
+    )
+    read = args.hub_policy or (lambda path: read_hub_policy(kubeconfig_path=path))
+    runs = args.hub_runs or _hub_pipeline_runs
+
+    def make(chain: Chain) -> StatusContext:
+        return StatusContext(
+            policy=read(args.openshift_kubeconfig),
+            runs=lambda: runs(args.openshift_kubeconfig),
+            adapter_timeout=timedelta(seconds=config.execution.adapter_timeout_seconds),
+            signer=signer,
+            confirmation_id=args.confirmation_id,
+        )
+
+    with oc_call_budget():
+        return run_store_command(store, command, status_step(args.proposal_id, make), clock)
+
+
+def run_execution_confirm(
+    args: argparse.Namespace,
+    command_id_factory: Callable[[], UUID],
+    clock: Callable[[], datetime],
+) -> int:
+    try:
+        signing = load_config().signing
+    except ConfigError as error:
+        print(f"aura: {error}", file=sys.stderr)
+        return 2
+    if signing is None:
+        print("aura: Aura's configuration file has no [signing] section", file=sys.stderr)
+        return 2
+    store = _open_execution_store()
+    if isinstance(store, str):
+        print(f"aura: {store}", file=sys.stderr)
+        return 2
+    args.operator = signing.principal
+    command = _make_command(
+        args,
+        CommandType.EXECUTION_CONFIRM,
+        {"proposal_id": str(args.proposal_id), "statement": args.statement},
+        command_id_factory,
+        clock,
+    )
+    read = args.hub_policy or (lambda path: read_hub_policy(kubeconfig_path=path))
+    signer = Signer(
+        signing.principal,
+        lambda payload: sign(payload, key=signing.key, namespace=APPROVE, agent=signing.agent),
+    )
+    with oc_call_budget():
+        return run_store_command(
+            store,
+            command,
+            confirm_step(args.proposal_id, args.statement, signer, lambda: read(args.openshift_kubeconfig)),
+            clock,
+        )
+
+
+def _hub_pipeline_runs(kubeconfig: Path) -> list[dict[str, Any]]:
+    """The PipelineRuns in openshift-pipelines, read through aura-readonly."""
+
+    return list(
+        OpenShiftCLI(kubeconfig_path=kubeconfig)
+        .resource("pipelineruns", namespace="openshift-pipelines")
+        .items()
+    )
+
+
 def _hub_pipeline_run(kubeconfig: Path, proposal_id: UUID) -> bool:
     """Whether a PipelineRun on the hub carries the proposal's ID (G6)."""
 
@@ -2552,6 +2716,10 @@ def _dispatch_command(
         return run_proposal_decision(args, command_id_factory, clock, hub_policy)
     if args.command == "execute":
         return run_execute(args, command_id_factory, clock, collector)
+    if args.command == "execution" and args.execution_command == "status":
+        return run_execution_status(args, command_id_factory, clock)
+    if args.command == "execution":
+        return run_execution_confirm(args, command_id_factory, clock)
     route = _EVIDENCE_ROUTES.get(args.command)
     if route is not None:
         return _run_simple_evidence_command(
@@ -2602,6 +2770,7 @@ def main(
     # The Phase 3 derived state in proposal status reads these.
     args.hub_policy = None if hub is None else hub.policy
     args.hub_effect = None if hub is None else hub.effect
+    args.hub_runs = None if hub is None else hub.runs
     args.clock = clock
     argument_error = _argument_error(args)
     if argument_error is not None:

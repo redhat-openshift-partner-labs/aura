@@ -36,6 +36,8 @@ class CommandType(StrEnum):
     PROPOSAL_REJECT = "proposal.reject"
     EXECUTE_PATCH = "execute.patch"
     EXECUTE_PIPELINE = "execute.pipeline"
+    EXECUTION_STATUS = "execution.status"
+    EXECUTION_CONFIRM = "execution.confirm"
 
 
 class CommandState(StrEnum):
@@ -253,6 +255,7 @@ class AuditEventType(StrEnum):
     EXECUTION_STARTED = "execution_started"
     EXECUTION_FINISHED = "execution_finished"
     EXECUTION_OBSERVED = "execution_observed"
+    RESOLUTION_CONFIRMED = "resolution_confirmed"
     COMMAND_REJECTED = "command_rejected"
     COMMAND_FAILED = "command_failed"
     COMMAND_REFUSED = "command_refused"

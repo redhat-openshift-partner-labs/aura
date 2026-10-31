@@ -361,10 +361,10 @@ def test_a_nested_column_that_differs_from_its_record_is_refused(
 
 def every_table_record(tmp_path, monkeypatch) -> dict[str, object]:
     from test_approvals import approval, proposal_records
-    from test_execution_records import execution, observation
+    from test_execution_records import confirmation, execution, observation
     from aura.approvals import ApprovalRecord, PublishedProposal
     from aura.cwa import CWASnapshot, CWATrace
-    from aura.execution.records import ExecutionRecord, PipelineRunObservation
+    from aura.execution.records import ExecutionRecord, PipelineRunObservation, ResolutionConfirmation
     from aura.proposals import Proposal
 
     bundle = proposal_records(tmp_path / "run", monkeypatch)
@@ -378,6 +378,7 @@ def every_table_record(tmp_path, monkeypatch) -> dict[str, object]:
         "approvals": ApprovalRecord.model_validate(approval()),
         "executions": ExecutionRecord.model_validate(execution()),
         "pipeline_run_observations": PipelineRunObservation.model_validate(observation()),
+        "resolution_confirmations": ResolutionConfirmation.model_validate(confirmation()),
     }
 
 
@@ -734,3 +735,18 @@ def test_the_database_clock_is_utc(tmp_path) -> None:
 
     assert now.tzinfo is not None
     assert abs(now - datetime.now(UTC)) < timedelta(minutes=1)
+
+
+def test_stored_at_reads_the_database_clock_for_a_row(tmp_path) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from aura.execution.store import RecordNotFound
+
+    store = open_store(tmp_path)
+    store.insert("audit_events", make_audit_event())
+
+    stored = store.stored_at("audit_events", event_id=make_audit_event().event_id)
+
+    assert abs(stored - datetime.now(UTC)) < timedelta(minutes=1)
+    with pytest.raises(RecordNotFound):
+        store.stored_at("audit_events", event_id=UUID(int=404))

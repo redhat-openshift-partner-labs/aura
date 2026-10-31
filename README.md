@@ -202,7 +202,7 @@ Every command takes `--operator`, `--idempotency-key`, and `--command-dir`, and 
 | [`propose scaffold`](docs/cli.md#propose-scaffold) | What definition would a pinned scaffold generate for a new cluster? | `proposer` |
 | [`proposal status`](docs/cli.md#proposal-status) | Is a stored proposal stale against `fleet-clusters` `HEAD`? | `viewer` |
 
-Phase 3 adds [`proposal submit`](docs/cli.md#proposal-submit), [`proposal approve` and `proposal reject`](docs/cli.md#proposal-approve-and-proposal-reject), and [`execute`](docs/cli.md#execute), which keep their records in the execution store and take the signer's identity from Aura's configuration file.
+Phase 3 adds [`proposal submit`](docs/cli.md#proposal-submit), [`proposal approve` and `proposal reject`](docs/cli.md#proposal-approve-and-proposal-reject), [`execute`](docs/cli.md#execute), and [`execution status` and `execution confirm`](docs/cli.md#execution-status), which keep their records in the execution store and take the signer's identity from Aura's configuration file.
 
 `admin` can run every command. `proposal status` also accepts `proposer`. When you pass no `--role`, Aura uses `viewer`; any `--role` you pass replaces that default.
 

@@ -375,7 +375,40 @@ uv run --no-sync aura execute \
   --dry-run
 ```
 
-`--scaffold` names the scaffold checkout for a scaffold proposal. The command reads the hub signer list and runs G1–G12. G8 re-collects the evidence and stores it with the CWA snapshot, the CWA trace, and the regenerated proposal, so these records exist for a dry run and for a later refusal. With `--dry-run` the command stops after the guard and prints the adapter request. Otherwise it stores `execution_started`, then stores the signed `dispatching` record in a locked transaction that rechecks G5, G6, and G11; calls the adapter; and stores `execution_finished`, the result record, and the terminal command record. A guard refusal names its rule. A proposal is dispatched at most once: a second `execute` is refused by G6, and a dispatch that loses the locked transaction to a concurrent one is a G6 refusal. An adapter that reports a failure ends the command `failed`, with the `failed` result record stored. When the adapter reports no result, the `dispatching` insert has an unknown outcome, or a write after the dispatch fails, the `dispatching` record stands, the execution is `awaiting_operator`, and the message names `aura execution status`, which Stage 4 adds.
+`--scaffold` names the scaffold checkout for a scaffold proposal. The command reads the hub signer list and runs G1–G12. G8 re-collects the evidence and stores it with the CWA snapshot, the CWA trace, and the regenerated proposal, so these records exist for a dry run and for a later refusal. With `--dry-run` the command stops after the guard and prints the adapter request. Otherwise it stores `execution_started`, then stores the signed `dispatching` record in a locked transaction that rechecks G5, G6, and G11; calls the adapter; and stores `execution_finished`, the result record, and the terminal command record. A guard refusal names its rule. A proposal is dispatched at most once: a second `execute` is refused by G6, and a dispatch that loses the locked transaction to a concurrent one is a G6 refusal. An adapter that reports a failure ends the command `failed`, with the `failed` result record stored. When the adapter reports no result, the `dispatching` insert has an unknown outcome, or a write after the dispatch fails, the `dispatching` record stands, the execution is `awaiting_operator`, and the message names [`aura execution status`](#execution-status).
+
+## `execution status`
+
+Reports a proposal's execution and, for a Tekton execution, the PipelineRun `aura-rerun-<proposal-id>` in `openshift-pipelines`, read through `aura-readonly`. It never calls an adapter's write method.
+
+```bash
+uv run --no-sync aura execution status \
+  --proposal-id <proposal-id> \
+  --openshift-kubeconfig "$HOME/.kube/aura-readonly" \
+  --idempotency-key status-001 \
+  --record
+```
+
+Without `--record` it needs `--operator` and a `viewer`, `executor`, or `admin` `--role`, prints what it would record under `would_record`, and stores only its command record and audit events. With `--record` it signs with the `[signing]` key, which must be listed for `aura-execute`, and stores, each after an `execution_observed` event:
+
+- One `PipelineRunObservation` per run read.
+- `submitted` when an `awaiting_operator` execution's run exists, then `running`, `succeeded`, or `failed` when the run's `Succeeded` condition is `Unknown`, `True`, or `False` and that phase ranks above the current one. A run with no `Succeeded` condition has not started and stays `submitted`.
+- `failed` when an `awaiting_operator` execution finds a run of that name whose execution-ID annotation names another execution.
+- `not_dispatched` when no run exists and the `dispatching` record, by the database's `stored_at`, is older than `adapter_timeout_seconds` plus five minutes: with resolution `timeout_margin` inside the hub's `pipeline_run_retention_seconds`, and otherwise only with `--confirmation-id`, as resolution `manual`, which names a confirmation of the same execution by another principal and uses its statement as `failure_reason`.
+
+A run that is gone after it was observed keeps its last observation in the report, and is never recorded `not_dispatched`. An execution by another adapter reports its state and reads nothing.
+
+## `execution confirm`
+
+Stores an approver's signed `ResolutionConfirmation` that an `awaiting_operator` execution made no external effect, for a `manual` resolution by another principal. It takes identity from the `[signing]` key, which must be listed for `aura-approve`, and is refused unless the execution is `awaiting_operator`. `--statement`, at most 1,000 characters, says how the operators confirmed that no run took place.
+
+```bash
+uv run --no-sync aura execution confirm \
+  --proposal-id <proposal-id> \
+  --openshift-kubeconfig "$HOME/.kube/aura-readonly" \
+  --idempotency-key confirm-001 \
+  --statement "<how no run was confirmed>"
+```
 
 ## Output and Exit Codes
 

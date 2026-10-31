@@ -186,3 +186,47 @@ def test_an_observation_validates_and_digests() -> None:
 def test_an_observation_rejects_an_invalid_value(changes) -> None:
     with pytest.raises(ValidationError):
         PipelineRunObservation.model_validate(observation(**changes))
+
+
+def confirmation(**changes: Any) -> dict[str, Any]:
+    return {
+        "confirmation_id": "00000000-0000-0000-0000-000000000080",
+        "execution_id": "00000000-0000-0000-0000-000000000050",
+        "command_id": "00000000-0000-0000-0000-000000000014",
+        "statement": "Both operators checked the hub: no PipelineRun exists.",
+        "audit_event_digest": "4" * 64,
+        "principal": "approver@example.com",
+        "signature": SIGNATURE,
+        "created_at": "2026-10-30T12:20:00Z",
+        **changes,
+    }
+
+
+def test_a_confirmation_validates_and_digests() -> None:
+    from aura.execution.records import ResolutionConfirmation
+
+    record = ResolutionConfirmation.model_validate(confirmation())
+
+    assert len(record.confirmation_digest) == 64
+    assert record.signed_payload() == canonical_json(
+        record.model_dump(mode="json", exclude={"signature", "confirmation_digest"})
+    ).encode()
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"statement": " "},
+        {"statement": "x" * 1001},
+        {"principal": " "},
+        {"signature": "unsigned"},
+        {"confirmation_digest": "5" * 64},
+        {"extra": 1},
+    ],
+    ids=["blank-statement", "long-statement", "blank-principal", "bad-signature", "stale-digest", "extra-field"],
+)
+def test_a_confirmation_rejects_an_invalid_value(changes) -> None:
+    from aura.execution.records import ResolutionConfirmation
+
+    with pytest.raises(ValidationError):
+        ResolutionConfirmation.model_validate(confirmation(**changes))

@@ -193,12 +193,14 @@ Context, model, proposal, and refusal events reference the previous event ID, fo
 
 ## Phase 3 Store Wiring
 
-`proposal submit`, `proposal approve`, `proposal reject`, and `execute` run through `aura.execution.commands.run_store_command` and keep every record in the [execution store](architecture.md#execution-store). Each checks its idempotency key for the configured login, stores `command_received`, runs its step, and stores the terminal command record. A refusal or failure stores `command_refused` or `command_failed` before the terminal record.
+`proposal submit`, `proposal approve`, `proposal reject`, `execute`, `execution status`, and `execution confirm` run through `aura.execution.commands.run_store_command` and keep every record in the [execution store](architecture.md#execution-store). Each checks its idempotency key for the configured login, stores `command_received`, runs its step, and stores the terminal command record. A refusal or failure stores `command_refused` or `command_failed` before the terminal record.
 
 | Command | Writes after `command_received`, in order |
 | --- | --- |
 | `proposal submit` | `proposal_published`; then the publication with the terminal record, in one transaction |
 | `proposal approve`, `proposal reject` | `approval_recorded`; then the signed approval with the terminal record, in one transaction |
+| `execution status --record` | For each run read: `execution_observed`, then the signed observation. For each result: `execution_observed`, then the signed result record. Then the terminal record |
+| `execution confirm` | `resolution_confirmed`; then the signed confirmation with the terminal record, in one transaction |
 | `execute` | G8: `evidence_collected`, the evidence snapshot, `context_assembled`, the CWA snapshot, the CWA trace, `proposal_created`, the regenerated proposal. Dispatch: `execution_started`, then the signed `dispatching` record in a locked transaction that rechecks G5, G6, and G11. After the adapter call: `execution_finished`, the signed result record, then the terminal record |
 
 `execute` stores each of its records at once, so a run that stores no terminal record keeps its regeneration and execution records. `--dry-run` stops after the guard, after the G8 writes. A failure after the `dispatching` record appends the `aura execution status` recovery step to the message.

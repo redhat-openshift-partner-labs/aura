@@ -24,6 +24,7 @@ from aura.execution.store import ExecutionStore, StoreWriteFailed
 ARTIFACT_EVENTS = {
     AuditEventType.PROPOSAL_PUBLISHED: ("published_proposals", "publication_id"),
     AuditEventType.APPROVAL_RECORDED: ("approvals", "approval_id"),
+    AuditEventType.RESOLUTION_CONFIRMED: ("resolution_confirmations", "confirmation_id"),
     # Execution records are outcomes that stand whatever the command's
     # terminal state, so they are not listed.
 }

@@ -213,11 +213,38 @@ class PipelineRunObservation(_Signed):
         return self
 
 
+class ResolutionConfirmation(_Signed):
+    """An approver's signed statement that an `awaiting_operator`
+    execution made no external effect, which a `manual` resolution names.
+    Signed with namespace aura-approve."""
+
+    model_config = ConfigDict(extra="forbid")
+    _digest_field: ClassVar[str] = "confirmation_digest"
+
+    confirmation_id: UUID
+    execution_id: UUID
+    command_id: UUID
+    statement: str = Field(min_length=1, max_length=1000)
+    audit_event_digest: str = Field(pattern=_DIGEST)
+    principal: str = Field(min_length=1)
+    signature: str = Field(pattern=_SSH_SIGNATURE)
+    created_at: AwareDatetime
+    confirmation_digest: str = Field(default="")
+
+    _text = field_validator("statement", "principal")(_not_blank)
+
+    @model_validator(mode="after")
+    def validate_digest(self) -> "ResolutionConfirmation":
+        assign_self_digest(self, "confirmation_digest", "resolution confirmation")
+        return self
+
+
 __all__ = [
     "ExecutionPhase",
     "ExecutionRecord",
     "PIPELINE_NAMESPACE",
     "PipelineRunObservation",
     "Resolution",
+    "ResolutionConfirmation",
     "TERMINAL_PHASES",
 ]

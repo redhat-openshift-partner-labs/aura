@@ -15,7 +15,8 @@ GRANT SELECT, INSERT ON
     published_proposals,
     approvals,
     executions,
-    pipeline_run_observations
+    pipeline_run_observations,
+    resolution_confirmations
 TO aura_operator;
 GRANT SELECT ON schema_versions, deployment TO aura_operator;
 -- A command row's login is always the session's: the column defaults to

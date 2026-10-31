@@ -26,7 +26,11 @@ from aura.config import PostgreSQLStore, SQLiteStore
 from aura.contracts import AuditEvent, CommandEnvelope, EvidenceSnapshot
 from aura.cwa import CWASnapshot, CWATrace
 from aura.json_store import parse_record
-from aura.execution.records import ExecutionRecord, PipelineRunObservation
+from aura.execution.records import (
+    ExecutionRecord,
+    PipelineRunObservation,
+    ResolutionConfirmation,
+)
 from aura.proposals import Proposal
 from aura.signing import APPROVE, EXECUTE, SignatureError, require_not_future, verify
 
@@ -34,7 +38,7 @@ from aura.signing import APPROVE, EXECUTE, SignatureError, require_not_future, v
 R = TypeVar("R", bound=BaseModel)
 # Migrations only add tables, columns, and indexes, so a client accepts
 # every stored version in this range (D13).
-SUPPORTED_SCHEMA_VERSIONS = range(1, 4)
+SUPPORTED_SCHEMA_VERSIONS = range(1, 5)
 BUSY_TIMEOUT_SECONDS = 30
 
 
@@ -216,6 +220,15 @@ TABLES = {
             signed=EXECUTE,
             anchored_by=("execution_observed",),
             stamped="observed_at",
+        ),
+        Table(
+            "resolution_confirmations",
+            ResolutionConfirmation,
+            ("confirmation_id",),
+            ("execution_id",),
+            "confirmation_digest",
+            signed=APPROVE,
+            anchored_by=("resolution_confirmed",),
         ),
     )
 }
@@ -401,6 +414,23 @@ class ExecutionStore:
         except self._dialect.error as error:
             self._rollback()
             self._read_back(table, row, error)
+
+    def stored_at(self, table_name: str, **key: object) -> datetime:
+        """When the database stored a row, by its own clock."""
+
+        table = TABLES[table_name]
+        values = self._key_values(table, key)
+        try:
+            row = self._execute(
+                f"SELECT stored_at FROM {table.name} WHERE "
+                + " AND ".join(f"{name} = ?" for name in values),
+                tuple(values.values()),
+            ).fetchone()
+        except self._dialect.error as error:
+            raise StoreReadFailed(f"{table.name} read failed: {error}") from error
+        if row is None:
+            raise RecordNotFound(f"{table.name} record not found: {key}")
+        return _stored_time(row[0])
 
     def database_time(self) -> datetime:
         """The database's clock, which sets every row's `stored_at`."""
