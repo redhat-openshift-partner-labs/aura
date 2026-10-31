@@ -31,7 +31,7 @@ A Partner Labs cluster has its **desired state** in `fleet-clusters` Git, its **
 
 Aura reads all three sources, freezes what it read into a digest-stamped [evidence snapshot](docs/evidence.md#evidence-snapshot), correlates everything by cluster name, and reports the result as typed JSON.
 
-Aura is a **sidecar**. Git, OpenShift, Tekton, ACM/Hive, RabbitMQ, and Portal stay authoritative; Aura [never writes to any of them](docs/architecture.md#read-only-boundary).
+Aura is a **sidecar**. Git, OpenShift, Tekton, ACM/Hive, RabbitMQ, and Portal stay authoritative. Aura's [only write](docs/architecture.md#read-only-boundary) to any of them is Phase 3's guarded execution: after two-party signed approval, `execute` creates one approved post-provision PipelineRun.
 
 | | What you get |
 | --- | --- |
@@ -247,7 +247,7 @@ An idempotency key identifies one request. Aura stores one terminal record per k
 - **Least privilege.** The [`deploy/`](deploy) manifests grant `list` only, plus `get` on two Phase 3 policy ConfigMaps by name, and [`tests/test_deploy_manifests.py`](tests/test_deploy_manifests.py) fails the suite if a collector reads a resource they do not grant. The staging PostgreSQL for Phase 3 is a separate kustomization in [`deploy/postgresql/`](deploy/postgresql); see [Staging Database](docs/security.md#staging-database). The Tekton adapter's `aura-executor` identity, with `create` and `get` on PipelineRuns in `openshift-pipelines` only, is another, in [`deploy/executor/`](deploy/executor).
 - **No secrets at rest.** Secret-named fields are [redacted](docs/security.md#secret-redaction) across case and separator spellings before anything is stored, and an unhandled error stores only its type.
 - **Refusal on missing evidence.** Missing, incomplete, invalid, or conflicting evidence produces a structured [refusal](docs/architecture.md#refusal).
-- **Proposals are drafts.** Aura stores proposals and never applies, commits, or pushes them. A human reviews and merges.
+- **Proposals are drafts.** Aura stores proposals and never applies, commits, or pushes them. A human reviews and merges. The one exception is Phase 3's `execute`, which creates an approved post-provision PipelineRun through the guard.
 - **No external model.** Diagnosis is deterministic and local; cluster evidence never leaves your machine. See [Model Boundary](docs/security.md#model-boundary).
 
 > [!WARNING]

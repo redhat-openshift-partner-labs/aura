@@ -2,13 +2,13 @@
 
 ## Security Model
 
-Phase 1 is read-only:
+Phases 1 and 2 are read-only. Phase 3 adds one write, through the guard:
 
 | System | Access | Writes |
 | --- | --- | --- |
 | `fleet-clusters` | Committed `HEAD` of a local checkout | None |
 | OpenShift | Read-only Kubernetes API | None |
-| Tekton | Read-only Kubernetes API | None |
+| Tekton | Read-only Kubernetes API; `aura-executor` for Phase 3 | Phase 3 `execute` only: one approved post-provision PipelineRun in `openshift-pipelines` |
 | RabbitMQ | None | None |
 | Portal | None | None |
 | External model provider | None | None |
@@ -107,10 +107,14 @@ Phase 3's Tekton adapter creates PipelineRuns as ServiceAccount `aura-executor` 
 | `serviceaccount.yaml` | The `aura-executor` service account in `aura` |
 | `role.yaml`, `rolebinding.yaml` | `create` and `get` on `pipelineruns.tekton.dev` in `openshift-pipelines` only |
 
-`tests/test_executor_manifests.py` pins these grants and keeps the executor out of `deploy/kustomization.yaml`. `execution status` reads PipelineRuns through `aura-readonly`. Apply the manifests as a cluster administrator only for task 4.4, the live run:
+`tests/test_executor_manifests.py` pins these grants and keeps the executor out of `deploy/kustomization.yaml`. `execution status` reads PipelineRuns through `aura-readonly`. Apply the manifests as a cluster administrator only for task 4.4, the live run. Preview the change, then apply it:
 
 ```bash
 oc apply -k deploy/executor --dry-run=server
+```
+
+```bash
+oc apply -k deploy/executor
 ```
 
 Verify, with the executor's kubeconfig, that `oc --kubeconfig "$HOME/.kube/aura-executor" auth can-i create pipelineruns.tekton.dev -n openshift-pipelines` prints `yes`, and that the same command for `-n default`, for `taskruns.tekton.dev`, and for `delete` prints `no`.

@@ -2,7 +2,7 @@
 
 ## Position
 
-Aura is a read-only sidecar control plane. Existing systems remain authoritative:
+Aura is a sidecar control plane that reads, and writes only through Phase 3's guarded execution. Existing systems remain authoritative:
 
 | Data | Authority |
 | --- | --- |
@@ -65,8 +65,8 @@ Phase 1 performs only these external reads:
 Aura does not:
 
 - Write Git files.
-- Create, update, patch, or delete Kubernetes resources.
-- Start or cancel PipelineRuns.
+- Create, update, patch, or delete Kubernetes resources, except that Phase 3's `execute` creates one approved post-provision PipelineRun through the [Tekton Adapter](#tekton-adapter), after the [Command Guard](#command-guard) passes.
+- Start PipelineRuns other than that one, or cancel any.
 - Write Portal data.
 - Publish messages to RabbitMQ.
 - Send cluster evidence to an external model provider.

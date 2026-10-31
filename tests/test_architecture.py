@@ -331,16 +331,30 @@ def test_only_their_modules_read_credentials() -> None:
 # Commands that write to Kubernetes, and Git commands that write to a
 # repository (I5, task 4.3).
 OC_WRITE_VERBS = frozenset(
-    {"annotate", "apply", "create", "delete", "edit", "expose", "label", "patch",
-     "replace", "rollout", "run", "scale", "set"}
+    {"adm", "annotate", "apply", "attach", "autoscale", "cancel-build", "cordon", "cp",
+     "create", "debug", "delete", "drain", "edit", "exec", "expose", "import-image",
+     "label", "new-app", "new-build", "patch", "policy", "port-forward", "replace",
+     "rollback", "rollout", "rsh", "rsync", "run", "scale", "set", "start-build", "tag",
+     "taint", "uncordon"}
 )
-GIT_WRITE_COMMANDS = frozenset({"am", "commit", "merge", "push", "rebase", "reset", "tag"})
+GIT_WRITE_COMMANDS = frozenset(
+    {"add", "am", "apply", "branch", "checkout", "cherry-pick", "clean", "clone",
+     "commit", "commit-tree", "fetch", "gc", "init", "merge", "mv", "notes", "prune",
+     "pull", "push", "read-tree", "rebase", "reset", "restore", "revert", "rm",
+     "stash", "switch", "symbolic-ref", "tag", "update-index", "update-ref",
+     "worktree", "write-tree"}
+)
 # Where each write verb may appear as a command argument, and why.
 WRITE_VERBS_ALLOWED = {
     # The approved PipelineRun create, and its can-i preflight.
     (EXECUTION / "tekton.py", "create"),
-    # `git apply --cached` stages scaffold output in a temporary clone's index.
-    (SOURCE / "scaffold_runner.py", "apply"),
+    # The patch check clones fleet-clusters into a temporary directory with
+    # --shared --no-checkout, applies the patch to that clone's index, and
+    # commits and moves HEAD there; the checkout it reads is not written.
+    *{
+        (SOURCE / "scaffold_runner.py", command)
+        for command in ("clone", "read-tree", "apply", "write-tree", "commit-tree", "update-ref")
+    },
 }
 
 
