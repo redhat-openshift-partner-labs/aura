@@ -466,3 +466,63 @@ def test_the_configured_hourly_limit_reaches_the_guard(world, monkeypatch) -> No
 
     assert code == 2
     assert "G11: 1 executions were dispatched in the past hour" in stderr
+
+
+def test_a_failed_result_reason_is_redacted(world, monkeypatch) -> None:
+    from aura.adapters import AdapterResult
+    from aura.execution.recording import RecordingAdapter
+
+    def leaky_failure(self, request):
+        return AdapterResult(
+            request_id=request.request_id, execution_id=request.execution_id,
+            adapter=request.adapter, success=False, error='refused: {"password": "hunter2"}',
+        )
+
+    monkeypatch.setattr(RecordingAdapter, "write", leaky_failure)
+
+    code, _, stderr = execute(world, monkeypatch)
+
+    assert code == 2
+    assert "hunter2" not in stderr
+    store = reader(world)
+    (failed,) = [r for r in store.select("executions") if r.phase is ExecutionPhase.FAILED]
+    assert failed.failure_reason == 'refused: {"password": [REDACTED]}'
+    assert "hunter2" not in "".join(e.model_dump_json() for e in chain(store, EXECUTE_ID))
+
+
+def test_the_hub_is_read_once_per_dispatch(world, monkeypatch) -> None:
+    reads = []
+    monkeypatch.setenv("AURA_CONFIG", str(executor_config(world)))
+    root = world["root"]
+    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+        code = main(
+            [
+                "execute", "--proposal-id", proposal_id(root),
+                "--openshift-kubeconfig", "/kube/aura-readonly",
+                "--fleet-clusters", str(root / "fleet-clusters"),
+                "--idempotency-key", "execute-1",
+            ],
+            collector=PerCommandSnapshots(cluster_state_collector(root / "fleet-clusters")),
+            command_id_factory=lambda: EXECUTE_ID,
+            clock=lambda: NOW,
+            hub=HubAccess(
+                policy=lambda path: world["hub"],
+                effect=lambda path, pid: reads.append(pid) or False,
+            ),
+        )
+
+    assert code == 0
+    assert len(reads) == 1
+
+
+def test_the_dispatching_record_carries_the_adapter_timeout(world, monkeypatch) -> None:
+    config = executor_config(world)
+    config.write_text(
+        config.read_text(encoding="utf-8").replace("[execution]\n", "[execution]\nadapter_timeout_seconds = 900\n"),
+        encoding="utf-8",
+    )
+
+    assert execute(world, monkeypatch, config=config)[0] == 0
+
+    (dispatch,) = [r for r in reader(world).select("executions") if r.phase is ExecutionPhase.DISPATCHING]
+    assert dispatch.adapter_timeout_seconds == 900

@@ -126,6 +126,27 @@ def _normalized_field(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
+_SECRET_TEXT = re.compile(
+    r"""(?ix)
+    ( ["']? [\w.-]* (?:password|passwd|secret|token|apikey|api_key|credential|
+      private_?key|kubeconfig|authorization|cookie) [\w.-]* ["']? \s* [:=] \s* )
+    ( (?:bearer\s+)? (?: "[^"]*" | '[^']*' | [^\s,;}\]]+ ) )
+    | (bearer \s+) [^\s,;]+
+    """
+)
+
+
+def redact_text(text: str) -> str:
+    """Mask the value of every secret-named `name: value` or `name=value`
+    pair, and every bearer token, in free text such as an error message."""
+
+    def masked(match: re.Match[str]) -> str:
+        prefix = match.group(1) if match.group(1) is not None else match.group(3)
+        return f"{prefix}[REDACTED]"
+
+    return _SECRET_TEXT.sub(masked, text)
+
+
 def redact(value: Any) -> RedactionResult:
     """Redact default secret fields from a JSON-like value."""
 

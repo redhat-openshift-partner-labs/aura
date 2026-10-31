@@ -131,7 +131,10 @@ def test_terminal_phases() -> None:
 
 def test_the_signed_payload_omits_only_the_signature_and_digest() -> None:
     record = ExecutionRecord.model_validate(execution())
-    expected = record.model_dump(mode="json", exclude={"signature", "execution_digest"})
+    # An absent adapter_timeout_seconds is left out, as in the digest.
+    expected = record.model_dump(
+        mode="json", exclude={"signature", "execution_digest", "adapter_timeout_seconds"}
+    )
 
     assert record.signed_payload() == canonical_json(expected).encode()
 
@@ -230,3 +233,26 @@ def test_a_confirmation_rejects_an_invalid_value(changes) -> None:
 
     with pytest.raises(ValidationError):
         ResolutionConfirmation.model_validate(confirmation(**changes))
+
+
+def test_only_a_dispatching_record_carries_the_adapter_timeout() -> None:
+    assert ExecutionRecord.model_validate(execution(adapter_timeout_seconds=300))
+    with pytest.raises(ValidationError, match="adapter_timeout_seconds"):
+        ExecutionRecord.model_validate(
+            execution(phase="submitted", external_result={"x": "y"}, adapter_timeout_seconds=300)
+        )
+    with pytest.raises(ValidationError):
+        ExecutionRecord.model_validate(execution(adapter_timeout_seconds=0))
+
+
+def test_an_absent_adapter_timeout_leaves_the_digest_and_payload_unchanged() -> None:
+    from aura.canonical import canonical_digest
+
+    record = ExecutionRecord.model_validate(execution())
+    fields = record.model_dump(mode="json", exclude={"execution_digest", "adapter_timeout_seconds"})
+
+    assert record.execution_digest == canonical_digest(fields)
+    assert b"adapter_timeout_seconds" not in record.signed_payload()
+    assert b"adapter_timeout_seconds" in ExecutionRecord.model_validate(
+        execution(adapter_timeout_seconds=300)
+    ).signed_payload()

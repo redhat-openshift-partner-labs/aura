@@ -121,3 +121,21 @@ def test_redacts_parameters_with_secret_terms(name: str) -> None:
 )
 def test_keeps_allowlisted_parameters(name: str) -> None:
     assert redact_parameters({name: "value"}).value == {name: "value"}
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ('refused: {"password": "hunter2"}', 'refused: {"password": [REDACTED]}'),
+        ("token=abc; next", "token=[REDACTED]; next"),
+        ("Authorization: Bearer xyz, done", "Authorization: [REDACTED], done"),
+        ("header Bearer qqq", "header Bearer [REDACTED]"),
+        ("aws_secret_access_key: 'k'", "aws_secret_access_key: [REDACTED]"),
+        ("the server refused the create: Forbidden", "the server refused the create: Forbidden"),
+    ],
+    ids=["json", "assignment", "authorization", "bearer", "quoted", "no-secret"],
+)
+def test_redact_text_masks_secret_values(text, expected) -> None:
+    from aura.redaction import redact_text
+
+    assert redact_text(text) == expected

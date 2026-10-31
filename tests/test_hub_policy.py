@@ -93,6 +93,9 @@ def test_retention_is_optional() -> None:
         ([SIGNERS_MAP, configmap("aura-execution-store", {
             "deployment_id": DEPLOYMENT, "pipeline_run_retention_seconds": "1d"})],
          "pipeline_run_retention_seconds"),
+        ([SIGNERS_MAP, configmap("aura-execution-store", {
+            "deployment_id": DEPLOYMENT, "pipeline_run_retention_seconds": "\u00b2"})],
+         "pipeline_run_retention_seconds"),
         ([SIGNERS_MAP, STORE_MAP, SIGNERS_MAP], "aura-allowed-signers"),
         ([{"kind": "ConfigMap", "metadata": {"name": "aura-allowed-signers"},
            "data": "text"}, STORE_MAP], "aura-allowed-signers"),
@@ -105,6 +108,7 @@ def test_retention_is_optional() -> None:
         "bad-deployment-id",
         "zero-retention",
         "non-integer-retention",
+        "superscript-retention",
         "repeated-map",
         "data-not-a-map",
     ],

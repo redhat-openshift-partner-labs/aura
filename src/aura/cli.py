@@ -2560,6 +2560,7 @@ def _guard_context_factory(
             hub_effect=lambda proposal_id: hub_effect(args.openshift_kubeconfig, proposal_id),
             preflight=lambda name: adapters[name].preflight(),
             hourly_limit=config.execution.max_dispatches_per_hour,
+            adapter_timeout_seconds=config.execution.adapter_timeout_seconds,
         )
 
     return make

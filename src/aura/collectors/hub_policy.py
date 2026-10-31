@@ -92,7 +92,8 @@ def _retention(store: dict[str, Any]) -> timedelta | None:
     value = store.get("pipeline_run_retention_seconds")
     if value is None:
         return None
-    if not isinstance(value, str) or not value.isdigit() or int(value) <= 0:
+    # isdigit alone accepts digits int() rejects, such as superscripts.
+    if not isinstance(value, str) or not (value.isascii() and value.isdigit()) or int(value) <= 0:
         raise HubPolicyError(
             f"{STORE_CONFIGMAP} pipeline_run_retention_seconds is not a "
             "positive integer"

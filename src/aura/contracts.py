@@ -77,15 +77,23 @@ def _resolve_digest(
     return digest
 
 
-def assign_self_digest(record: BaseModel, field_name: str, label: str) -> None:
+def assign_self_digest(
+    record: BaseModel,
+    field_name: str,
+    label: str,
+    omit_if_none: frozenset[str] = frozenset(),
+) -> None:
     """Compute a record's digest over its other fields, assign it when
-    blank, and reject a stored value that differs."""
+    blank, and reject a stored value that differs. A field in
+    omit_if_none is left out while absent, so records stored before it
+    existed keep their digests."""
 
+    absent = {name for name in omit_if_none if getattr(record, name) is None}
     _assign_digest(
         record,
         field_name,
         canonical_digest(
-            record.model_dump(mode="json", exclude={field_name})
+            record.model_dump(mode="json", exclude={field_name, *absent})
         ),
         f"{label} digest does not match content",
     )

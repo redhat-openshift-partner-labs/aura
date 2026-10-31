@@ -38,7 +38,8 @@ from aura.signing import APPROVE, EXECUTE, SignatureError, require_not_future, v
 R = TypeVar("R", bound=BaseModel)
 # Migrations only add tables, columns, and indexes, so a client accepts
 # every stored version in this range (D13).
-SUPPORTED_SCHEMA_VERSIONS = range(1, 5)
+# Version 4 holds every table this client writes.
+SUPPORTED_SCHEMA_VERSIONS = range(4, 5)
 BUSY_TIMEOUT_SECONDS = 30
 
 
@@ -94,6 +95,8 @@ class Dialect:
     conflict_errors: tuple[type[Exception], ...] = ()
     # The database fills a command row's login from the session.
     session_login: bool = False
+    # Whether an error says that a table does not exist.
+    missing_table: Callable[[Exception], bool] = lambda error: False
 
 
 SQLITE = Dialect(
@@ -104,6 +107,7 @@ SQLITE = Dialect(
     error=sqlite3.Error,
     integrity_error=sqlite3.IntegrityError,
     hour_ago="datetime('now', '-1 hour')",
+    missing_table=lambda error: "no such table" in str(error),
 )
 POSTGRESQL = Dialect(
     name="postgresql",
@@ -116,6 +120,7 @@ POSTGRESQL = Dialect(
     hour_ago="LOCALTIMESTAMP - INTERVAL '1 hour'",
     conflict_errors=(psycopg.errors.SerializationFailure,),
     session_login=True,
+    missing_table=lambda error: isinstance(error, psycopg.errors.UndefinedTable),
 )
 
 
@@ -306,9 +311,12 @@ class ExecutionStore:
         return cls(connection, login=str(login), dialect=POSTGRESQL)
 
     def deployment_id(self) -> str:
-        row = self._execute(
-            "SELECT deployment_id FROM deployment"
-        ).fetchone()
+        try:
+            row = self._execute(
+                "SELECT deployment_id FROM deployment"
+            ).fetchone()
+        except self._dialect.error as error:
+            raise StoreReadFailed(f"cannot read the deployment ID: {error}") from error
         if row is None:
             raise SchemaVersionError("the store has no deployment ID")
         return str(row[0])
@@ -634,6 +642,9 @@ class ExecutionStore:
                 "SELECT MAX(version) FROM schema_versions"
             ).fetchone()
         except self._dialect.error as error:
+            if not self._dialect.missing_table(error):
+                # A locked or unreachable store is a read failure.
+                raise StoreReadFailed(f"cannot read the schema version: {error}") from error
             raise SchemaVersionError(
                 f"the store has no schema version: {error}"
             ) from error

@@ -397,3 +397,26 @@ def test_g10_recording_is_refused_on_postgresql(world) -> None:
 
 def test_g10_an_adapter_that_targets_the_eventlistener_is_refused(world) -> None:
     refused("G10", world, adapters={AdapterName.RECORDING: RecordingAdapter(target="eventlistener")})
+
+
+def test_g6_conflicting_execution_results_are_refused(world) -> None:
+    proposal = pid(world)
+    published = context(world).store.select("published_proposals")[0]
+    store = context(world).store
+    for number, changes in enumerate(
+        ({"phase": "failed", "failure_reason": "refused"}, {"phase": "not_dispatched", "resolution": "timeout_margin"})
+    ):
+        record, event = signed_execution(
+            world["keys"]["executor"],
+            record_id=str(UUID(int=6100 + number)),
+            execution_id=str(UUID(int=6200 + number)),
+            proposal_id=str(proposal),
+            proposal_type="deprovision",
+            adapter="recording",
+            proposal_digest=published.proposal_digest,
+            **changes,
+        )
+        store.insert("audit_events", event)
+        store.insert("executions", record)
+
+    assert "conflicting results" in refused("G6", world)

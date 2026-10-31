@@ -67,6 +67,8 @@ class GuardContext:
     # A read-only check that the adapter can reach its system (G12).
     preflight: Callable[[AdapterName], str | None]
     hourly_limit: int = DEFAULT_HOURLY_LIMIT
+    # Recorded on the dispatching record for `execution status`.
+    adapter_timeout_seconds: int = 300
 
 
 @dataclass(frozen=True)

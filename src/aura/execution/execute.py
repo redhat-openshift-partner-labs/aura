@@ -28,7 +28,7 @@ from aura.execution.guard import (
 )
 from aura.execution.records import ExecutionPhase, ExecutionRecord
 from aura.execution.store import RecordConflict, StoreError, StoreOutcomeUnknown
-from aura.redaction import redact
+from aura.redaction import redact, redact_text
 from aura.signing import EXECUTE, SignatureError, verify
 
 _RECOVERY = (
@@ -91,7 +91,7 @@ def execute_step(
         record = _record(chain, context, cleared, request, result)
         if not result.success:
             raise CommandFailure(
-                f"adapter {request.adapter.value} failed: {result.error}"
+                f"adapter {request.adapter.value} failed: {record.failure_reason}"
             )
         return record.model_dump_json(indent=2)
 
@@ -123,13 +123,17 @@ def _dispatch(
         record_id=record_id,
         phase=ExecutionPhase.DISPATCHING,
         audit_event_digest=event.event_digest,
+        adapter_timeout_seconds=context.adapter_timeout_seconds,
     )
     chain.store_event(event)
 
     def recheck(reader) -> None:
         # Another dispatch may have committed, and an approval may have
-        # expired, since the guard ran.
-        rechecked = replace(context, store=reader, now=chain.clock())
+        # expired, since the guard ran. The hub was read by the guard; the
+        # recheck reads only the store, inside the transaction.
+        rechecked = replace(
+            context, store=reader, now=chain.clock(), hub_effect=lambda proposal_id: False
+        )
         proposal = cleared.published.proposal
         approvals = g5_approvals(rechecked, proposal, cleared.action_digest)
         g6_one_execution(rechecked, proposal, approvals)
@@ -178,7 +182,7 @@ def _record(
         # Stamped after the call, which may have run for minutes.
         created_at=event.occurred_at,
         external_result=_redacted(result.external_result) if result.success else None,
-        failure_reason=None if result.success else result.error,
+        failure_reason=None if result.success else redact_text(str(result.error)),
     )
     chain.store_event(event)
     # An outcome, not an actionable artifact: stored at once, so it stands

@@ -72,7 +72,40 @@ def test_a_new_sqlite_file_is_initialized_once(tmp_path) -> None:
     versions = raw(tmp_path).execute(
         "SELECT version FROM schema_versions"
     ).fetchall()
-    assert versions == [(version,) for version in SUPPORTED_SCHEMA_VERSIONS]
+    assert versions == [(version,) for version in range(1, max(SUPPORTED_SCHEMA_VERSIONS) + 1)]
+
+
+def test_a_store_without_the_newest_tables_is_refused(tmp_path) -> None:
+    open_store(tmp_path)
+    raw(tmp_path).execute("DELETE FROM schema_versions WHERE version = 4")
+
+    with pytest.raises(SchemaVersionError, match="schema version 3 is outside the supported range 4-4"):
+        open_store(tmp_path)
+
+
+def test_a_locked_store_is_a_read_failure(tmp_path, monkeypatch) -> None:
+    import aura.execution.store as store_module
+    from aura.execution.store import StoreReadFailed
+
+    open_store(tmp_path)
+    monkeypatch.setattr(store_module, "BUSY_TIMEOUT_SECONDS", 0)
+    holder = raw(tmp_path)
+    holder.execute("BEGIN EXCLUSIVE")
+    try:
+        with pytest.raises(StoreReadFailed, match="locked"):
+            open_store(tmp_path)
+    finally:
+        holder.execute("ROLLBACK")
+
+
+def test_an_unreadable_deployment_id_is_a_read_failure(tmp_path) -> None:
+    from aura.execution.store import StoreReadFailed
+
+    store = open_store(tmp_path)
+    raw(tmp_path).execute("DROP TABLE deployment")
+
+    with pytest.raises(StoreReadFailed, match="deployment ID"):
+        store.deployment_id()
 
 
 def test_an_existing_database_without_the_schema_is_refused(tmp_path) -> None:

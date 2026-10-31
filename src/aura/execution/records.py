@@ -94,16 +94,21 @@ class _Signed(BaseModel):
     signature and own digest."""
 
     _digest_field: ClassVar[str] = ""
+    # Optional fields added after records were stored: left out of the
+    # digest and signed payload while absent.
+    _omit_if_none: ClassVar[frozenset[str]] = frozenset()
 
     def signed_payload(self) -> bytes:
+        absent = {name for name in self._omit_if_none if getattr(self, name) is None}
         return canonical_json(
-            self.model_dump(mode="json", exclude={"signature", self._digest_field})
+            self.model_dump(mode="json", exclude={"signature", self._digest_field, *absent})
         ).encode("utf-8")
 
 
 class ExecutionRecord(_Signed):
     model_config = ConfigDict(extra="forbid")
     _digest_field: ClassVar[str] = "execution_digest"
+    _omit_if_none: ClassVar[frozenset[str]] = frozenset({"adapter_timeout_seconds"})
 
     record_id: UUID
     execution_id: UUID
@@ -122,6 +127,9 @@ class ExecutionRecord(_Signed):
     rollback: str = Field(min_length=1)
     resolution: Resolution | None = None
     confirmation_id: UUID | None = None
+    # On a dispatching record: the timeout the adapter call ran under, which
+    # `execution status` waits out before recording not_dispatched.
+    adapter_timeout_seconds: int | None = Field(default=None, gt=0)
     audit_event_digest: str = Field(pattern=_DIGEST)
     principal: str = Field(min_length=1)
     signature: str = Field(pattern=_SSH_SIGNATURE)
@@ -145,7 +153,9 @@ class ExecutionRecord(_Signed):
                 f"adapter {self.adapter.value} has no {self.phase.value} phase"
             )
         _require_phase_fields(self)
-        assign_self_digest(self, "execution_digest", "execution record")
+        if self.adapter_timeout_seconds is not None and self.phase is not ExecutionPhase.DISPATCHING:
+            raise ValueError("only a dispatching record carries adapter_timeout_seconds")
+        assign_self_digest(self, "execution_digest", "execution record", self._omit_if_none)
         return self
 
 
