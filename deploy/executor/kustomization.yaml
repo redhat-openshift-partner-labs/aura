@@ -1,0 +1,9 @@
+# The aura-executor identity that the Tekton adapter creates PipelineRuns
+# with (Phase 3 D10). Apply separately from the read-only access in deploy/:
+# oc apply -k deploy/executor
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- serviceaccount.yaml
+- role.yaml
+- rolebinding.yaml

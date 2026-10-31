@@ -19,6 +19,7 @@ from pydantic import (
     Field,
     ValidationError,
     field_validator,
+    model_validator,
 )
 
 
@@ -76,6 +77,12 @@ class ExecutionSettings(BaseModel):
 
     adapters: list[Literal[ADAPTERS]] = Field(default_factory=list)  # type: ignore[valid-type]
     adapter_timeout_seconds: int = Field(default=300, gt=0)
+    # The executions the guard allows in any hour (G11).
+    max_dispatches_per_hour: int = Field(default=5, gt=0)
+    # The `aura-executor` kubeconfig the tekton adapter creates PipelineRuns with (D10).
+    executor_kubeconfig: Path | None = None
+
+    _executor_kubeconfig = field_validator("executor_kubeconfig")(_absolute)
 
     @field_validator("adapters")
     @classmethod
@@ -83,6 +90,12 @@ class ExecutionSettings(BaseModel):
         if len(value) != len(set(value)):
             raise ValueError("must not repeat an adapter")
         return value
+
+    @model_validator(mode="after")
+    def require_executor_kubeconfig(self) -> "ExecutionSettings":
+        if "tekton" in self.adapters and self.executor_kubeconfig is None:
+            raise ValueError("the tekton adapter requires executor_kubeconfig")
+        return self
 
 
 class GitIdentity(BaseModel):

@@ -364,7 +364,7 @@ uv run --no-sync aura proposal approve \
 
 ## `execute`
 
-Dispatches one approved, published proposal through the [Command Guard](architecture.md#command-guard). Like approve, it takes identity from the `[signing]` section of Aura's configuration file; the key must be listed for `aura-execute`. Until Stages 4 and 5 add the real adapters, only the test-only `recording` adapter dispatches, when `[execution] adapters` enables it and the store is SQLite.
+Dispatches one approved, published proposal through the [Command Guard](architecture.md#command-guard). Like approve, it takes identity from the `[signing]` section of Aura's configuration file; the key must be listed for `aura-execute`. The test-only `recording` adapter dispatches when `[execution] adapters` enables it and the store is SQLite. The `tekton` adapter dispatches `post_provision_rerun` proposals on the PostgreSQL store the hub names, with `[execution] executor_kubeconfig`; see [Tekton Adapter](architecture.md#tekton-adapter). Stage 5 adds the Git adapters.
 
 ```bash
 uv run --no-sync aura execute \

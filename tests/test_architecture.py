@@ -150,6 +150,7 @@ JSON_STORE_MODULE = SOURCE / "json_store.py"
 PARSERS_ALLOWED = {
     # `oc` output.
     ("collectors/oc_cli.py", "_read_oc"),
+    ("execution/tekton.py", "_created"),
     # Reads only `command_id` of an audit record that failed to load.
     ("cli.py", "_names_another_command"),
     # fleet-clusters YAML files and patched file text.
@@ -226,10 +227,11 @@ def test_every_store_loads_through_parse_record() -> None:
 
 EXECUTION = SOURCE / "execution"
 EXECUTE_MODULE = EXECUTION / "execute.py"
-# Credentials and the modules that may read them (I10, task 3.6). Stages 4
-# and 5 add the adapters' credentials here.
+# Credentials and the modules that may read them (I10, task 3.6). Stage 5
+# adds the Git adapter's token here.
 CREDENTIAL_READERS = {
     "password_file": {SOURCE / "config.py", EXECUTION / "store.py"},
+    "executor_kubeconfig": {SOURCE / "config.py", EXECUTION / "tekton.py"},
 }
 
 

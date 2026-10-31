@@ -79,11 +79,21 @@ class ExecutionAdapter(Protocol):
     @property
     def target(self) -> str: ...
 
+    # A read-only check that the adapter can reach its system: None when it
+    # can, else the problem (G12).
+    def preflight(self) -> str | None: ...
+
     def write(self, request: AdapterRequest) -> AdapterResult: ...
+
+
+class AdapterOutcomeUnknown(Exception):
+    """Raised by a write whose effect may exist; its message names no
+    secret value, so it is stored whole."""
 
 
 __all__ = [
     "AdapterName",
+    "AdapterOutcomeUnknown",
     "AdapterRequest",
     "AdapterResult",
     "ExecutionAdapter",

@@ -455,3 +455,11 @@ def test_the_operator_role_can_insert_into_every_table(database) -> None:
     ]
 
     assert missing == []
+
+
+def test_the_database_clock_is_utc_whatever_the_time_zone(database, tmp_path) -> None:
+    database["admin"].execute(f"ALTER DATABASE {database['name']} SET TimeZone = 'Pacific/Kiritimati'")
+
+    now = open_store(database, tmp_path).database_time()
+
+    assert abs(now - datetime.now(UTC)) < timedelta(minutes=1)

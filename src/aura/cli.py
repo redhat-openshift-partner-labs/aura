@@ -15,12 +15,13 @@ from pydantic_core import from_json
 import sqlite3
 
 from aura.config import ConfigError, SQLiteStore, load_config
-from aura.adapters import AdapterName
+from aura.adapters import AdapterName, ExecutionAdapter
 from aura.config import AuraConfig
 from aura.execution.commands import Chain, Refusal, run_store_command
 from aura.execution.execute import execute_step
 from aura.execution.guard import GuardContext
 from aura.execution.recording import RecordingAdapter
+from aura.execution.tekton import TektonAdapter
 from aura.approvals import ApprovalDecision
 from aura.collectors.hub_policy import HubPolicy, read_hub_policy
 from aura.execution.proposal_commands import (
@@ -2473,6 +2474,12 @@ def _guard_context_factory(
     )
     staleness = GitProposalStaleness(args.fleet_clusters)
     enabled = frozenset(AdapterName(name) for name in config.execution.adapters)
+    # Stage 5 adds the Git adapters.
+    adapters: dict[AdapterName, ExecutionAdapter] = {}
+    if AdapterName.RECORDING in enabled:
+        adapters[AdapterName.RECORDING] = RecordingAdapter()
+    if AdapterName.TEKTON in enabled:
+        adapters[AdapterName.TEKTON] = TektonAdapter.from_config(config)
 
     def make(chain: Chain) -> GuardContext:
         policy = read(args.openshift_kubeconfig)
@@ -2488,18 +2495,14 @@ def _guard_context_factory(
             backend=config.store.backend,
             deployment_id=store.deployment_id(),
             enabled_adapters=enabled,
-            # Stages 4 and 5 add the real adapters.
-            adapters=(
-                {AdapterName.RECORDING: RecordingAdapter()}
-                if AdapterName.RECORDING in enabled
-                else {}
-            ),
+            adapters=adapters,
             git_stale=lambda proposal: staleness.check(proposal, staleness.head()).stale,
             regenerate=lambda proposal: regenerate_proposal(
                 proposal, sources, clock=clock, collector=collector, chain=chain
             ),
             hub_effect=lambda proposal_id: hub_effect(args.openshift_kubeconfig, proposal_id),
-            preflight=lambda name: None,
+            preflight=lambda name: adapters[name].preflight(),
+            hourly_limit=config.execution.max_dispatches_per_hour,
         )
 
     return make

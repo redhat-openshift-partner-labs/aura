@@ -15,6 +15,9 @@ class RecordingAdapter:
     version: str = "0.1.0"
     target: str = "none"
 
+    def preflight(self) -> str | None:
+        return None
+
     def write(self, request: AdapterRequest) -> AdapterResult:
         self.requests.append(request)
         return AdapterResult(

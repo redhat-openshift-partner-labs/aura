@@ -243,8 +243,8 @@ An idempotency key identifies one request. Aura stores one terminal record per k
 
 ## Safety model
 
-- **Read-only.** Collectors only list resources and read committed Git. Aura writes nothing to Git, Kubernetes, pipelines, Portal, or RabbitMQ ([invariant I5](docs/development.md#project-invariants)). Phase 3 plans guarded execution of approved proposals; no adapter that writes exists yet.
-- **Least privilege.** The [`deploy/`](deploy) manifests grant `list` only, plus `get` on two Phase 3 policy ConfigMaps by name, and [`tests/test_deploy_manifests.py`](tests/test_deploy_manifests.py) fails the suite if a collector reads a resource they do not grant. The staging PostgreSQL for Phase 3 is a separate kustomization in [`deploy/postgresql/`](deploy/postgresql); see [Staging Database](docs/security.md#staging-database).
+- **Read-only.** Collectors only list resources and read committed Git. Aura writes nothing to Git, Kubernetes, pipelines, Portal, or RabbitMQ ([invariant I5](docs/development.md#project-invariants)). Phase 3 adds guarded execution of approved proposals: the Tekton adapter creates one approved post-provision PipelineRun after the guard passes, and has not yet run against a hub.
+- **Least privilege.** The [`deploy/`](deploy) manifests grant `list` only, plus `get` on two Phase 3 policy ConfigMaps by name, and [`tests/test_deploy_manifests.py`](tests/test_deploy_manifests.py) fails the suite if a collector reads a resource they do not grant. The staging PostgreSQL for Phase 3 is a separate kustomization in [`deploy/postgresql/`](deploy/postgresql); see [Staging Database](docs/security.md#staging-database). The Tekton adapter's `aura-executor` identity, with `create` and `get` on PipelineRuns in `openshift-pipelines` only, is another, in [`deploy/executor/`](deploy/executor).
 - **No secrets at rest.** Secret-named fields are [redacted](docs/security.md#secret-redaction) across case and separator spellings before anything is stored, and an unhandled error stores only its type.
 - **Refusal on missing evidence.** Missing, incomplete, invalid, or conflicting evidence produces a structured [refusal](docs/architecture.md#refusal).
 - **Proposals are drafts.** Aura stores proposals and never applies, commits, or pushes them. A human reviews and merges.
@@ -350,6 +350,7 @@ aura/
 │   └── *_store.py        # append-only JSON stores
 ├── tests/                # contract, collector, service, CLI, and fixture tests
 ├── deploy/               # read-only OpenShift RBAC, applied with oc apply -k deploy
+│   ├── executor/         # aura-executor RBAC for the Tekton adapter, applied separately
 │   └── postgresql/       # staging PostgreSQL for Phase 3, applied separately
 ├── docs/                 # user, design, and contributor documentation
 │   └── assets/           # README diagrams (SVG)

@@ -35,6 +35,7 @@ password_file = "/home/operator/.config/aura/password"
 [execution]
 adapters = ["tekton"]
 adapter_timeout_seconds = 120
+executor_kubeconfig = "/home/operator/.kube/aura-executor"
 
 [git]
 author_name = "Aura"

@@ -15,6 +15,7 @@ from enum import StrEnum
 from aura.approvals import ApprovalDecision, ApprovalRecord
 from aura.execution.action import action_digest
 from aura.execution.records import ExecutionPhase, ExecutionRecord, TERMINAL_PHASES
+from aura.execution.store import RecordInvalid
 from aura.proposals import Proposal, ProposalType
 
 
@@ -94,6 +95,13 @@ def execution_state(records: Iterable[ExecutionRecord]) -> DerivedState | None:
     if not phases:
         return None
     terminal = phases & TERMINAL_PHASES
+    if len(terminal) > 1:
+        # The store keeps one terminal record per execution, so only rows
+        # of two executions of one proposal can disagree.
+        raise RecordInvalid(
+            "execution records name conflicting results: "
+            + ", ".join(sorted(phase.value for phase in terminal))
+        )
     if terminal:
         (phase,) = terminal
         return DerivedState(phase.value)

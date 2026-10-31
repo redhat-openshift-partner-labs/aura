@@ -402,6 +402,15 @@ class ExecutionStore:
             self._rollback()
             self._read_back(table, row, error)
 
+    def database_time(self) -> datetime:
+        """The database's clock, which sets every row's `stored_at`."""
+
+        try:
+            (value,) = self._execute("SELECT CURRENT_TIMESTAMP").fetchone()
+        except self._dialect.error as error:
+            raise StoreReadFailed(f"cannot read the store's clock: {error}") from error
+        return _stored_time(value)
+
     def dispatches_in_last_hour(self) -> int:
         """Count `dispatching` records stored in the past hour by the
         database's clock, so a client's clock cannot shift the limit (G11).

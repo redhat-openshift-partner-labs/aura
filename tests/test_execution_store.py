@@ -725,3 +725,12 @@ def test_a_signed_observation_loads(tmp_path, executor_key) -> None:
     reader = open_store(tmp_path).with_signers(executor_signers(executor_key))
 
     assert reader.select("pipeline_run_observations") == [record]
+
+
+def test_the_database_clock_is_utc(tmp_path) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    now = open_store(tmp_path).database_time()
+
+    assert now.tzinfo is not None
+    assert abs(now - datetime.now(UTC)) < timedelta(minutes=1)

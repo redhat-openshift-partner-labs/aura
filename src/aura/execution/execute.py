@@ -14,7 +14,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from uuid import UUID, uuid5
 
-from aura.adapters import AdapterRequest, AdapterResult
+from aura.adapters import AdapterOutcomeUnknown, AdapterRequest, AdapterResult
 from aura.contracts import AuditEventType
 from aura.execution.commands import Chain, CommandFailure
 from aura.execution.guard import (
@@ -28,6 +28,7 @@ from aura.execution.guard import (
 )
 from aura.execution.records import ExecutionPhase, ExecutionRecord
 from aura.execution.store import RecordConflict, StoreError, StoreOutcomeUnknown
+from aura.redaction import redact
 from aura.signing import EXECUTE, SignatureError, verify
 
 _RECOVERY = (
@@ -71,11 +72,22 @@ def execute_step(
         chain.recovery = _RECOVERY
         try:
             result = cleared.adapter.write(request)
+        except AdapterOutcomeUnknown as error:
+            raise AwaitingOperator(
+                f"adapter {request.adapter.value} did not report its result: {error}"
+            ) from error
         except Exception as error:
+            # Other exception text may carry secret values (I6).
             raise AwaitingOperator(
                 f"adapter {request.adapter.value} did not report its result "
                 f"({type(error).__name__})"
             ) from error
+        if (result.request_id, result.execution_id, result.adapter) != (
+            request.request_id, request.execution_id, request.adapter,
+        ):
+            raise AwaitingOperator(
+                f"adapter {request.adapter.value} reported a result for another request"
+            )
         record = _record(chain, context, cleared, request, result)
         if not result.success:
             raise CommandFailure(
@@ -115,8 +127,9 @@ def _dispatch(
     chain.store_event(event)
 
     def recheck(reader) -> None:
-        # Another dispatch may have committed since the guard ran.
-        rechecked = replace(context, store=reader)
+        # Another dispatch may have committed, and an approval may have
+        # expired, since the guard ran.
+        rechecked = replace(context, store=reader, now=chain.clock())
         proposal = cleared.published.proposal
         approvals = g5_approvals(rechecked, proposal, cleared.action_digest)
         g6_one_execution(rechecked, proposal, approvals)
@@ -151,7 +164,7 @@ def _record(
             "record_id": str(record_id),
             "execution_id": str(request.execution_id),
             "phase": phase.value,
-            "external_result": result.external_result,
+            "external_result": _redacted(result.external_result),
         },
         subject_id=record_id,
     )
@@ -162,7 +175,9 @@ def _record(
         record_id=record_id,
         phase=phase,
         audit_event_digest=event.event_digest,
-        external_result=result.external_result if result.success else None,
+        # Stamped after the call, which may have run for minutes.
+        created_at=event.occurred_at,
+        external_result=_redacted(result.external_result) if result.success else None,
         failure_reason=None if result.success else result.error,
     )
     chain.store_event(event)
@@ -170,6 +185,12 @@ def _record(
     # whatever happens to the terminal record.
     chain.store.insert("executions", record)
     return record
+
+
+def _redacted(external_result: dict[str, str]) -> dict[str, str]:
+    """An adapter's result with secret-named values redacted (I6)."""
+
+    return {name: str(value) for name, value in redact(external_result).value.items()}
 
 
 def _signed_record(

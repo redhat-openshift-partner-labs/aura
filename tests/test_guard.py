@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
@@ -206,8 +206,24 @@ def test_g5_the_executor_cannot_count_as_an_approver(world) -> None:
     )
 
 
-def test_g5_expired_approvals_are_refused(world) -> None:
-    refused("G5", world, now=datetime(2026, 11, 5, tzinfo=UTC))
+def test_g5_expired_approvals_are_refused(world, monkeypatch) -> None:
+    later = datetime(2026, 11, 5, tzinfo=UTC)
+    # The store's clock moves with the executor's, so G2 passes.
+    monkeypatch.setattr(ExecutionStore, "database_time", lambda self: later)
+
+    refused("G5", world, now=later)
+
+
+def test_g2_refuses_an_executor_clock_ahead_of_the_store(world, monkeypatch) -> None:
+    monkeypatch.setattr(ExecutionStore, "database_time", lambda self: NOW - timedelta(minutes=6))
+
+    assert "seconds ahead of the store's" in refused("G2", world)
+
+
+def test_g2_allows_a_clock_within_the_margin(world, monkeypatch) -> None:
+    monkeypatch.setattr(ExecutionStore, "database_time", lambda self: NOW - timedelta(minutes=4))
+
+    check(context(world), proposal_id(world["root"]))
 
 
 def test_g6_a_used_idempotency_key_is_refused(world) -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime
 from pathlib import Path
 from uuid import UUID, uuid5
 
@@ -73,8 +74,11 @@ class PerCommandSnapshots:
         )
 
 
-def execute(world, monkeypatch, *flags: str, key: str = "execute-1", command_id: UUID = EXECUTE_ID):
-    monkeypatch.setenv("AURA_CONFIG", str(executor_config(world)))
+def execute(
+    world, monkeypatch, *flags: str, key: str = "execute-1", command_id: UUID = EXECUTE_ID,
+    clock=lambda: NOW, config: Path | None = None,
+):
+    monkeypatch.setenv("AURA_CONFIG", str(config or executor_config(world)))
     root = world["root"]
     stdout, stderr = io.StringIO(), io.StringIO()
     with redirect_stdout(stdout), redirect_stderr(stderr):
@@ -89,7 +93,7 @@ def execute(world, monkeypatch, *flags: str, key: str = "execute-1", command_id:
             ],
             collector=PerCommandSnapshots(cluster_state_collector(root / "fleet-clusters")),
             command_id_factory=lambda: command_id,
-            clock=lambda: NOW,
+            clock=clock,
             hub=HubAccess(policy=lambda path: world["hub"], effect=lambda path, pid: False),
         )
     return code, stdout.getvalue(), stderr.getvalue()
@@ -331,3 +335,134 @@ def test_a_regeneration_refusal_stores_its_evidence_and_trace(world, monkeypatch
     assert trace.response_digest is None
     assert store.select("regenerated_proposals") == []
     assert store.select("executions") == []
+
+
+def test_an_unknown_adapter_outcome_names_its_cause(world, monkeypatch) -> None:
+    from aura.execution.recording import RecordingAdapter
+    from aura.execution.tekton import TektonOutcomeUnknown
+
+    def already_exists(self, request):
+        raise TektonOutcomeUnknown("oc create failed with an unknown outcome")
+
+    monkeypatch.setattr(RecordingAdapter, "write", already_exists)
+
+    code, _, stderr = execute(world, monkeypatch)
+
+    assert code == 2
+    assert "did not report its result: oc create failed with an unknown outcome" in stderr
+    assert "awaiting_operator: run `aura execution status`" in stderr
+    assert [r.phase for r in reader(world).select("executions")] == [ExecutionPhase.DISPATCHING]
+
+
+@pytest.mark.parametrize("field", ["request_id", "execution_id"])
+def test_a_result_for_another_request_awaits_the_operator(world, monkeypatch, field) -> None:
+    from aura.execution.recording import RecordingAdapter
+
+    original = RecordingAdapter.write
+
+    def mismatched(self, request):
+        return original(self, request).model_copy(update={field: UUID(int=999)})
+
+    monkeypatch.setattr(RecordingAdapter, "write", mismatched)
+
+    code, _, stderr = execute(world, monkeypatch)
+
+    assert code == 2
+    assert "reported a result for another request" in stderr
+    assert [r.phase for r in reader(world).select("executions")] == [ExecutionPhase.DISPATCHING]
+
+
+def test_a_secret_named_result_value_is_redacted(world, monkeypatch) -> None:
+    from aura.execution.recording import RecordingAdapter
+
+    original = RecordingAdapter.write
+
+    def leaky(self, request):
+        result = original(self, request)
+        return result.model_copy(update={"external_result": {**result.external_result, "token": "s3cret"}})
+
+    monkeypatch.setattr(RecordingAdapter, "write", leaky)
+
+    assert execute(world, monkeypatch)[0] == 0
+
+    store = reader(world)
+    (submitted,) = [r for r in store.select("executions") if r.phase is ExecutionPhase.SUBMITTED]
+    assert "s3cret" not in submitted.model_dump_json()
+    finished = [e for e in chain(store, EXECUTE_ID) if e.event_type is AuditEventType.EXECUTION_FINISHED]
+    assert "s3cret" not in finished[0].model_dump_json()
+
+
+def test_the_result_record_is_stamped_after_the_call(world, monkeypatch) -> None:
+    from datetime import timedelta
+
+    times = iter(NOW + timedelta(seconds=step) for step in range(1000))
+
+    code, _, stderr = execute(world, monkeypatch, clock=lambda: next(times))
+
+    assert code == 0, stderr
+    records = {r.phase: r for r in reader(world).select("executions")}
+    assert records[ExecutionPhase.SUBMITTED].created_at > records[ExecutionPhase.DISPATCHING].created_at
+
+
+def test_the_dispatch_recheck_reads_a_fresh_clock(world, monkeypatch) -> None:
+    """An approval that expires while the guard regenerates the proposal
+    no longer counts at dispatch."""
+
+    from datetime import timedelta
+
+    import aura.execution.execute as execute_module
+    import aura.execution.guard as guard
+    from aura.execution.guard import GuardRefusal
+
+    guard_times = []
+    original = guard.g5_approvals
+
+    def guard_g5(context, proposal, action):
+        guard_times.append(context.now)
+        return original(context, proposal, action)
+
+    def recheck_g5(context, proposal, action):
+        raise GuardRefusal("G5", f"rechecked at {context.now.isoformat()}")
+
+    monkeypatch.setattr(guard, "g5_approvals", guard_g5)
+    monkeypatch.setattr(execute_module, "g5_approvals", recheck_g5)
+    times = iter(NOW + timedelta(seconds=step) for step in range(1000))
+
+    code, _, stderr = execute(world, monkeypatch, clock=lambda: next(times))
+
+    assert code == 2
+    (guard_time,) = guard_times
+    rechecked = datetime.fromisoformat(stderr.split("rechecked at ")[1].split()[0])
+    assert rechecked > guard_time
+    assert reader(world).select("executions") == []
+
+
+def test_a_failed_preflight_refuses_the_execution(world, monkeypatch) -> None:
+    from aura.execution.recording import RecordingAdapter
+
+    monkeypatch.setattr(RecordingAdapter, "preflight", lambda self: "the system is unreachable")
+
+    code, _, stderr = execute(world, monkeypatch)
+
+    assert code == 2
+    assert "G12: preflight failed: the system is unreachable" in stderr
+    assert reader(world).select("executions") == []
+
+
+def test_the_configured_hourly_limit_reaches_the_guard(world, monkeypatch) -> None:
+    from test_guard import store_dispatch
+
+    config = executor_config(world)
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "[execution]\n", "[execution]\nmax_dispatches_per_hour = 1\n"
+        ),
+        encoding="utf-8",
+    )
+    # One dispatch, of another cluster's proposal, in the past hour.
+    store_dispatch(world, proposal=UUID(int=4343), cluster="other")
+
+    code, _, stderr = execute(world, monkeypatch, config=config)
+
+    assert code == 2
+    assert "G11: 1 executions were dispatched in the past hour" in stderr

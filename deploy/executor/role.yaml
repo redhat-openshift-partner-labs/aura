@@ -1,0 +1,11 @@
+# create starts the approved rerun; get lets oc print the created run.
+# Reads for execution status go through aura-readonly.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aura-executor
+  namespace: openshift-pipelines
+rules:
+- apiGroups: ["tekton.dev"]
+  resources: ["pipelineruns"]
+  verbs: ["create", "get"]

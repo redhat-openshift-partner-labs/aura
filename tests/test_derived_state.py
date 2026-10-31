@@ -164,7 +164,8 @@ def run_record(proposal, phase: str, number: int, **changes):
         record_id=str(UUID(int=900 + number)),
         proposal_id=str(proposal.proposal_id),
         proposal_type=proposal.proposal_type.value,
-        adapter="recording",
+        # Only a Tekton execution runs and succeeds.
+        adapter="tekton" if proposal.proposal_type.value == "post_provision_rerun" else "recording",
         phase=phase,
         **changes,
     )
@@ -232,3 +233,16 @@ def test_open_states() -> None:
     assert {state.value for state in OPEN_STATES} == {
         "awaiting_operator", "submitted", "running",
     }
+
+
+def test_conflicting_results_across_executions_are_invalid() -> None:
+    from aura.execution.store import RecordInvalid
+
+    proposal = make_proposal("post_provision_rerun")
+    records = [
+        run_record(proposal, "succeeded", 1),
+        run_record(proposal, "failed", 2, execution_id=str(UUID(int=77)), failure_reason="refused"),
+    ]
+
+    with pytest.raises(RecordInvalid, match="conflicting results: failed, succeeded"):
+        executed(proposal, records)

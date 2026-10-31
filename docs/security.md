@@ -98,6 +98,23 @@ oc --kubeconfig "$HOME/.kube/aura-readonly" auth can-i get configmap/aura-execut
 
 Every command must print `yes`. Write verbs such as `create`, `patch`, and `delete` must print `no`, and so must `get` on any other ConfigMap, for example `oc --kubeconfig "$HOME/.kube/aura-readonly" auth can-i get configmap/other -n aura`.
 
+## Executor Service Account
+
+Phase 3's Tekton adapter creates PipelineRuns as ServiceAccount `aura-executor` in namespace `aura` (D10), through a separate kubeconfig named by `[execution] executor_kubeconfig`, for example `$HOME/.kube/aura-executor`. The kubeconfig rules for `aura-readonly` apply to it. The manifests are in [`deploy/executor/`](../deploy/executor), a kustomization separate from the read-only one:
+
+| Manifest | Grants |
+| --- | --- |
+| `serviceaccount.yaml` | The `aura-executor` service account in `aura` |
+| `role.yaml`, `rolebinding.yaml` | `create` and `get` on `pipelineruns.tekton.dev` in `openshift-pipelines` only |
+
+`tests/test_executor_manifests.py` pins these grants and keeps the executor out of `deploy/kustomization.yaml`. `execution status` reads PipelineRuns through `aura-readonly`. Apply the manifests as a cluster administrator only for task 4.4, the live run:
+
+```bash
+oc apply -k deploy/executor --dry-run=server
+```
+
+Verify, with the executor's kubeconfig, that `oc --kubeconfig "$HOME/.kube/aura-executor" auth can-i create pipelineruns.tekton.dev -n openshift-pipelines` prints `yes`, and that the same command for `-n default`, for `taskruns.tekton.dev`, and for `delete` prints `no`.
+
 ## Staging Database
 
 [`deploy/postgresql/`](../deploy/postgresql) deploys PostgreSQL for the Phase 3 [Execution Store](plans/06-phase-3-approved-execution.md#execution-store) in staging and development (D13). It is a separate kustomization, so `oc apply -k deploy` never deploys it. Production enablement, including TLS, backups, and high availability, is out of its scope.

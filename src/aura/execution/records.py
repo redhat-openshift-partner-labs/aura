@@ -58,6 +58,18 @@ TERMINAL_PHASES = frozenset(
 )
 # Phases that name an external effect.
 _WITH_RESULT = frozenset({ExecutionPhase.SUBMITTED, ExecutionPhase.HANDED_OFF})
+_EVERY_ADAPTER = frozenset(
+    {ExecutionPhase.DISPATCHING, ExecutionPhase.FAILED, ExecutionPhase.NOT_DISPATCHED}
+)
+# The phases each adapter's executions pass through.
+_ADAPTER_PHASES = {
+    AdapterName.GIT_HANDOFF: _EVERY_ADAPTER | {ExecutionPhase.HANDED_OFF},
+    AdapterName.GIT_PR: _EVERY_ADAPTER
+    | {ExecutionPhase.SUBMITTED, ExecutionPhase.MERGED, ExecutionPhase.CLOSED},
+    AdapterName.TEKTON: _EVERY_ADAPTER
+    | {ExecutionPhase.SUBMITTED, ExecutionPhase.RUNNING, ExecutionPhase.SUCCEEDED},
+    AdapterName.RECORDING: _EVERY_ADAPTER | {ExecutionPhase.SUBMITTED},
+}
 
 
 class Resolution(StrEnum):
@@ -127,6 +139,10 @@ class ExecutionRecord(_Signed):
             raise ValueError(
                 f"adapter {self.adapter.value} cannot execute "
                 f"{self.proposal_type.value} proposals"
+            )
+        if self.phase not in _ADAPTER_PHASES[self.adapter]:
+            raise ValueError(
+                f"adapter {self.adapter.value} has no {self.phase.value} phase"
             )
         _require_phase_fields(self)
         assign_self_digest(self, "execution_digest", "execution record")

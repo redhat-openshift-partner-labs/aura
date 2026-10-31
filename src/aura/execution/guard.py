@@ -29,7 +29,7 @@ from aura.execution.derived import (
 from aura.execution.records import ExecutionRecord
 from aura.execution.store import ExecutionStore, RecordInvalid
 from aura.proposals import GIT_PROPOSAL_TYPES, Proposal
-from aura.signing import EXECUTE, SignatureError, require_not_future, verify
+from aura.signing import CLOCK_MARGIN, EXECUTE, SignatureError, require_not_future, verify
 
 
 DEFAULT_HOURLY_LIMIT = 5
@@ -140,6 +140,13 @@ def g2_signed_by_an_executor(context: GuardContext) -> None:
         )
     except SignatureError as error:
         raise GuardRefusal("G2", f"execution request signature refused: {error}") from error
+    # A record stamped this far ahead of its stored_at fails to load, which
+    # would block the proposal and its cluster.
+    ahead = context.now - context.store.database_time()
+    if ahead > CLOCK_MARGIN:
+        raise GuardRefusal(
+            "G2", f"the executor's clock is {int(ahead.total_seconds())} seconds ahead of the store's"
+        )
 
 
 def g3_published_proposal(context: GuardContext, proposal_id: UUID) -> PublishedProposal:
@@ -199,10 +206,13 @@ def g6_one_execution(
 ) -> None:
     executions = _executions(context, proposal_id=proposal.proposal_id)
     # Staleness is G7's; here the state must be approved and unexecuted.
-    state = derive_state(
-        proposal, approvals, git_stale=False, published=True,
-        now=context.now, executions=executions,
-    )
+    try:
+        state = derive_state(
+            proposal, approvals, git_stale=False, published=True,
+            now=context.now, executions=executions,
+        )
+    except RecordInvalid as error:
+        raise GuardRefusal("G6", f"an execution record is invalid: {error}") from error
     if state is not DerivedState.APPROVED:
         raise GuardRefusal("G6", f"the proposal is {state.value}, not approved")
     if context.store.select("commands", idempotency_key=context.command.idempotency_key):

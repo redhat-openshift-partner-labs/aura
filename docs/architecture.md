@@ -134,13 +134,15 @@ login = "<operator>"
 [execution]
 adapters = []
 adapter_timeout_seconds = 300
+max_dispatches_per_hour = 5
+executor_kubeconfig = "/absolute/path/.kube/aura-executor"
 
 [git]
 author_name = "<name>"
 author_email = "<email>"
 ```
 
-A `postgresql` store takes `host`, `port` (default `5432`), `database`, `user`, and an absolute `password_file` instead of `path` and `login`. `adapters` lists enabled adapters from `git_handoff`, `git_pr`, `tekton`, and `recording`; `[execution]` and `[git]` are optional.
+A `postgresql` store takes `host`, `port` (default `5432`), `database`, `user`, and an absolute `password_file` instead of `path` and `login`. `adapters` lists enabled adapters from `git_handoff`, `git_pr`, `tekton`, and `recording`; `tekton` requires the absolute `executor_kubeconfig` of `aura-executor`. `adapter_timeout_seconds` bounds an adapter's write, and `max_dispatches_per_hour` is G11's hourly limit. `[execution]` and `[git]` are optional.
 
 The store only inserts rows. Each row holds its record's canonical JSON as text, its digest, copies of the fields that constraints and queries use, and `stored_at` from the database. Load verifies the record's own digest and that the digest column and every copied column equal the record's fields. A signed record, an approval, an execution record, or a PipelineRun observation, is also verified against the hub's allowed-signers list at the row's `stored_at`, so a key retired later still verifies it; a reader without the list cannot read signed rows. An identical insert under a stored key succeeds; a different record under it is a conflict. When a write's outcome is unknown, the store reads the row back by its key: an identical row counts as stored, an absent row is a failed write, and an unreadable store raises an error that names the key. A locked check-and-insert transaction lets two writers that check the same condition commit at most once. Idempotency keys are unique per login, and each login reads only its own commands.
 
@@ -148,7 +150,22 @@ The schema is versioned by migration files in `aura/execution/migrations/` that 
 
 ## Command Guard
 
-`aura.execution.guard.check` runs the Phase 3 [guard rules](plans/06-phase-3-approved-execution.md#guard) G1–G12 in order and refuses at the first that fails, naming it. G2 runs first: it signs a payload with the executor's key and verifies it as `aura-execute` against the hub list, so an unsigned caller learns nothing about a proposal. The publication then loads (G3) before G1, because G1 reads its type. A record that fails verification is a refusal under the rule that reads it (G3, G5, or G6); a store that cannot be read fails the command. G5 counts unexpired approvals of the exact proposal and action digests from distinct principals other than the executor. G6 requires the derived state, including execution records, to be `approved`, ignoring staleness, which G7 checks. G10 selects `recording` when it is enabled, otherwise `git_handoff` for Git proposals and `tekton` for reruns, refuses an adapter whose `target` names the EventListener, allows `recording` only on SQLite, and allows a real adapter only on the PostgreSQL store the hub names. G11 counts the past hour's dispatches by the database's clock. The checks that read the hub or Git, and the regeneration of G8, are passed in, so tests supply them. G8's regeneration runs under the execute command's ID and stores `evidence_collected` and the evidence snapshot, `context_assembled` and the CWA snapshot, the CWA trace, and `proposal_created` and the regenerated proposal; a regeneration refusal stores the trace and no proposal. A change that breaks the contract usually changes the approved action too, so G5 refuses it before G9.
+`aura.execution.guard.check` runs the Phase 3 [guard rules](plans/06-phase-3-approved-execution.md#guard) G1–G12 in order and refuses at the first that fails, naming it. G2 runs first: it signs a payload with the executor's key and verifies it as `aura-execute` against the hub list, so an unsigned caller learns nothing about a proposal. G2 also refuses an executor whose clock is more than five minutes ahead of the database's, because the records it signed would fail to load. The publication then loads (G3) before G1, because G1 reads its type. A record that fails verification is a refusal under the rule that reads it (G3, G5, or G6); a store that cannot be read fails the command. G5 counts unexpired approvals of the exact proposal and action digests from distinct principals other than the executor. G6 requires the derived state, including execution records, to be `approved`, ignoring staleness, which G7 checks. G10 selects `recording` when it is enabled, otherwise `git_handoff` for Git proposals and `tekton` for reruns, refuses an adapter whose `target` names the EventListener, allows `recording` only on SQLite, and allows a real adapter only on the PostgreSQL store the hub names. G11 counts the past hour's dispatches by the database's clock against `max_dispatches_per_hour`. G12 runs the adapter's read-only preflight. The dispatch transaction rechecks G5, G6, and G11 with a fresh clock. The checks that read the hub or Git, and the regeneration of G8, are passed in, so tests supply them. G8's regeneration runs under the execute command's ID and stores `evidence_collected` and the evidence snapshot, `context_assembled` and the CWA snapshot, the CWA trace, and `proposal_created` and the regenerated proposal; a regeneration refusal stores the trace and no proposal. A change that breaks the contract usually changes the approved action too, so G5 refuses it before G9.
+
+`execute` treats an adapter's result as unknown, leaving the execution `awaiting_operator`, when the write raises or returns a result for another request or execution. It redacts secret-named values in the result before storing it, and stamps the result record after the call.
+
+## Tekton Adapter
+
+`aura.execution.tekton.TektonAdapter` creates the approved post-provision PipelineRun with `oc --kubeconfig <executor_kubeconfig> create -n openshift-pipelines -f - -o json`, bounded by `adapter_timeout_seconds`. Only this module and `aura.config` read `executor_kubeconfig` (I10). The run is named `aura-rerun-<proposal-id>`, 47 characters, without the proposal's `generateName`, and carries the proposal-ID and execution-ID annotations. The adapter refuses, before calling `oc`, a manifest that is not a `tekton.dev` PipelineRun of pipeline `post-provision` in `openshift-pipelines`. Outcomes:
+
+| `oc create` outcome | Result |
+| --- | --- |
+| Created, and the output names the run with a UID | `submitted`, with the run's name, UID, and namespace |
+| The server refused it: `Forbidden`, `Unauthorized`, `NotFound`, `BadRequest`, `Conflict`, `Invalid`, and similar | `failed`, with only the reason class stored, because the server's text may quote the manifest |
+| `oc` cannot start | `failed` |
+| `AlreadyExists`, a timeout, a server or connection error, or output that does not name the run | Unknown: the execution is `awaiting_operator` |
+
+Its G12 preflight runs `oc auth can-i create pipelineruns.tekton.dev -n openshift-pipelines` with the same kubeconfig and requires `yes`. It never retries.
 
 ## Failure Model
 

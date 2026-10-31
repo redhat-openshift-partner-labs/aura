@@ -102,6 +102,10 @@ def test_each_phase_validates(changes) -> None:
         {"rollback": " "},
         {"execution_digest": "5" * 64},
         {"extra": 1},
+        {"phase": "merged", "external_result": {"x": "y"}},
+        {"phase": "handed_off", "external_result": {"x": "y"}},
+        {"phase": "running", "adapter": "git_handoff", "proposal_type": "deprovision"},
+        {"phase": "running", "adapter": "recording"},
     ],
     ids=[
         "dispatching-with-result", "dispatching-with-failure", "dispatching-with-resolution",
@@ -110,7 +114,8 @@ def test_each_phase_validates(changes) -> None:
         "manual-without-confirmation", "manual-without-reason", "confirmation-off-resolution",
         "no-approvals", "repeated-approval", "git-adapter-for-rerun", "tekton-for-git",
         "unknown-phase", "blank-principal", "bad-signature", "bad-cluster", "blank-rollback",
-        "stale-digest", "extra-field",
+        "stale-digest", "extra-field", "tekton-merged", "tekton-handed-off",
+        "handoff-running", "recording-running",
     ],
 )
 def test_an_execution_record_rejects_an_invalid_value(changes) -> None:
