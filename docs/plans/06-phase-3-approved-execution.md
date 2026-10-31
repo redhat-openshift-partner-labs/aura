@@ -25,7 +25,7 @@ The closure plan's [rules](10-phase-0-2-closure.md#rules) R2–R6 apply, reading
 
 ## Operator Decisions
 
-Recorded on 2026-10-27: the operator accepted every recommendation, so each row's Recommendation is its decision. D13 was added the same day, when the operator stated that Aura will have a database. On 2026-10-29 the operator confirmed the plan edits listed in the [Stage 1 Record](#stage-1-record). On 2026-10-30 the operator moved task 3.2 into Stage 2, ahead of task 2.4, because an approval signs the proposal's `action_digest`. On 2026-10-30 the operator also confirmed the plan edits listed in the [Stage 2 Record](#stage-2-record) and the [Stage 3 Record](#stage-3-record). A live task that depends on a prerequisite a decision names, such as the staging hub, a credential, or a database, does not start until the operator provides it; a stage's tasks that run against fakes start without it. The operator narrowed this rule from whole stages to live tasks on 2026-10-30. IDs continue from the closure plan's D1–D6.
+Recorded on 2026-10-27: the operator accepted every recommendation, so each row's Recommendation is its decision. D13 was added the same day, when the operator stated that Aura will have a database. On 2026-10-29 the operator confirmed the plan edits listed in the [Stage 1 Record](#stage-1-record). On 2026-10-30 the operator moved task 3.2 into Stage 2, ahead of task 2.4, because an approval signs the proposal's `action_digest`. On 2026-10-30 the operator also confirmed the plan edits listed in the [Stage 2 Record](#stage-2-record) and the [Stage 3 Record](#stage-3-record). On 2026-10-31 the operator confirmed the plan edits listed in the [Stage 4 Record](#stage-4-record). A live task that depends on a prerequisite a decision names, such as the staging hub, a credential, or a database, does not start until the operator provides it; a stage's tasks that run against fakes start without it. The operator narrowed this rule from whole stages to live tasks on 2026-10-30. IDs continue from the closure plan's D1–D6.
 
 | ID | Question | Options | Recommendation | Blocks |
 | --- | --- | --- | --- | --- |
@@ -435,7 +435,7 @@ D8 is decided as (a), the hand-off, so tasks 5.1 and 5.3 run under (a). Tasks 5.
 | 1 | 1.1–1.11 Hardening | Done; the operator confirmed its plan edits on 2026-10-29, see [Stage 1 Record](#stage-1-record) | `7e2fca9`, `9beb53d`, `4889513`, `b989aff`, `d88ab1c`, `3689b4c`, `ab480a9`, `71d82cc`, `8dc07a5`, `c74d7d3`; review fixes `1de5003`, `2171460`, `3c3e054` |
 | 2 | 2.1–2.5 and 3.2 Identity and approvals | Done; the operator confirmed its plan edits on 2026-10-30, see [Stage 2 Record](#stage-2-record) | `b8e223b`, `29ecb84`, `186062d`, `cba8acd`, `b4a8f26`, `925a00d`, `bd92e5b`, `22e6c10`, `d19846f`; review fixes `7802ed1` and the commit that records this |
 | 3 | 3.1–3.7 Guard and dry run | Done; the operator confirmed its plan edits on 2026-10-30, see [Stage 3 Record](#stage-3-record) | `566c7df`, `d6d12f7`, `0a84abd`, `2f6e685`, `1b05cf8`, `d0155cd`; review fixes `a7c159c`, `111cf36`, `58762da`, `8b13d07`, `cf3d7c1` |
-| 4 | 4.1–4.4 Tekton adapter | 4.1–4.3 done; 4.4 waits for task 0.3; plan edits await the operator's confirmation, see [Stage 4 Record](#stage-4-record) | `52705f9`, `54156b0`, `6416a5c`; review fixes `2ba02ab`, `ef99b1f`, `9b6eeeb`, and the commit that records this |
+| 4 | 4.1–4.4 Tekton adapter | 4.1–4.3 done; 4.4 waits for task 0.3; the operator confirmed its plan edits on 2026-10-31, see [Stage 4 Record](#stage-4-record) | `52705f9`, `54156b0`, `6416a5c`; review fixes `2ba02ab`, `ef99b1f`, `9b6eeeb`, and the commit that records this |
 | 5 | 5.1–5.4 Git execution | Pending | |
 | 6 | 6.1–6.5 Acceptance gate | Pending | |
 
@@ -590,7 +590,7 @@ Operator decisions made during Stage 4 (2026-10-30), recorded here:
 4. A run named for the proposal whose execution-ID annotation names another execution leaves the execution `awaiting_operator`; status stores no observation of it.
 5. The `dispatching` record carries `adapter_timeout_seconds`, and status waits out that timeout plus five minutes.
 
-Plan edits made during Stage 4, awaiting the operator's confirmation (P3-1):
+Plan edits made during Stage 4, confirmed by the operator on 2026-10-31 (P3-1):
 
 1. G2 also refuses an executor whose clock is more than five minutes ahead of the database's, because the records it signs would fail to load; `execution status --record` and `execution confirm` refuse the same.
 2. `execution status` stores observations and results only with `--record`; without it, it needs `--operator` and a `viewer`, `executor`, or `admin` role.
