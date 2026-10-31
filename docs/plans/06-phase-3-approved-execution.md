@@ -435,7 +435,7 @@ D8 is decided as (a), the hand-off, so tasks 5.1 and 5.3 run under (a). Tasks 5.
 | 1 | 1.1–1.11 Hardening | Done; the operator confirmed its plan edits on 2026-10-29, see [Stage 1 Record](#stage-1-record) | `7e2fca9`, `9beb53d`, `4889513`, `b989aff`, `d88ab1c`, `3689b4c`, `ab480a9`, `71d82cc`, `8dc07a5`, `c74d7d3`; review fixes `1de5003`, `2171460`, `3c3e054` |
 | 2 | 2.1–2.5 and 3.2 Identity and approvals | Done; the operator confirmed its plan edits on 2026-10-30, see [Stage 2 Record](#stage-2-record) | `b8e223b`, `29ecb84`, `186062d`, `cba8acd`, `b4a8f26`, `925a00d`, `bd92e5b`, `22e6c10`, `d19846f`; review fixes `7802ed1` and the commit that records this |
 | 3 | 3.1–3.7 Guard and dry run | Done; the operator confirmed its plan edits on 2026-10-30, see [Stage 3 Record](#stage-3-record) | `566c7df`, `d6d12f7`, `0a84abd`, `2f6e685`, `1b05cf8`, `d0155cd`; review fixes `a7c159c`, `111cf36`, `58762da`, `8b13d07`, `cf3d7c1` |
-| 4 | 4.1–4.4 Tekton adapter | Pending | |
+| 4 | 4.1–4.4 Tekton adapter | 4.1–4.3 done; 4.4 waits for task 0.3; plan edits await the operator's confirmation, see [Stage 4 Record](#stage-4-record) | `52705f9`, `54156b0`, `6416a5c`; review fixes `2ba02ab`, `ef99b1f`, `9b6eeeb`, and the commit that records this |
 | 5 | 5.1–5.4 Git execution | Pending | |
 | 6 | 6.1–6.5 Acceptance gate | Pending | |
 
@@ -558,3 +558,58 @@ Backlog, from the stage review, for the stage that owns each item:
 - `_scaffold_values` raises `KeyError` for a missing `--region`, which becomes an internal error (Stage 5).
 - `SET ROLE aura_operator` makes `CURRENT_USER` the shared role, so operators who use it share one idempotency namespace, and `grants.sql` does not revoke `CREATE` on schema `public`, which PostgreSQL before 15 grants by default (task 4.4).
 - The review found these earlier backlog items still open, now owned by Stage 4: the provenance trace checks and the untested hub-read cache (Stage 1 and Stage 2, task 3.3), `published` matching only `proposal_id`, the SQLite initialization race, a locked database reported as having no schema version, a stored `OSError` text without an errno, and the unknown outcome of a `command_refused` append.
+
+## Stage 4 Record
+
+Tasks 4.1–4.3 implemented 2026-10-30, after the operator narrowed the prerequisite rule to live tasks (`0354e70`). Task 4.4, the live run, waits for task 0.3. Each commit passed the full suite and the quality gate; the tests of each change were checked by removing the code they cover. The stage review of `0354e70..6416a5c` found 11 violations.
+
+| Finding | Fix |
+| --- | --- |
+| V1: the dispatch recheck read the hub again inside the locked transaction | `2ba02ab`: the recheck reads only the store |
+| V2: an adapter's failure text was stored unredacted | `2ba02ab`: `redact_text` masks secret-named values and bearer tokens |
+| V3: `execution status --record` and `execution confirm` from a fast clock stored records that fail to load | `ef99b1f`: both refuse a clock more than five minutes ahead of the store's |
+| V4: `submitted` was recorded before the timeout margin | `ef99b1f` |
+| V5: a run of another execution moved the execution to `failed` | `ef99b1f`: it stays `awaiting_operator` (operator decision) |
+| V6: the margin used the reader's timeout | `2ba02ab`, `ef99b1f`: the `dispatching` record carries its timeout (operator decision) |
+| V7: the I5 test missed many Kubernetes and Git write commands | `9b6eeeb` |
+| V8: the schema range accepted stores without the newest tables; a failed deployment ID read leaked a driver error | `2ba02ab` |
+| V9: `_retention` raised a bare `ValueError`; a locked store was reported as having no schema | `2ba02ab` |
+| V10: the G6 refusal for conflicting results had no test | `2ba02ab` |
+| V11: docs said `--record` checked the key, said Aura never writes to Tekton or OpenShift, and gave no apply command for the executor manifests | `ef99b1f`, `9b6eeeb` |
+
+Rule exceptions and notes:
+
+- `52705f9`'s message says conflicting results are refused under G6; no test covered it until `2ba02ab`. `6416a5c`'s message and I5 text named only `git apply --cached` as an allowed write; the patch check also runs `clone`, `read-tree`, `write-tree`, `commit-tree`, and `update-ref` in its temporary clone, which `9b6eeeb` lists.
+- No test runs `TektonAdapter` through `execute`; its tests drive it with a fake `oc`, and `execute`'s tests use the `recording` adapter, because G10 allows `tekton` only on the PostgreSQL store the hub names.
+
+Operator decisions made during Stage 4 (2026-10-30), recorded here:
+
+1. P3-4 and the Operator Decisions rule hold only live tasks for operator-provided prerequisites; D10 blocks Stage 4 live runs.
+2. A PipelineRun create that returns `AlreadyExists` leaves the execution `awaiting_operator`. An error the server stated is a `failed` result that stores only its reason class; a timeout, a server or connection error, and unreadable output leave the execution `awaiting_operator`.
+3. `execution status` and `execution confirm` take `--proposal-id`.
+4. A run named for the proposal whose execution-ID annotation names another execution leaves the execution `awaiting_operator`; status stores no observation of it.
+5. The `dispatching` record carries `adapter_timeout_seconds`, and status waits out that timeout plus five minutes.
+
+Plan edits made during Stage 4, awaiting the operator's confirmation (P3-1):
+
+1. G2 also refuses an executor whose clock is more than five minutes ahead of the database's, because the records it signs would fail to load; `execution status --record` and `execution confirm` refuse the same.
+2. `execution status` stores observations and results only with `--record`; without it, it needs `--operator` and a `viewer`, `executor`, or `admin` role.
+3. A run without a `Succeeded` condition has not started, so status records `submitted` and no `running`.
+4. `[execution]` gains `executor_kubeconfig`, required with `tekton`, and `max_dispatches_per_hour`, G11's limit.
+5. The client supports schema version 4 only, so it refuses a store that lacks a table it writes.
+6. The `aura-executor` manifests are a separate kustomization, `deploy/executor/`, so applying the read-only manifests grants no write.
+7. `ExecutionRecord` ties each phase to its adapter, and conflicting results across executions of one proposal are an invalid record.
+
+Backlog, from the stage review, for the stage that owns each item:
+
+- An execution with a run of another execution, a run pruned after `submitted` and before a result, or an observation but no result whose run is later pruned, stays open with no command to resolve it (task 6.1 runbook).
+- The I5 allow list pairs a module with a verb, so any `oc create` in `tekton.py` passes (next adapter change).
+- `execution status` gives no warning when it finds a run for a `not_dispatched` execution, and the store accepts a `submitted` row after a terminal one (next status change).
+- The rule that a `manual` resolution names another principal's confirmation is checked when it is stored, not in `execution_state` (next status change).
+- The confirmation statement is stored as written, without `redact_text` (next status change).
+- The status report's `state` is the state before the command stored anything (next status change).
+- `TektonOutcomeUnknown` keeps none of `oc`'s error text, so the operator gets no diagnostic (task 4.4).
+- An observation of a run with `Succeeded=False` and no `completionTime` fails validation; Tekton's behavior is unverified (task 4.4).
+- The G12 preflight passes any identity that can create PipelineRuns, including a cluster administrator; task 4.4 confirms the identity.
+- The adapter's `oc` calls are outside the 10-call `oc` budget (next adapter change).
+- Earlier backlog items still open, now owned by Stage 5: the provenance trace checks and the untested hub-read cache, `published` matching only `proposal_id`, the SQLite initialization race, a stored `OSError` text without an errno, and the unknown outcome of a `command_refused` append.

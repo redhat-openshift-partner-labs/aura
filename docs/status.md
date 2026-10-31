@@ -101,7 +101,7 @@ The operator approved the [Phase 3](plans/06-phase-3-approved-execution.md) plan
 - A failed `oc` read is not retried within a command, and an `oc` list without `metadata.resourceVersion` is an error.
 - Scaffold output is limited to 1 MiB per stream, 1 MiB per generated file, and 8 MiB of generated files in total.
 
-`deploy/postgresql/` deploys the staging PostgreSQL for the Phase 3 execution store. Stage 2 added the execution store on SQLite, Aura's configuration file, SSH signing against the hub signer list, the action digest, `proposal submit`, `proposal approve`, and `proposal reject`, and the derived state in `proposal status`. Stage 3 added the Command Guard G1–G12, G8's regeneration of a proposal from fresh evidence, `execute` with the test-only `recording` adapter, the structural test that pins adapters and credential reads, and the PostgreSQL backend with its grants file. Stage 4 adds the Tekton adapter, which creates the approved post-provision PipelineRun, the `aura-executor` manifests in `deploy/executor/`, and `execution status` and `execution confirm`, which observe PipelineRuns and resolve an `awaiting_operator` execution; none has run against a hub, which task 4.4 does. The operator confirmed Stage 3's plan edits on 2026-10-30; the [Stage 3 Record](plans/06-phase-3-approved-execution.md#stage-3-record) lists them.
+`deploy/postgresql/` deploys the staging PostgreSQL for the Phase 3 execution store. Stage 2 added the execution store on SQLite, Aura's configuration file, SSH signing against the hub signer list, the action digest, `proposal submit`, `proposal approve`, and `proposal reject`, and the derived state in `proposal status`. Stage 3 added the Command Guard G1–G12, G8's regeneration of a proposal from fresh evidence, `execute` with the test-only `recording` adapter, the structural test that pins adapters and credential reads, and the PostgreSQL backend with its grants file. Stage 4 adds the Tekton adapter, which creates the approved post-provision PipelineRun, the `aura-executor` manifests in `deploy/executor/`, and `execution status` and `execution confirm`, which observe PipelineRuns and resolve an `awaiting_operator` execution; none has run against a hub, which task 4.4 does. Stage 4's plan edits await the operator's confirmation in the [Stage 4 Record](plans/06-phase-3-approved-execution.md#stage-4-record). The operator confirmed Stage 3's plan edits on 2026-10-30; the [Stage 3 Record](plans/06-phase-3-approved-execution.md#stage-3-record) lists them.
 
 ## Not Implemented
 
@@ -119,6 +119,12 @@ The operator approved the [Phase 3](plans/06-phase-3-approved-execution.md) plan
 
 | Commit | Change |
 | --- | --- |
+| `9b6eeeb` | Widened the I5 write-command check |
+| `ef99b1f` | Closed the Stage 4 review's `execution status` findings |
+| `2ba02ab` | Closed the Stage 4 review's execute and store findings |
+| `6416a5c` | Adopted the Phase 3 I5 change |
+| `54156b0` | Added `execution status` and `execution confirm` |
+| `52705f9` | Added the Tekton adapter and the `aura-executor` manifests |
 | `8b13d07` | Stored G8's evidence, CWA records, and regenerated proposal |
 | `58762da` | Took the command login from the PostgreSQL session; PostgreSQL contract tests |
 | `111cf36` | Caught aliased adapter calls and credential reads |
@@ -220,4 +226,4 @@ The operator approved the [Phase 3](plans/06-phase-3-approved-execution.md) plan
 
 ## Next Work
 
-Phases 0–2 are closed. Next is [Phase 3](plans/06-phase-3-approved-execution.md), revised on 2026-10-27: its operator decisions D7–D13 are recorded, including a database for Phase 3 records (SQLite for development, PostgreSQL in production), and the operator approved the plan on 2026-10-27. Stages 1–3 are done, and Stage 4, the Tekton adapter, is next. Its decisions, D9 and D10, are recorded; its live run, task 4.4, needs the staging hub, `aura-executor`, and staging store that the operator provides under task 0.3; the plan follows its staged tasks under the [Phase 3 Entry Conditions](plans/10-phase-0-2-closure.md#phase-3-entry-conditions): E2–E4 before any Phase 3 execution and E1 before an external model is connected. Deferred items, including the stranded deprovision sentinels and legacy rerun records, are tracked only in the closure plan's [Backlog](plans/10-phase-0-2-closure.md#backlog).
+Phases 0–2 are closed. Next is [Phase 3](plans/06-phase-3-approved-execution.md), revised on 2026-10-27: its operator decisions D7–D13 are recorded, including a database for Phase 3 records (SQLite for development, PostgreSQL in production), and the operator approved the plan on 2026-10-27. Stages 1–3 are done. Stage 4's tasks 4.1–4.3, the Tekton adapter, `execution status`, `execution confirm`, and the I5 change, are done against fakes. Its decisions, D9 and D10, are recorded; its live run, task 4.4, needs the staging hub, `aura-executor`, and staging store that the operator provides under task 0.3; the plan follows its staged tasks under the [Phase 3 Entry Conditions](plans/10-phase-0-2-closure.md#phase-3-entry-conditions): E2–E4 before any Phase 3 execution and E1 before an external model is connected. Deferred items, including the stranded deprovision sentinels and legacy rerun records, are tracked only in the closure plan's [Backlog](plans/10-phase-0-2-closure.md#backlog).
